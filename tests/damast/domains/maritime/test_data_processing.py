@@ -9,7 +9,7 @@ from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.ais.data_generator import generate_test_data
 from damast.domains.maritime.data_specification import ColumnName
 
-from damast.data_handling.data_processing import process_data, cleanse_and_sanitise
+from damast.domains.maritime.data_processing import process_data, cleanse_and_sanitise
 
 import logging
 logging.basicConfig(level=logging.INFO)

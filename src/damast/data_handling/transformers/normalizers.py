@@ -8,9 +8,15 @@ from numba import njit
 from sklearn.base import ClassNamePrefixFeaturesOutMixin, OneToOneFeatureMixin
 
 from damast.data_handling.transformers.base import BaseTransformer
-from .augmenters import BaseAugmenter
 
-__all__ = ["Normalizer", "CyclicNormalizer", "CyclicDenormalizer", "normalize"]
+__all__ = [
+    "CyclicDenormalizer",
+    "CyclicNormalizer",
+    "LogNormalizer",
+    "MinMaxNormalizer",
+    "Normalizer",
+    "normalize"
+]
 
 
 @njit
@@ -37,6 +43,10 @@ def normalize(
 
 
 class Normalizer(OneToOneFeatureMixin, BaseTransformer):
+    pass
+
+
+class MinMaxNormalizer(Normalizer):
     """
     Normalize data in range `[X_min, X_max]` to output range `[y_min, y_max]`.
     """
@@ -46,7 +56,9 @@ class Normalizer(OneToOneFeatureMixin, BaseTransformer):
     y_min: float
     y_max: float
 
-    def __init__(self, X_min: float, X_max: float, y_min: float, y_max: float):
+    def __init__(self,
+                 X_min: float, X_max: float,
+                 y_min: float, y_max: float):
         self.X_min = X_min
         self.X_max = X_max
         self.y_min = y_min
@@ -66,7 +78,7 @@ class Normalizer(OneToOneFeatureMixin, BaseTransformer):
         return output
 
 
-class CyclicNormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
+class CyclicNormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
     """
     Normalize data `X` in range `[X_min, X_max]` to cyclic coordinates
 
@@ -89,8 +101,9 @@ class CyclicNormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
         self.y_min = 0
         self.y_max = 1
 
-    def fit(self, X, y=None):
         self._n_features_out = 2
+
+    def fit(self, X, y=None):
         return self
 
     def transform(self, X):
@@ -100,7 +113,7 @@ class CyclicNormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
         return np.hstack([X_sin, X_cos])
 
 
-class CyclicDenormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
+class CyclicDenormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
     """
     Transform cyclic data (X_sin, X_cos) to non-cyclic data between `[y_min, y_max]`.
     """
@@ -112,8 +125,9 @@ class CyclicDenormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
         self.y_min = y_min
         self.y_max = y_max
 
-    def fit(self, X, y=None):
         self._n_features_out = 1
+
+    def fit(self, X, y=None):
         return self
 
     def transform(self, X):
@@ -140,7 +154,7 @@ class CyclicDenormalizer(BaseAugmenter, ClassNamePrefixFeaturesOutMixin):
         return data.reshape(-1, 1)
 
 
-class LogNormalisation(Normalizer):
+class LogNormalizer(Normalizer):
     #: Column that should be normalised
     column_names: List[str] = None
 

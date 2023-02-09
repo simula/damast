@@ -20,11 +20,11 @@ from damast.domains.maritime.ais.navigational_status import AISNavigationalStatu
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
 from damast.domains.maritime.data_specification import (ColumnName,
                                                         FieldValue)
-from damast.math.spatial import (EARTH_RADIUS,
-                                 angle_sat_c,
-                                 chord_distance,
-                                 distance_sat_vessel,
-                                 great_circle_distance)
+from damast.domains.maritime.math.spatial import (EARTH_RADIUS,
+                                                  angle_sat_c,
+                                                  chord_distance,
+                                                  distance_sat_vessel,
+                                                  great_circle_distance)
 
 __all__ = [
     "AddCombinedLabel",

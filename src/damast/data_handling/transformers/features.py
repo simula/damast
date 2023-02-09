@@ -10,6 +10,7 @@ import pandas as pd
 
 from damast.domains.maritime.data_specification import ColumnName
 from damast.data_handling.transformers.base import BaseTransformer
+from damast.domains.maritime.math.spatial import great_circle_distance
 
 __all__ = [
     "Angle",
@@ -23,8 +24,6 @@ __all__ = [
     "ReformatTimestamp",
     "SecondOfDay",
 ]
-
-from damast.math.spatial import great_circle_distance
 
 
 class Feature(str, Enum):

@@ -7,9 +7,9 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
 from damast.data_handling.transformers import (CyclicDenormalizer,
-                                               CyclicNormalizer, Normalizer)
-from damast.data_handling.transformers.normalizers import LogNormalisation
-from damast.math.normalisation import normalize
+                                               CyclicNormalizer,
+                                               MinMaxNormalizer, LogNormalizer)
+from damast.domains.maritime.math.normalization import normalize
 
 
 def cyclic_normalisation(x: npt.NDArray[np.float64],
@@ -71,7 +71,7 @@ def test_normalizer(i, transform):
     cols = ["x", "y", "z", "t"]
     X = pandas.DataFrame(x, columns=cols)
     cf = ColumnTransformer(
-        [("normalized", Normalizer(0, 300, -1, 1), [cols[i]])]).set_output(transform=transform)
+        [("normalized", MinMaxNormalizer(0, 300, -1, 1), [cols[i]])]).set_output(transform=transform)
     y = cf.fit_transform(X)
 
     y_ex = normalize(x[:, i], 0, 300, -1, 1)
@@ -91,7 +91,7 @@ def test_log_normalisation():
     column_names = ["a", "b"]
     df = pd.DataFrame(data, columns=column_names)
 
-    log_normalisation = LogNormalisation(column_names=column_names)
+    log_normalisation = LogNormalizer(column_names=column_names)
     transformed_df = log_normalisation.fit_transform(X=df)
 
     def normalise_ge_zero(value):

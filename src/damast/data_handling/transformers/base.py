@@ -15,6 +15,7 @@ from typing import (
     List, Union
 )
 
+import numpy as np
 import vaex
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
@@ -43,10 +44,16 @@ class BaseTransformer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, df: Union[pd.DataFrame, vaex.DataFrame]) -> Union[pd.DataFrame, vaex.DataFrame]:
-        #if type(df) is not pd.DataFrame:
-        #    raise RuntimeError(f"{self.__class__.__name__}.transform requires a pandas DataFrame as input, but"
-        #                       f" got {type(df)} ")
+        if type(df) not in [pd.DataFrame, vaex.DataFrame, np.ndarray]:
+            raise RuntimeError(f"{self.__class__.__name__}.transform requires a pandas, vaex or numpy array as"
+                               f" input, but got {type(df)} ")
         return df
+
+    def _get_column_names(self, df):
+        if hasattr(df, "columns"):
+            return [x for x in df.columns]
+        else:
+            return [None for i in range(0, df.shape[0])]
 
     def fit_transform(self, df: pd.DataFrame, y=None, **fit_params) -> Any:
         """
@@ -62,14 +69,14 @@ class BaseTransformer(BaseEstimator, TransformerMixin):
         stats = dict()
 
         stats[self.INPUT_SHAPE] = df.shape
-        stats[self.INPUT_COLUMNS] = [x for x in df.columns]
+        stats[self.INPUT_COLUMNS] = self._get_column_names(df)
 
         start = datetime.utcnow()
         result = super().fit_transform(df, y, **fit_params)
         stats[self.RUNTIME_IN_S] = (datetime.utcnow() - start).total_seconds()
 
         stats[self.OUTPUT_SHAPE] = df.shape
-        stats[self.OUTPUT_COLUMNS] = [x for x in df.columns]
+        stats[self.OUTPUT_COLUMNS] = self._get_column_names(df)
         self._stats = stats
 
         _log.debug(f"{self.__class__.__name__}: {stats[self.RUNTIME_IN_S]} seconds")

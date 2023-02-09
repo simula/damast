@@ -12,7 +12,7 @@ from damast.data_handling.transformers.augmenters import AddMissingAISStatus, In
 from damast.data_handling.transformers.features import DeltaDistance, Feature
 from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
-from damast.math.spatial import great_circle_distance
+from damast.domains.maritime.math.spatial import great_circle_distance
 
 
 def test_add_missing_ais_status():
