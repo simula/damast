@@ -1,18 +1,14 @@
-from pathlib import Path
+import logging
 
-from random import choice
-import numpy as np
-import pandas as pd
 import pytest
+import vaex
 
-from damast.domains.maritime.ais import vessel_types
-from damast.domains.maritime.ais.data_generator import generate_test_data
+from damast.domains.maritime.ais.data_generator import AISTestData
+from damast.domains.maritime.data_processing import process_data, cleanse_and_sanitise
 from damast.domains.maritime.data_specification import ColumnName
 
-from damast.domains.maritime.data_processing import process_data, cleanse_and_sanitise
-
-import logging
 logging.basicConfig(level=logging.INFO)
+
 
 @pytest.fixture()
 def workdir(tmp_path):
@@ -43,56 +39,63 @@ def default_config(workdir):
     return params
 
 
-def test_data_processing(default_config, workdir):
-    test_data = generate_test_data(200)
+@pytest.fixture()
+def ais_test_data():
+    return AISTestData(number_of_trajectories=20)
 
-    vessel_type_data = []
-    fishing_type_data = []
 
-    for mmsi in np.unique(test_data[ColumnName.MMSI.lower()]):
-        vessel_type_data.append([mmsi, vessel_types.Fishing.to_id()])
-        fishing_type_data.append([mmsi, choice([
-            vessel_types.DriftingLonglines.to_id(),
-            vessel_types.PoleAndLine.to_id(),
-            vessel_types.PotsAndTraps.to_id()
-        ])])
+@pytest.fixture()
+def vessel_types_data(ais_test_data, workdir):
+    df = ais_test_data.generate_vessel_type_data()
 
-    # Generate anchorages close to starting points of vessel trajectories
-    lat = test_data.groupby(ColumnName.MMSI.lower())["lat"].first()*1.05
-    lat_df = lat.reset_index()
-    lat_df.rename(
-        columns={"lat": "latitude"},
-        inplace=True
-    )
+    csv_path = workdir / "vessel_types.csv"
+    df.to_csv(csv_path, sep=";", index=False)
 
-    lon = test_data.groupby(ColumnName.MMSI.lower())["lon"].first()*-0.95
-    lon_df = lon.reset_index()
-    lon_df.rename(
-        columns={"lon": "longitude"},
-        inplace=True
-    )
-    anchorages_df = pd.merge(lat_df, lon_df, on=[ColumnName.MMSI.lower()])
+    return df, csv_path
 
-    vessel_type_df = pd.DataFrame(vessel_type_data, columns=[ColumnName.MMSI, ColumnName.VESSEL_TYPE])
-    fishing_type_df = pd.DataFrame(fishing_type_data, columns=[ColumnName.MMSI.lower(), ColumnName.VESSEL_TYPE_GFW])
 
-    vessel_type_csv = workdir / "vessel_types.csv"
-    fishing_vessel_type_csv = workdir / "fishing_vessel_types.csv"
+@pytest.fixture()
+def fishing_vessel_types_data(ais_test_data, workdir):
+    df = ais_test_data.generate_fishing_vessel_type_data()
+
+    csv_path = workdir / "fishing_vessel_types.csv"
+    df.to_csv(csv_path, sep=",", index=False)
+
+    return df, csv_path
+
+
+@pytest.fixture()
+def anchorages_data(ais_test_data, workdir):
+    df = ais_test_data.generate_anchorage_type_data()
+
     anchorages_csv = workdir / "anchorages.csv"
+    df.to_csv(anchorages_csv, sep=",", index=False)
 
-    vessel_type_df.to_csv(vessel_type_csv, sep=";", index=False)
-    fishing_type_df.to_csv(fishing_vessel_type_csv, sep=",", index=False)
-    anchorages_df.to_csv(anchorages_csv, sep=",", index=False)
+    return df, anchorages_csv
 
+
+def test_data_processing_with_plain_vaex(workdir,
+                                         ais_test_data,
+                                         fishing_vessel_types_data,
+                                         vessel_types_data,
+                                         anchorages_data):
+    df = vaex.from_pandas(ais_test_data.dataframe)
+
+
+def test_data_processing(default_config, workdir,
+                         ais_test_data,
+                         fishing_vessel_types_data,
+                         vessel_types_data,
+                         anchorages_data):
     params = default_config.copy()
-    params["inputs"]["vessel_types"] = vessel_type_csv
-    params["inputs"]["fishing_vessel_types"] = fishing_vessel_type_csv
-    params["inputs"]["anchorages"] = anchorages_csv
+    params["inputs"]["vessel_types"] = vessel_types_data[1]
+    params["inputs"]["fishing_vessel_types"] = fishing_vessel_types_data[1]
+    params["inputs"]["anchorages"] = anchorages_data[1]
     params["MessageTypePosition"] = [2]
     params["columns"]["useless"] = ["rot", "BaseDateTime", "source"]
 
     # Data processing currently expects the following columns
-    test_data.rename(
+    ais_test_data.dataframe.rename(
         columns={
             "mmsi": ColumnName.MMSI,
             "lon": ColumnName.LONGITUDE,
@@ -106,8 +109,7 @@ def test_data_processing(default_config, workdir):
         },
         inplace=True
     )
-
-    df = cleanse_and_sanitise(params=params, df=test_data)
+    df = cleanse_and_sanitise(params=params, df=ais_test_data.dataframe)
     process_data(params=params,
                  df=df,
                  workdir=workdir)
