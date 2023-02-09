@@ -1,0 +1,78 @@
+image: registry.gitlab.com/simula-srl/projects/t-sar/ais-anomaly-detection
+stages:
+  - test
+  - build
+  - publish
+  - deploy
+
+.linux_runner_tags:
+  tags:
+    - linux
+    - docker
+
+.test_python_package:
+  extends: .linux_runner_tags
+  stage: test
+  variables:
+      PACKAGE_DIR: $CI_PROJECT_DIR
+  script:
+    - cd $PACKAGE_DIR
+    - pip install -e .[dev,test]
+    - tox -e py
+  when: manual
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: artifacts/tests/cobertura-coverage.xml
+
+
+.lint_python_package:
+  extends: .linux_runner_tags
+  stage: test
+  variables:
+      PACKAGE_DIR: $CI_PROJECT_DIR
+  script:
+    - cd $PACKAGE_DIR
+    - pip install tox
+    - tox -e lint
+  when: manual
+  artifacts:
+    reports:
+        codequality: artifacts/lint/lint-codeclimate.json
+
+test:package:
+  extends: .test_python_package
+
+lint:package:
+  extends: .lint_python_package
+
+
+jupyter-build:
+  stage: build
+  variables:
+      PACKAGE_DIR: $CI_PROJECT_DIR
+  image: python:3.10-slim
+  script:
+    - cd $PACKAGE_DIR
+    - python -m pip install tox
+    - tox -e build_docs
+  when: manual
+  artifacts:
+    paths:
+      - _build/
+
+pages:
+  stage: deploy
+  image: busybox:latest
+  needs: 
+    - job: jupyter-build
+      artifacts: true
+  script:
+    - mv _build/html public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+

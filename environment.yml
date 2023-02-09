@@ -1,0 +1,20 @@
+name: damast-test-env
+channels:
+  - conda-forge
+dependencies:
+  - matplotlib
+  - numba
+  - numpy
+  - pip
+  - plotly
+  - pydot
+  - pyorbital
+  - rich
+  - scikit-learn
+  - tensorflow
+  - tensorflow-probability
+  - tox
+  - vaex
+  - pip:
+    - kaleido
+    - tables
