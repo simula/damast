@@ -10,6 +10,10 @@ from vaex import DataFrame
 
 from .metadata import MetaData
 
+__all__ = [
+    "AnnotatedDataFrame"
+]
+
 
 class AnnotatedDataFrame:
     """

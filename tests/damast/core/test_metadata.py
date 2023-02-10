@@ -5,26 +5,13 @@ import pytest
 
 from damast.core.annotations import Annotation, Change, History
 from damast.core.metadata import (
-    MinMax,
     DataSpecification,
     MetaData,
     DataCategory
 )
 
+from damast.core.datarange import MinMax, CyclicMinMax
 
-@pytest.mark.parametrize(["min", "max", "value", "is_in_range"],
-                         [
-                             [0, 1, 0, True],
-                             [0, 1, 1, True],
-                             [0, 1, -1, False],
-                             [-1.2, 2.7, -1.2, True],
-                             [-1.2, 2.7, 2.7, True],
-                             [-1.2, 2.7, -2.7, False],
-                             [-1.2, 2.7, 2.71, False],
-                         ])
-def test_min_max(min, max, value, is_in_range):
-    mm = MinMax(min=min, max=max)
-    assert mm.is_in_range(value) == is_in_range
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -37,10 +24,22 @@ def test_min_max(min, max, value, is_in_range):
                               "tds", int, -1, units.m, 0.01,
                               MinMax(0, 100), {0: 'min value', 100: 'max value'},
                               False],
-                             ["test-data-spec", 0, False,
+                             ["test-data-spec-out-of-range", 0, False,
                               "tds", int, -1, units.m, 0.01,
                               MinMax(0, 100), {-10: 'min value', 100: 'max value'},
-                              True]
+                              True],
+                             ["latitude-in-range", 1, False,
+                             "lat", float, None, units.deg, 0.01,
+                             CyclicMinMax(-90, 90), {-90.0: 'min value', 90.0: 'max value'},
+                             False],
+                             ["latitude-out-of-range", 1, False,
+                              "lat", float, None, units.deg, 0.01,
+                              CyclicMinMax(-90, 90), {-91.0: 'min value', 90.0: 'max value'},
+                              True],
+                             ["longitude-in-range", 1, False,
+                             "lon", float, None, units.deg, 0.01,
+                             CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
+                             False]
                          ])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
@@ -76,20 +75,6 @@ def test_data_specification(name, category, is_optional,
         assert exception is not None
     else:
         assert exception is None
-
-
-def test_annotation():
-    with pytest.raises(ValueError) as e:
-        Annotation(name=Annotation.Key.Comment)
-
-    with pytest.raises(ValueError) as e:
-        Annotation(name=Annotation.Key.License)
-
-    a = Annotation(name=Annotation.Key.Comment,
-                   value="test-comment")
-
-    assert a.name == Annotation.Key.Comment
-    assert a.value == "test-comment"
 
 
 def test_change():

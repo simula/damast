@@ -3,14 +3,14 @@ from typing import Optional, Any, Union, List, Dict
 # Alternatively use pint
 from astropy import units
 
+from .annotations import Annotation
+from .datarange import DataRange
+
 __all__ = [
     "DataCategory",
-    "MinMax",
     "DataSpecification",
     "MetaData"
 ]
-
-from damast.core.annotations import Annotation
 
 
 class DataCategory:
@@ -18,52 +18,6 @@ class DataCategory:
     """
     DYNAMIC = 0
     STATIC = 1
-
-
-class MinMax:
-    min: Any = None
-    max: Any = None
-
-    def __init__(self,
-                 min: Any,
-                 max: Any):
-        """
-        Initialise the min and max range
-
-        :param min: minimum allowed value, data must be greater or equal
-        :param max: maximum allowed value, data must be less or equal
-        """
-        assert min < max
-        self.min = min
-        self.max = max
-
-    def is_in_range(self, value: Any) -> bool:
-        """
-        Check if a value is in the defined range.
-
-        :param value: data value
-        :return: True if value is in the set range, false otherwise
-        """
-        return self.min <= value <= self.max
-
-    def __getitem__(self, value):
-        """
-        Check if value lies in the given range via:
-
-        >>> custom_range = MinMax(0.0, 10.0)
-        >>> if 1.0 in custom_range:
-        >>>    ...
-
-        :param value: Value to test
-        :return:
-        """
-        if self.is_in_range(value=value):
-            return value
-
-        raise ValueError(f"{self.__class__.__name__}: value {value} is not in range")
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}[{self.min}, {self.max}]"
 
 
 class DataSpecification:
@@ -88,7 +42,7 @@ class DataSpecification:
     #: The precision of this data element
     precision: Optional[Union[float, List[float]]] = None
     #: The allowed data range, which remains None when being unrestricted
-    value_range: Union[MinMax, List[Any]] = None
+    value_range: Union[DataRange, List[Any]] = None
     #: An explanation - str-based descriptor for the range, if this is a dictionary then it must provide
     #: a mapping from the value to a human-readable descriptor
     value_meanings: Dict[Any, str] = None
@@ -102,7 +56,7 @@ class DataSpecification:
                  missing_value: Any = None,
                  unit: Optional[units.Unit] = None,
                  precision: Any = None,
-                 value_range: Union[List[Any], MinMax] = None,
+                 value_range: Union[List[Any], DataRange] = None,
                  value_meanings: Dict[Any, str] = None):
         """
         Initialise the MetaData instance
