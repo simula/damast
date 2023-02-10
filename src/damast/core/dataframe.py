@@ -1,3 +1,8 @@
+# code=utf-8
+"""
+Module to define a dataframe
+"""
+
 from pathlib import Path
 from typing import Union
 
@@ -8,9 +13,13 @@ from .metadata import MetaData
 
 class AnnotatedDataFrame:
     """
-
+    A dataframe that is associated with metadata.
     """
+
+    #: Metadata associated with the dataframe
     _metadata: MetaData = None
+
+    #: The actual dataframe
     _dataframe: DataFrame = None
 
     def __init__(self,
