@@ -1,17 +1,18 @@
 import datetime
+from pathlib import Path
 
 import astropy.units as units
 import pytest
+import vaex
+import yaml
 
 from damast.core.annotations import Annotation, Change, History
+from damast.core.datarange import MinMax, CyclicMinMax
 from damast.core.metadata import (
     DataSpecification,
     MetaData,
     DataCategory
 )
-
-from damast.core.datarange import MinMax, CyclicMinMax
-
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -20,26 +21,26 @@ from damast.core.datarange import MinMax, CyclicMinMax
                           "value_range", "value_meanings",
                           "raises"],
                          [
-                             ["test-data-spec", 0, False,
+                             ["test-data-spec", DataCategory.STATIC, False,
                               "tds", int, -1, units.m, 0.01,
                               MinMax(0, 100), {0: 'min value', 100: 'max value'},
                               False],
-                             ["test-data-spec-out-of-range", 0, False,
+                             ["test-data-spec-out-of-range", DataCategory.STATIC, False,
                               "tds", int, -1, units.m, 0.01,
                               MinMax(0, 100), {-10: 'min value', 100: 'max value'},
                               True],
-                             ["latitude-in-range", 1, False,
-                             "lat", float, None, units.deg, 0.01,
-                             CyclicMinMax(-90, 90), {-90.0: 'min value', 90.0: 'max value'},
-                             False],
-                             ["latitude-out-of-range", 1, False,
+                             ["latitude-in-range", DataCategory.DYNAMIC, False,
+                              "lat", float, None, units.deg, 0.01,
+                              CyclicMinMax(-90, 90), {-90.0: 'min value', 90.0: 'max value'},
+                              False],
+                             ["latitude-out-of-range", DataCategory.DYNAMIC, False,
                               "lat", float, None, units.deg, 0.01,
                               CyclicMinMax(-90, 90), {-91.0: 'min value', 90.0: 'max value'},
                               True],
-                             ["longitude-in-range", 1, False,
-                             "lon", float, None, units.deg, 0.01,
-                             CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
-                             False]
+                             ["longitude-in-range", DataCategory.DYNAMIC, False,
+                              "lon", float, None, units.deg, 0.01,
+                              CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
+                              False]
                          ])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
@@ -77,6 +78,52 @@ def test_data_specification(name, category, is_optional,
         assert exception is None
 
 
+@pytest.mark.parametrize(["name", "category", "is_optional",
+                          "abbreviation", "representation_type",
+                          "missing_value", "unit", "precision",
+                          "value_range", "value_meanings"
+                          ],
+                         [
+                             ["test-data-spec", DataCategory.DYNAMIC, False,
+                              "tds", float, -1, units.m, 0.01,
+                              MinMax(0.0, 100.0), {0.0: "minimum", 100.0: "maximum"}]
+                         ])
+def test_data_specification_read_write(name, category, is_optional,
+                                       abbreviation, representation_type,
+                                       missing_value, unit, precision,
+                                       value_range, value_meanings
+                                       , tmp_path):
+    ds = DataSpecification(name=name,
+                           category=category,
+                           is_optional=is_optional,
+                           abbreviation=abbreviation,
+                           representation_type=representation_type,
+                           missing_value=missing_value,
+                           unit=unit,
+                           precision=precision,
+                           value_range=value_range,
+                           value_meanings=value_meanings)
+
+    ds_dict = ds.to_dict()
+    ds_yaml = tmp_path / "test_data_specification_read_write-ds.yaml"
+    ds_yaml = "/tmp/test_data_specification_read_write-ds.yaml"
+
+    assert ds_dict["name"] == name
+
+    with open(ds_yaml, "w") as f:
+        yaml.dump(ds_dict, f)
+
+    ds_loaded_dict = None
+    with open(ds_yaml, "r") as f:
+        ds_loaded_dict = yaml.load(f, Loader=yaml.SafeLoader)
+
+    assert ds_loaded_dict["name"] == name
+
+    ds_loaded = DataSpecification.from_dict(data=ds_loaded_dict)
+
+    assert ds_loaded == ds
+
+
 def test_change():
     title = "new-change"
     description = "elaborate description of change"
@@ -93,7 +140,7 @@ def test_history():
     assert history.name == Annotation.Key.History
 
 
-def test_metadata():
+def test_metadata_read_write(tmp_path):
     column_a = DataSpecification(name="a", category=DataCategory.STATIC)
     column_b = DataSpecification(name="b", category=DataCategory.DYNAMIC)
 
@@ -103,10 +150,27 @@ def test_metadata():
     annotation_comment = Annotation(name=Annotation.Key.Comment,
                                     value="test-comment")
 
-    annotations = [
-        annotation_history,
-        annotation_comment
-    ]
+    annotation_change = Change(title="minor-change",
+                               description="spelling of word changed")
+
+    annotation_history.add_change(annotation_change)
+
+    annotations = {
+        Annotation.Key.History.value: annotation_history,
+        Annotation.Key.Comment.value: annotation_comment
+    }
 
     md = MetaData(columns=columns,
                   annotations=annotations)
+
+    # metadata_yaml = tmp_path  / "test_metadata-md.yaml"
+    metadata_yaml = "/tmp/test_metadata-md.yaml"
+    md_dict = md.to_dict()
+
+    with open(metadata_yaml, "w") as f:
+        yaml.dump(md_dict, f)
+
+    loaded_md = MetaData.load_yaml(filename=metadata_yaml)
+    assert md == loaded_md
+
+

@@ -1,6 +1,6 @@
 import pytest
 
-from damast.core.datarange import MinMax, CyclicMinMax
+from damast.core.datarange import MinMax, CyclicMinMax, DataRange, ListOfValues
 
 
 @pytest.mark.parametrize(["min", "max", "value", "is_in_range"],
@@ -31,3 +31,14 @@ def test_min_max(min, max, value, is_in_range):
         assert value in cm
     else:
         assert value not in cm
+
+@pytest.mark.parametrize(["data", "expected_instance"],
+                         [
+                             [{"ListOfValues": [0,1,2]}, ListOfValues([0,1,2])],
+                             [{"MinMax": {"min": 0, "max": 1}}, MinMax(0,1)],
+                             [{"CyclicMinMax": {"min": 0, "max": 1}}, CyclicMinMax(0, 1)]
+                         ])
+def test_data_range_from_dict(data, expected_instance):
+
+    instance = DataRange.from_dict(data=data)
+    assert instance == expected_instance
