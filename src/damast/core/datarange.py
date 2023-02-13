@@ -1,4 +1,5 @@
 import importlib
+from abc import abstractmethod, ABC
 from typing import Any, List, Dict
 
 __all__ = [
@@ -9,12 +10,13 @@ __all__ = [
 ]
 
 
-class DataRange:
+class DataRange(ABC):
     """
     Representation of a data range.
 
     This class should be subclassed to implement a custom data range
     """
+    @abstractmethod
     def is_in_range(self, value) -> bool:
         """
         Check if a value lies in the permitted range.
@@ -22,7 +24,7 @@ class DataRange:
         :param value: Value to check
         :return: True if value lies in range, False otherwise
         """
-        return False
+        pass
 
     def __contains__(self, value):
         """
@@ -68,7 +70,7 @@ class ListOfValues:
     values: List[Any] = None
 
     def __init__(self, values: List[Any]):
-        if type(values) is not list:
+        if not isinstance(values, list):
             raise ValueError(f"{self.__class__.__name__}.__init__: required list of values for initialisation")
 
         self.values = values

@@ -33,7 +33,7 @@ class Annotation:
 
         # In case we want to enforce some key-related validation, then
         # add a 'validate_<key-name>' function
-        if type(self.name) is Annotation.Key and self.name in Annotation.Key:
+        if isinstance(self.name, Annotation.Key):
             self.name = self.name.value
 
         validation_func_name = f"validate_{self.name}"
