@@ -16,15 +16,18 @@ from sklearn.neighbors import BallTree
 from sklearn.preprocessing import Binarizer
 
 from damast.data_handling.transformers.base import BaseTransformer
-from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
+from damast.domains.maritime.ais.navigational_status import (
+    AISNavigationalStatus
+    )
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
-from damast.domains.maritime.data_specification import (ColumnName,
-                                                        FieldValue)
-from damast.domains.maritime.math.spatial import (EARTH_RADIUS,
-                                                  angle_sat_c,
-                                                  chord_distance,
-                                                  distance_sat_vessel,
-                                                  great_circle_distance)
+from damast.domains.maritime.data_specification import ColumnName, FieldValue
+from damast.domains.maritime.math.spatial import (
+    EARTH_RADIUS,
+    angle_sat_c,
+    chord_distance,
+    distance_sat_vessel,
+    great_circle_distance
+    )
 
 __all__ = [
     "AddCombinedLabel",

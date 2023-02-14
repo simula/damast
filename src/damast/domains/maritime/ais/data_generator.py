@@ -1,24 +1,23 @@
 import datetime
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from logging import (
-    getLogger,
-    Logger,
-    INFO
-)
-from random import (
-    randint,
-    random,
-    choice
-)
-from typing import List, Any
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from logging import INFO, Logger, getLogger
+from random import choice, randint, random
+from typing import Any, List
 
 import numpy as np
 import pandas as pd
 from pyais.ais_types import AISType
 
 from damast.domains.maritime.ais import vessel_types
-from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
-from damast.domains.maritime.data_specification import MMSI, SpeedOverGround, CourseOverGround, ColumnName
+from damast.domains.maritime.ais.navigational_status import (
+    AISNavigationalStatus
+    )
+from damast.domains.maritime.data_specification import (
+    MMSI,
+    ColumnName,
+    CourseOverGround,
+    SpeedOverGround
+    )
 
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)

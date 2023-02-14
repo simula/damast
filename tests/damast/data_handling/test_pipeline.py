@@ -1,8 +1,8 @@
 import json
 
+import pandas as pd
 import pytest
 
-import pandas as pd
 from damast.data_handling.pipeline import Pipeline
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.data_handling.transformers.filters import MinMaxFilter

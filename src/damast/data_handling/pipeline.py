@@ -2,16 +2,10 @@
 Module containing add customized pipeline implementation
 """
 import json
+from pathlib import Path
+from typing import Any, Dict, List, Tuple, Union
 
 import sklearn.pipeline
-from typing import (
-    Any,
-    Dict,
-    List,
-    Tuple,
-    Union,
-)
-from pathlib import Path
 
 
 class Pipeline(sklearn.pipeline.Pipeline):

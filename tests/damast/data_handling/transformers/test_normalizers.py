@@ -6,9 +6,12 @@ import pytest
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-from damast.data_handling.transformers import (CyclicDenormalizer,
-                                               CyclicNormalizer,
-                                               MinMaxNormalizer, LogNormalizer)
+from damast.data_handling.transformers import (
+    CyclicDenormalizer,
+    CyclicNormalizer,
+    LogNormalizer,
+    MinMaxNormalizer
+    )
 from damast.domains.maritime.math.normalization import normalize
 
 

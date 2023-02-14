@@ -3,10 +3,10 @@ from .normalizers import (
     CyclicDenormalizer,
     CyclicNormalizer,
     LogNormalizer,
-    Normalizer,
     MinMaxNormalizer,
+    Normalizer,
     normalize
-)
+    )
 
 __all__ = [
     "AddVesselType",
