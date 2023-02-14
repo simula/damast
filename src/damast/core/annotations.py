@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, ClassVar, Dict, List, Union
+from typing import Any, ClassVar, Dict, List, Union, Optional
 
 __all__ = [
     "Annotation",
@@ -25,7 +25,7 @@ class Annotation:
     name: str = None
 
     #: Value of the annotation
-    value: Any = None
+    value: Optional[Any] = None
 
     def __init__(self,
                  name: Union[str, Key],
@@ -105,7 +105,7 @@ class Annotation:
 
         :raise ValueError: Raises if a comment remains empty.
         """
-        if self.value is None or self.value is '':
+        if self.value is None or self.value == '':
             raise ValueError("Comment cannot be empty")
 
 
