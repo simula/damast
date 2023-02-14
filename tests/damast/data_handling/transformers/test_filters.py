@@ -1,12 +1,17 @@
-import pytest
-import numpy as np
-import pandas as pd
-import sklearn
-from sklearn.pipeline import Pipeline
 import datetime as dt
 
-from damast.domains.maritime.data_specification import ColumnName, MMSI
-from damast.data_handling.transformers.filters import AreaFilter, DuplicateNeighboursFilter, MMSIFilter
+import numpy as np
+import pandas as pd
+import pytest
+import sklearn
+from sklearn.pipeline import Pipeline
+
+from damast.data_handling.transformers.filters import (
+    AreaFilter,
+    DuplicateNeighboursFilter,
+    MMSIFilter
+    )
+from damast.domains.maritime.data_specification import MMSI, ColumnName
 
 
 @pytest.fixture

@@ -7,12 +7,8 @@ import vaex
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
-from damast.core.datarange import MinMax, CyclicMinMax
-from damast.core.metadata import (
-    DataSpecification,
-    MetaData,
-    DataCategory
-)
+from damast.core.datarange import CyclicMinMax, MinMax
+from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",

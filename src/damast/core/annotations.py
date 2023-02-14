@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, ClassVar, List, Dict, Union
+from typing import Any, ClassVar, Dict, List, Union
 
 __all__ = [
     "Annotation",

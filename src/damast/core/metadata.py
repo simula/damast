@@ -1,7 +1,7 @@
 import builtins
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Any, Union, List, Dict
+from typing import Any, Dict, List, Optional, Union
 
 import vaex
 import yaml

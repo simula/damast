@@ -1,6 +1,6 @@
 import numpy as np
-
 import pandas as pd
+
 from damast.data_handling.transformers.features import DeltaTime
 from damast.data_handling.transformers.sorters import GenericSorter, GroupBy
 

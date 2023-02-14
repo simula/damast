@@ -3,24 +3,14 @@
 Module containing the base functionality for custom transformer implementation in this project.
 """
 from datetime import datetime
-from logging import (
-    getLogger,
-    Logger,
-    DEBUG
-)
-from typing import (
-    Any,
-    Dict,
-    ClassVar,
-    List, Union
-)
+from logging import DEBUG, Logger, getLogger
+from typing import Any, ClassVar, Dict, List, Union
 
 import numpy as np
+import pandas as pd
 import vaex
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
-
-import pandas as pd
 
 _log: Logger = getLogger(__name__)
 _log.setLevel(DEBUG)

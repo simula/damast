@@ -5,9 +5,12 @@ from pathlib import Path
 from typing import Union
 
 from sklearn.pipeline import Pipeline
-from damast.data_handling.exploration import (PLOT_DPI,
-                                                             plot_histograms,
-                                                             plot_lat_lon)
+
+from damast.data_handling.exploration import (
+    PLOT_DPI,
+    plot_histograms,
+    plot_lat_lon
+    )
 
 __all__ = [
     "BaseVisualiser",

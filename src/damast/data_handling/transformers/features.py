@@ -2,14 +2,14 @@
 Module to collect all features that can be added
 """
 from enum import Enum
-from typing import List, Tuple, Any
+from typing import Any, List, Tuple
 
 import numpy as np
-from numpy import ndarray, dtype, float_
 import pandas as pd
+from numpy import dtype, float_, ndarray
 
-from damast.domains.maritime.data_specification import ColumnName
 from damast.data_handling.transformers.base import BaseTransformer
+from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math.spatial import great_circle_distance
 
 __all__ = [

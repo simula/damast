@@ -1,6 +1,6 @@
 import functools
 import inspect
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from .dataframe import AnnotatedDataFrame
 
@@ -9,7 +9,7 @@ __all__ = [
     "output"
 ]
 
-from .metadata import ExpectedDataSpecification, DataSpecification
+from .metadata import DataSpecification, ExpectedDataSpecification
 
 
 def _get_requirements(requirements: List[Dict[str, Any]]) -> List[ExpectedDataSpecification]:

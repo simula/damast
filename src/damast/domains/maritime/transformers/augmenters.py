@@ -9,21 +9,24 @@ from typing import Dict, List, Union
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
-from damast.math.spatial import (EARTH_RADIUS,
-                                 angle_sat_c,
-                                 chord_distance,
-                                 distance_sat_vessel,
-                                 great_circle_distance)
 from dask.diagnostics import ProgressBar
 from pyorbital.orbital import Orbital
 from sklearn.neighbors import BallTree
 from sklearn.preprocessing import Binarizer
 
 from damast.data_handling.transformers.augmenters import BaseAugmenter
-from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
+from damast.domains.maritime.ais.navigational_status import (
+    AISNavigationalStatus
+    )
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
-from damast.domains.maritime.data_specification import (ColumnName,
-                                                        FieldValue)
+from damast.domains.maritime.data_specification import ColumnName, FieldValue
+from damast.math.spatial import (
+    EARTH_RADIUS,
+    angle_sat_c,
+    chord_distance,
+    distance_sat_vessel,
+    great_circle_distance
+    )
 
 __all__ = [
     "AddCombinedLabel",

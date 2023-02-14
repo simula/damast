@@ -4,15 +4,11 @@ Module to define a dataframe
 """
 
 from pathlib import Path
-from typing import Union, List
+from typing import List, Union
 
 from vaex import DataFrame
 
-from .metadata import (
-    DataSpecification,
-    ExpectedDataSpecification,
-    MetaData
-)
+from .metadata import DataSpecification, ExpectedDataSpecification, MetaData
 
 __all__ = [
     "AnnotatedDataFrame"

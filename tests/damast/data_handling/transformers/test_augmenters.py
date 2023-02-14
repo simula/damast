@@ -7,10 +7,17 @@ import pandas as pd
 from sklearn.neighbors import BallTree
 
 import damast.domains.maritime.ais.vessel_types as vessel
-from damast.data_handling.transformers.augmenters import AddMissingAISStatus, InvertedBinariser, \
-    AddDistanceClosestAnchorage, AddCombinedLabel, AddVesselType
+from damast.data_handling.transformers.augmenters import (
+    AddCombinedLabel,
+    AddDistanceClosestAnchorage,
+    AddMissingAISStatus,
+    AddVesselType,
+    InvertedBinariser
+    )
 from damast.data_handling.transformers.features import DeltaDistance, Feature
-from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
+from damast.domains.maritime.ais.navigational_status import (
+    AISNavigationalStatus
+    )
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import great_circle_distance
 

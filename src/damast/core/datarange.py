@@ -1,6 +1,6 @@
 import importlib
-from abc import abstractmethod, ABC
-from typing import Any, List, Dict
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List
 
 __all__ = [
     "CyclicMinMax",

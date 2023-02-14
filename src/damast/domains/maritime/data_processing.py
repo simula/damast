@@ -33,27 +33,34 @@ import argparse
 import datetime
 import functools
 import glob
-from logging import Formatter, StreamHandler, getLogger, basicConfig
+from logging import Formatter, StreamHandler, basicConfig, getLogger
 from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+import pandas as pd
 import yaml
 
-import pandas as pd
-from damast.domains.maritime.data_specification import ColumnName
 from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.pipeline import Pipeline
-from damast.data_handling.transformers.augmenters import (AddDistanceClosestAnchorage,
-                                                                         AddFishingVesselType,
-                                                                         AddLocalMessageIndex,
-                                                                         AddVesselType)
-from damast.data_handling.transformers.filters import (AreaFilter,
-                                                                      DuplicateNeighboursFilter,
-                                                                      MMSIFilter)
+from damast.data_handling.transformers.augmenters import (
+    AddDistanceClosestAnchorage,
+    AddFishingVesselType,
+    AddLocalMessageIndex,
+    AddVesselType
+    )
+from damast.data_handling.transformers.filters import (
+    AreaFilter,
+    DuplicateNeighboursFilter,
+    MMSIFilter
+    )
 from damast.data_handling.transformers.sorters import GenericSorter
-from damast.data_handling.transformers.visualisers import (PlotHistograms,
-                                                                          PlotLatLon)
+from damast.data_handling.transformers.visualisers import (
+    PlotHistograms,
+    PlotLatLon
+    )
+from damast.domains.maritime.data_specification import ColumnName
+
 _log = getLogger(__name__)
 LOG_FORMAT = '%(asctime)-5s [%(filename)s:%(lineno)d] %(message)s'
 

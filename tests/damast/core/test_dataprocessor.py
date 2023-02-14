@@ -7,7 +7,7 @@ from vaex.ml import CycleTransformer
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.datarange import CyclicMinMax, MinMax
-from damast.core.metadata import DataSpecification, DataCategory, MetaData
+from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
 @pytest.fixture()

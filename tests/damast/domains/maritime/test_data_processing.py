@@ -4,7 +4,10 @@ import pytest
 import vaex
 
 from damast.domains.maritime.ais.data_generator import AISTestData
-from damast.domains.maritime.data_processing import process_data, cleanse_and_sanitise
+from damast.domains.maritime.data_processing import (
+    cleanse_and_sanitise,
+    process_data
+    )
 from damast.domains.maritime.data_specification import ColumnName
 
 logging.basicConfig(level=logging.INFO)

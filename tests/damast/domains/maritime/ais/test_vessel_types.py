@@ -1,6 +1,11 @@
 import pytest
 
-from damast.domains.maritime.ais.vessel_types import VesselType, Fishing, PotsAndTraps, DriftingLonglines
+from damast.domains.maritime.ais.vessel_types import (
+    DriftingLonglines,
+    Fishing,
+    PotsAndTraps,
+    VesselType
+    )
 
 
 def test_vessel_types():
