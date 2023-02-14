@@ -119,7 +119,7 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
         @damast.core.input(
             [
                 {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
+                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}},
             ]
         )
         @damast.core.output(
@@ -144,14 +144,29 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
         @damast.core.output(
             [
                 {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_xasdf": {"unit": None, "value_range": MinMax(0.0, 1.0)}}
+                {"latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
+                {"longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
+                {"latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}}
             ]
         )
         def apply_lat_lon_fail(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
             transformer = CycleTransformer(features=["latitude", "longitude"])
             df._dataframe = transformer.fit_transform(df._dataframe)
+            return df
+
+        @damast.core.input(
+            [
+                {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
+                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
+            ]
+        )
+        @damast.core.output(
+            [
+                {"longitude": {"unit": units.deg}}
+            ]
+        )
+        def apply_lat_lon_remove_col(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            df._dataframe.drop(columns=["latitude"], inplace=True)
             return df
 
     cdp = CustomDataProcessor()
@@ -163,3 +178,6 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
 
     with pytest.raises(RuntimeError, match="is not present"):
         cdp.apply_lat_lon_fail(df=adf)
+
+    with pytest.raises(RuntimeError, match="was removed by"):
+        cdp.apply_lat_lon_remove_col(df=adf)

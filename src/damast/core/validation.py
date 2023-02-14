@@ -64,9 +64,17 @@ def output(requirements: List[Dict[str, Any]]):
                                " 'df' to define the AnnotatedDataFrame")
             assert isinstance(kwargs["df"], AnnotatedDataFrame)
 
+            _df = kwargs["df"]
+            input_columns = [c for c in _df.column_names]
+
             adf: AnnotatedDataFrame = func(*args, **kwargs)
             if adf is None:
                 raise RuntimeError("output: decorated function must return 'AnnotatedDataFrame', but was 'None'")
+
+            for c in input_columns:
+                if c not in adf._dataframe.column_names:
+                    raise RuntimeError(f"output: column '{c}' was removed by decorated function."
+                                       f" Only adding of columns is permitted.")
 
             # Ensure that metadata is up to date with the dataframe
             adf.update(expectations=required_output_specs)
