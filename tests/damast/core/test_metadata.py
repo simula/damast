@@ -163,12 +163,9 @@ def test_metadata_read_write(tmp_path):
     md = MetaData(columns=columns,
                   annotations=annotations)
 
-    # metadata_yaml = tmp_path  / "test_metadata-md.yaml"
-    metadata_yaml = "/tmp/test_metadata-md.yaml"
-    md_dict = md.to_dict()
-
-    with open(metadata_yaml, "w") as f:
-        yaml.dump(md_dict, f)
+    metadata_yaml = tmp_path  / "test_metadata-md.yaml"
+    md.save_yaml(filename=metadata_yaml)
+    assert metadata_yaml.exists()
 
     loaded_md = MetaData.load_yaml(filename=metadata_yaml)
     assert md == loaded_md

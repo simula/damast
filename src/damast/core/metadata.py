@@ -357,10 +357,26 @@ class MetaData:
 
     @classmethod
     def load_yaml(cls, filename: Union[str, Path]) -> 'MetaData':
-        with open(filename, "r") as f:
+        yaml_path = Path(filename)
+        if not yaml_path.exists():
+            raise FileNotFoundError(f"{cls.__name__}.load_yaml: file "
+                                    f" '{filename}' does not exist")
+
+        with open(yaml_path, "r") as f:
             md_dict = yaml.load(f, Loader=yaml.SafeLoader)
 
         return cls.from_dict(data=md_dict)
+
+    def save_yaml(self, filename: Union[str, Path]):
+        """
+        Save the current object into a file.
+
+        :param filename: Filename to use for saving
+        """
+        with open(filename, "w") as f:
+            # Do not sort the keys, but keep the entry order the way
+            # the dictionary has been constructed
+            yaml.dump(self.to_dict(), f, sort_keys=False)
 
     def apply(self, df: Union[vaex.DataFrame]):
         assert isinstance(df, vaex.DataFrame)
