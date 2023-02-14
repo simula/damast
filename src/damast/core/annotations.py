@@ -21,13 +21,22 @@ class Annotation:
         History = "history"
         Comment = "comment"
 
+    #: Name of the annotation (see also Key)
     name: str = None
+
+    #: Value of the annotation
     value: Any = None
 
     def __init__(self,
                  name: Union[str, Key],
                  value: Any = None
                  ):
+        """
+        Initialise an Annotation
+
+        :param name: Name / Type of the annotation
+        :param value: Value of the annotation
+        """
         self.name = name
         self.value = value
 
@@ -41,6 +50,12 @@ class Annotation:
             getattr(self, validation_func_name)()
 
     def __eq__(self, other) -> bool:
+        """
+        Override equality operator to consider equality based on properties only.
+
+        :param other: Other object
+        :return: True if objects are consider same, otherwise False
+        """
         if self.__class__ != other.__class__:
             return False
 
@@ -53,19 +68,33 @@ class Annotation:
         return True
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Create a dictionary to represent this object, e.g., to serialise the object.
+
+        :return: dictionary
+        """
         return {self.name: self.value}
 
     @classmethod
-    def from_dict(cls, data=Dict[str, Any]):
+    def from_dict(cls, data: Dict[str, Any]) -> 'Annotation':
+        """
+        Create an instance from a given dictionary.
+
+        :param data:
+        :return: Annotation
+        :raise RuntimeError: Raises if annotation cannot be created from dictionary
+        """
         for k, value in data.items():
             return Annotation(name=k, value=value)
 
         raise RuntimeError("Annotation: failed to identify item")
 
     # region Key Validation Functions
-    def validate_license(self):
+    def validate_license(self) -> None:
         """
         Validation function for the license
+
+        :raise ValueError: Raises if a license is given, but it cannot be validated
         """
         if self.value is None or self.value is '':
             raise ValueError("License cannot be empty")
@@ -73,6 +102,8 @@ class Annotation:
     def validate_comment(self):
         """
         Validation function for the comment
+
+        :raise ValueError: Raises if a comment remains empty.
         """
         if self.value is None or self.value is '':
             raise ValueError("Comment cannot be empty")

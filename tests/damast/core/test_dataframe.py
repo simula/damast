@@ -17,7 +17,7 @@ def metadata():
                                     category=DataCategory.STATIC,
                                     unit=units.m)
 
-    metadata = MetaData(columns=column_spec)
+    metadata = MetaData(columns=[column_spec])
     return metadata
 
 
@@ -70,9 +70,13 @@ def test_01_dataframe_composition():
     assert df.units["fullname-a"] == astropy.units.s
     assert df.units["fullname-b"] == astropy.units.m
 
+    adf = AnnotatedDataFrame(dataframe=df,
+                             metadata=md)
+
     md.columns[0].value_range = MinMax(min=0, max=1)
     with pytest.raises(ValueError, match="lies outside of range"):
         md.apply(df=df)
 
-    adf = AnnotatedDataFrame(dataframe=df,
-                             metadata=md)
+    with pytest.raises(ValueError, match="lies outside of range"):
+        adf = AnnotatedDataFrame(dataframe=df,
+                                 metadata=md)

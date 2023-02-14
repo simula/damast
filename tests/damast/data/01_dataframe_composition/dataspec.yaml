@@ -1,0 +1,27 @@
+annotations:
+  comment: This is a test dataset specification
+  history:
+  - title: setup
+    description: initial setup of the dataset
+    timestamp: '2023-02-13 12:00:00'
+columns:
+- name: fullname-a
+  abbreviation: shortname-a
+  category: static
+  is_optional: false
+  representation_type: int
+  unit: s
+  value_range:
+    MinMax:
+      max: 10
+      min: 0
+- name: fullname-b
+  abbreviation: shortname-b
+  category: dynamic
+  is_optional: false
+  representation_type: float
+  unit: m
+  value_range:
+    CyclicMinMax:
+      max: 10.0
+      min: -10.0

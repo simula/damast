@@ -29,6 +29,20 @@ class DataSpecification:
     """
     Specification of a single column and/or dimension in a dataframe.
     """
+
+    class Key(str, Enum):
+        name = "name"
+        category = "category"
+        is_optional = "is_optional"
+        abbreviation = "abbreviation"
+
+        representation_type = "representation_type"
+        missing_value = "missing_value"
+        precision = "precision"
+        unit = "unit"
+        value_range = "value_range"
+        value_meanings = "value_meanings"
+
     #: Name associated
     name: str = None
     #: Category of data
@@ -112,7 +126,7 @@ class DataSpecification:
     def __repr__(self):
         return f"{self.__class__.__name__}[{self.name},{self.category.__class__.__name__}"
 
-    def _validate(self):
+    def _validate(self) -> None:
         """
         Validate the data specification
 
@@ -136,8 +150,9 @@ class DataSpecification:
         >>> int_type = DataSpecification.resolve_representation_type("int")
         >>> assert int_type == int
 
-        :param str: Name of the type
-        :return: the type object
+        :param type_name: Name of the type
+        :return: Instance of the type object
+        :raise ValueError: Raises if type_name cannot be resolved to a known type (in builtins or vaex)
         """
         exceptions = []
         try:
@@ -158,6 +173,11 @@ class DataSpecification:
                          f" is this a known vaex.dtype -- {exceptions}")
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Create a dictionary to represent MetaData.
+
+        :return: dictionary
+        """
         data = {}
         data["name"] = self.name
         data["category"] = self.category.value
@@ -194,33 +214,34 @@ class DataSpecification:
 
         :param data: data dictionary using primitive data types to represent the specificatoin
         :return: the loaded data specification
+        :raise KeyError: Raise if a required key is missing
         """
-        for key in ["name", "category", "is_optional", "abbreviation"]:
-            if key not in data:
-                raise KeyError(f"{cls.__name__}.from_dict: missing '{key}'")
+        for key in [cls.Key.name, cls.Key.category, cls.Key.is_optional, cls.Key.abbreviation]:
+            if key.value not in data:
+                raise KeyError(f"{cls.__name__}.from_dict: missing '{key.value}'")
 
-        spec = cls(name=data["name"],
-                   category=DataCategory(data["category"]),
-                   is_optional=bool(data["is_optional"]),
-                   abbreviation=data["abbreviation"])
+        spec = cls(name=data[cls.Key.name],
+                   category=DataCategory(data[cls.Key.category]),
+                   is_optional=bool(data[cls.Key.is_optional]),
+                   abbreviation=data[cls.Key.abbreviation])
 
-        if "representation_type" in data:
-            spec.representation_type = cls.resolve_representation_type(data["representation_type"])
-            if "missing_value" in data:
-                spec.missing_value = spec.representation_type(data["missing_value"])
-            if "precision" in data:
-                spec.precision = spec.representation_type(data["precision"])
+        if cls.Key.representation_type.value in data:
+            spec.representation_type = cls.resolve_representation_type(data[cls.Key.representation_type.value])
+            if cls.Key.missing_value.value in data:
+                spec.missing_value = spec.representation_type(data[cls.Key.missing_value.value])
+            if cls.Key.precision.value in data:
+                spec.precision = spec.representation_type(data[cls.Key.precision.value])
         else:
             # Missing representation type, missing value and precisiong will not be loaded
             pass
 
-        if "unit" in data:
-            spec.unit = getattr(units, data["unit"])
+        if cls.Key.unit.value in data:
+            spec.unit = getattr(units, data[cls.Key.unit.value])
 
-        if "value_range" in data:
-            spec.value_range = DataRange.from_dict(data["value_range"], dtype=spec.representation_type)
-            if "value_meanings" in data:
-                spec.value_meanings = data["value_meanings"]
+        if cls.Key.value_range.value in data:
+            spec.value_range = DataRange.from_dict(data[cls.Key.value_range.value], dtype=spec.representation_type)
+            if cls.Key.value_meanings.value in data:
+                spec.value_meanings = data[cls.Key.value_meanings.value]
 
         return spec
 
@@ -248,26 +269,38 @@ class DataSpecification:
                                  f" lies outside of range {self.value_range}")
 
 
-
 class MetaData:
     """
     The representation for metadata associated which can be associated with a single dataset.
     """
 
     class Key(str, Enum):
-        COLUMNS = 'columns'
-        ANNOTATIONS = 'annotations'
+        columns = 'columns'
+        annotations = 'annotations'
 
     #: Specification of columns in the
     columns: List[DataSpecification] = None
 
+    #: Dictionary containing all annotations
     annotations: Dict[str, Annotation] = None
 
     def __init__(self,
                  columns: List[DataSpecification],
                  annotations: Dict[str, Annotation] = None):
+        """
+        Initialise MetaData
+
+        :param columns: (Ordered) list of column specifications
+        :param annotations:  Annotation for this dataframe
+        """
+        assert isinstance(columns, list)
         self.columns = columns
-        self.annotations = annotations
+
+        if annotations is None:
+            self.annotations = {}
+        else:
+            assert isinstance(annotations, dict)
+            self.annotations = annotations
 
     def __eq__(self, other) -> bool:
         if self.__class__ != other.__class__:
@@ -283,34 +316,34 @@ class MetaData:
 
     def to_dict(self) -> Dict[str, Any]:
         data = {}
-        data[self.Key.COLUMNS.value] = []
+        data[self.Key.columns.value] = []
         for ds in self.columns:
-            data[self.Key.COLUMNS.value].append(ds.to_dict())
+            data[self.Key.columns.value].append(ds.to_dict())
 
-        data[self.Key.ANNOTATIONS.value] = {}
+        data[self.Key.annotations.value] = {}
         for key, annotation in self.annotations.items():
             a_dict = annotation.to_dict()
             annotation_key = list(a_dict.keys())[0]
-            if annotation_key in data[self.Key.ANNOTATIONS.value]:
+            if annotation_key in data[self.Key.annotations.value]:
                 raise KeyError(f"{self.__class__.__name__}.to_dict: '{annotation_key}' is already present")
             else:
-                data[self.Key.ANNOTATIONS.value][annotation_key] = a_dict[annotation_key]
+                data[self.Key.annotations.value][annotation_key] = a_dict[annotation_key]
 
         return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MetaData':
-        for key in [cls.Key.ANNOTATIONS.value, cls.Key.COLUMNS.value]:
+        for key in [cls.Key.annotations.value, cls.Key.columns.value]:
             if key not in data:
                 raise KeyError(f"{cls.__name__}.from_dict: Missing {key} key in MetaData")
 
         data_specs = []
-        for data_spec_dict in data[cls.Key.COLUMNS.value]:
+        for data_spec_dict in data[cls.Key.columns.value]:
             data_specification = DataSpecification.from_dict(data=data_spec_dict)
             data_specs.append(data_specification)
 
         annotations = {}
-        for annotation_key, annotation_value in data[cls.Key.ANNOTATIONS.value].items():
+        for annotation_key, annotation_value in data[cls.Key.annotations.value].items():
             annotation = None
             if annotation_key == Annotation.Key.History.value:
                 annotation = History.from_dict(data={annotation_key: annotation_value})
@@ -330,10 +363,8 @@ class MetaData:
         return cls.from_dict(data=md_dict)
 
     def apply(self, df: Union[vaex.DataFrame]):
+        assert isinstance(df, vaex.DataFrame)
+
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
                 column_spec.apply(df=df, column_name=column_spec.name)
-
-
-
-

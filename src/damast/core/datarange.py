@@ -26,7 +26,7 @@ class DataRange(ABC):
         """
         pass
 
-    def __contains__(self, value):
+    def __contains__(self, value) -> bool:
         """
         Check if value lies in the given range via 'in':
 
@@ -35,19 +35,22 @@ class DataRange(ABC):
         >>>    ...
 
         :param value: Value to test
-        :return:
+        :return: True if value is in range, False otherwise
         """
 
         return self.is_in_range(value=value)
 
+    @abstractmethod
     def to_dict(self) -> str:
         """
         Convert object to dictionary to allow plain type serialisation.
+
+        :raise NotImplementedError: If method has not been implemented by a subclass
         """
         raise NotImplementedError(f"{self.__class__.__name__}.to_dict not implemented")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], dtype: Any = None):
+    def from_dict(cls, data: Dict[str, Any], dtype: Any = None) -> 'DataRange':
         """
         Load the data range from a plain type description in a dictionary.
 
@@ -55,30 +58,55 @@ class DataRange(ABC):
 
         :param data: dictionary data
         :param dtype: the value type to use for initialisation,
-        :return:
+        :return: DataRange
+        :raise ValueError: Raises if the requrested range type is not known
         """
-        for klass, data in data.items():
+        for klass, values in data.items():
             try:
                 datarange_m = importlib.import_module("damast.core.datarange")
                 datarange_subclass = getattr(datarange_m, klass)
-                return datarange_subclass.from_data(data=data, dtype=dtype)
+                return datarange_subclass.from_data(data=values, dtype=dtype)
             except ImportError as ie:
                 raise ValueError(f"DataRange.from_dict: unknown range definition '{klass}'")
 
 
 class ListOfValues:
+    """
+    Represent a list of values.
+    """
+
+    #: Values in this list
     values: List[Any] = None
 
-    def __init__(self, values: List[Any]):
+    def __init__(self,
+                 values: List[Any]):
+        """
+        Initialise ListOfValue
+
+        :param values: values that define this list
+        :raise ValueError: Raises if values is not a list.
+        """
         if not isinstance(values, list):
             raise ValueError(f"{self.__class__.__name__}.__init__: required list of values for initialisation")
 
         self.values = values
 
     def is_in_range(self, value) -> bool:
+        """
+        Check if value can be found in the list of values.
+
+        :param value: Value to test
+        :return: True if value is in the list, false otherwise
+        """
         return value in self.values
 
     def __eq__(self, other) -> bool:
+        """
+        Check equality based on the 'values' property
+
+        :param other: Other object
+        :return: True if object are considered equal.
+        """
         if self.__class__ != other.__class__:
             return False
 
@@ -90,7 +118,15 @@ class ListOfValues:
     @classmethod
     def from_data(cls,
                   data: List[Any],
-                  dtype: Any):
+                  dtype: Any) -> 'ListOfValues':
+        """
+        Create an instance from data and given datatype (dtype)
+
+        :param data: The actual list of values
+        :param dtype: Datatype of values in the list
+        :return: instance
+        :raise ValueError: If dtype is given, but does not match the value type in the given list of values
+        """
         if len(data) > 0 and dtype is not None:
             actual_dtype = type(data[0])
             if actual_dtype != dtype:
@@ -99,16 +135,33 @@ class ListOfValues:
         return cls(values=data)
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert to dictionary representing this object
+
+        :return: dictionary
+        """
         return {self.__class__.__name__: self.values}
 
 
 class MinMax(DataRange):
+    """
+    A Minimum-Maximum Range Definition
+    """
+
+    #: Minimum / Lower Bound of range
     min: Any = None
+    #: Maximum / Upper Bound of range
     max: Any = None
 
     def __init__(self,
                  min: Any,
                  max: Any):
+        """
+        Create a MinMax instance
+
+        :param min: lower bound
+        :param max: upper bound
+        """
         super().__init__()
         """
         Initialise the min and max range.
@@ -132,7 +185,7 @@ class MinMax(DataRange):
     @classmethod
     def from_data(cls,
                   data: Dict[str, Any],
-                  dtype: Any):
+                  dtype: Any) -> 'MinMax':
         """
         Load the MinMax range from the given dictionary specification
 
@@ -141,6 +194,7 @@ class MinMax(DataRange):
         :param data: The dictionary to describe the range
         :param dtype: value type that should be used to initialse this min max range
         :return: MinMax instance
+        :raise KeyError: Raises if min/max keys are missing in the dictionary
         """
         for required_key in ["min", "max"]:
             if required_key not in data:
@@ -152,6 +206,12 @@ class MinMax(DataRange):
         return cls(min=data["min"], max=data["max"])
 
     def __eq__(self, other) -> bool:
+        """
+        Check equality based on min/max properties
+
+        :param other: Other object
+        :return: True if objects are considered the same, False otherwise
+        """
         if self.__class__ != other.__class__:
             return False
 
@@ -163,10 +223,20 @@ class MinMax(DataRange):
 
         return True
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """
+        Create representation for this object:
+
+        :return: Representation for this instance
+        """
         return f"{self.__class__.__name__}[{self.min}, {self.max}]"
 
     def to_dict(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Create a dictionary representing this object
+
+        :return: dictionary
+        """
         return {self.__class__.__name__: {"min": self.min, "max": self.max}}
 
 
@@ -174,8 +244,4 @@ class CyclicMinMax(MinMax):
     """
     Define a cyclic min max range
     """
-
-    def __init__(self,
-                 min: Any,
-                 max: Any):
-        super().__init__(min=min, max=max)
+    pass

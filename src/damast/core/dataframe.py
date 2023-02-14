@@ -32,6 +32,9 @@ class AnnotatedDataFrame:
         self._dataframe = dataframe
         self._metadata = metadata
 
+        # Ensure conformity of the metadata with the dataframe
+        self._metadata.apply(df=self._dataframe)
+
     def save(self, *, filename: Union[str, Path]) -> 'AnnotatedDataFrame':
         raise NotImplementedError()
 
@@ -40,4 +43,9 @@ class AnnotatedDataFrame:
         raise NotImplementedError()
 
     def __getattr__(self, item):
+        """
+        Ensure that this object behaves like a vaex.DataFrame
+        :param item:
+        :return:
+        """
         return getattr(self._dataframe, item)
