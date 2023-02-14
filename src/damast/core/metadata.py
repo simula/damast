@@ -25,6 +25,11 @@ class DataCategory(str, Enum):
     STATIC = "static"
 
 
+class Status(str, Enum):
+    OK = "OK"
+    FAIL = "FAIL"
+
+
 class DataSpecification:
     """
     Specification of a single column and/or dimension in a dataframe.
@@ -42,6 +47,28 @@ class DataSpecification:
         unit = "unit"
         value_range = "value_range"
         value_meanings = "value_meanings"
+
+    class Fulfillment:
+        status: Dict['Key', Status]
+
+        def __init__(self):
+            self.status = {}
+
+        def is_met(self) -> bool:
+            for k, v in self.status.items():
+                if v == Status.FAIL:
+                    return False
+            return True
+
+        def __repr__(self):
+            return f"{self.__class__.__name__}[{self.status}]"
+
+    class MissingColumn(Fulfillment):
+        def is_met(self) -> bool:
+            return False
+
+        def __repr__(self) -> str:
+            return f"{self.__class__.__name__}"
 
     #: Name associated
     name: str = None
@@ -90,6 +117,11 @@ class DataSpecification:
         :param precision:
         :param range:
         """
+
+        if name is None:
+            raise ValueError(f"{self.__class__.__name__}.__init__: "
+                             f"name cannot be None")
+
         self.name = name
         if type(category) is str:
             self.category = DataCategory[category]
@@ -132,7 +164,7 @@ class DataSpecification:
 
         :raises ValueError: If the spec is not valid, raises ValueError with details
         """
-        if self.value_range and not self.value_meanings:
+        if self.value_meanings and not self.value_range:
             raise ValueError(f"{self.__class__.__name__}.__init__: "
                              f" value meanings requires value range to be set")
 
@@ -180,9 +212,11 @@ class DataSpecification:
         """
         data = {}
         data["name"] = self.name
-        data["category"] = self.category.value
         data["is_optional"] = self.is_optional
         data["abbreviation"] = self.abbreviation
+
+        if self.category is not None:
+            data["category"] = self.category.value
 
         if self.representation_type is not None:
             data["representation_type"] = self.representation_type.__name__
@@ -216,12 +250,16 @@ class DataSpecification:
         :return: the loaded data specification
         :raise KeyError: Raise if a required key is missing
         """
-        for key in [cls.Key.name, cls.Key.category, cls.Key.is_optional, cls.Key.abbreviation]:
+        for key in [cls.Key.name, cls.Key.is_optional, cls.Key.abbreviation]:
             if key.value not in data:
                 raise KeyError(f"{cls.__name__}.from_dict: missing '{key.value}'")
 
+        data_category = None
+        if cls.Key.category.value in data:
+            data_category = DataCategory(data[cls.Key.category])
+
         spec = cls(name=data[cls.Key.name],
-                   category=DataCategory(data[cls.Key.category]),
+                   category=data_category,
                    is_optional=bool(data[cls.Key.is_optional]),
                    abbreviation=data[cls.Key.abbreviation])
 
@@ -232,7 +270,7 @@ class DataSpecification:
             if cls.Key.precision.value in data:
                 spec.precision = spec.representation_type(data[cls.Key.precision.value])
         else:
-            # Missing representation type, missing value and precisiong will not be loaded
+            # Missing representation type, missing value and precision will not be loaded
             pass
 
         if cls.Key.unit.value in data:
@@ -269,6 +307,39 @@ class DataSpecification:
                                  f" lies outside of range {self.value_range}")
 
 
+class ExpectedDataSpecification(DataSpecification):
+    def get_fulfillment(self, data_spec: DataSpecification) -> DataSpecification.Fulfillment:
+        fulfillment = DataSpecification.Fulfillment()
+
+        for key in [DataSpecification.Key.name,
+                    DataSpecification.Key.category,
+                    DataSpecification.Key.abbreviation,
+                    DataSpecification.Key.unit,
+                    DataSpecification.Key.representation_type]:
+            expected_value = getattr(self, key.value)
+            if expected_value is not None:
+                spec_value = getattr(data_spec, key.name)
+                if spec_value is None:
+                    fulfillment.status[key] = Status.FAIL
+                    continue
+
+                if expected_value != spec_value:
+                    fulfillment.status[key] = Status.FAIL
+                    continue
+
+                fulfillment.status[key] = Status.OK
+
+        if self.precision is not None:
+            if data_spec.precision is None:
+                fulfillment.status[key] = Status.FAIL
+            elif self.precision < data_spec.precision:
+                fulfillment.status[key] = Status.FAIL
+            else:
+                fulfillment.status[key] = Status.OK
+
+        return fulfillment
+
+
 class MetaData:
     """
     The representation for metadata associated which can be associated with a single dataset.
@@ -277,6 +348,31 @@ class MetaData:
     class Key(str, Enum):
         columns = 'columns'
         annotations = 'annotations'
+
+    class Fulfillment:
+        column_fulfillments: Dict[str, DataSpecification.Fulfillment]
+
+        def __init__(self):
+            self.column_fulfillments = {}
+
+        def is_met(self) -> bool:
+            for k, v in self.column_fulfillments.items():
+                if not v.is_met():
+                    return False
+            return True
+
+        def add_fulfillment(self,
+                            column_name: str,
+                            fulfillment: DataSpecification.Fulfillment) -> None:
+
+            assert isinstance(fulfillment, DataSpecification.Fulfillment)
+            self.column_fulfillments[column_name] = fulfillment
+
+        def __repr__(self) -> str:
+            txt = ""
+            for column_name, fulfillment in self.column_fulfillments.items():
+                txt += f"[{column_name}: {fulfillment}]"
+            return txt
 
     #: Specification of columns in the
     columns: List[DataSpecification] = None
@@ -384,3 +480,17 @@ class MetaData:
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
                 column_spec.apply(df=df, column_name=column_spec.name)
+
+    def __contains__(self, column_name):
+        for colum_spec in self.columns:
+            if colum_spec.name == column_name:
+                return True
+        return False
+
+    def __getitem__(self, column_name: str):
+        for column_spec in self.columns:
+            if column_spec.name == column_name:
+                return column_spec
+
+        raise KeyError(f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'")
+
