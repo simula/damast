@@ -1,3 +1,6 @@
+"""
+Module to collect the classes to define meta data
+"""
 import builtins
 from enum import Enum
 from pathlib import Path
@@ -14,7 +17,8 @@ from .datarange import DataRange
 __all__ = [
     "DataCategory",
     "DataSpecification",
-    "MetaData"
+    "MetaData",
+    "Status"
 ]
 
 
@@ -49,7 +53,8 @@ class DataSpecification:
         value_meanings = "value_meanings"
 
     class Fulfillment:
-        status: Dict['Key', Status]
+        # Would use Key here, but the concept for that is not yet ironed out in Python
+        status: Dict[Enum, Status]
 
         def __init__(self):
             self.status = {}
@@ -95,7 +100,7 @@ class DataSpecification:
 
     def __init__(self,
                  name: str,
-                 category: Union[str, DataCategory],
+                 category: Union[str, DataCategory] = None,
                  is_optional: bool = False,
                  abbreviation: str = None,
                  representation_type: Any = None,
@@ -306,9 +311,15 @@ class DataSpecification:
                 raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
                                  f" lies outside of range {self.value_range}")
 
+    def get_fulfillment(self, data_spec: 'DataSpecification') -> 'Fulfillment':
+        """
+        Check the fulfillment of an existing and expected data specification against an available one.
 
-class ExpectedDataSpecification(DataSpecification):
-    def get_fulfillment(self, data_spec: DataSpecification) -> DataSpecification.Fulfillment:
+        The current instance used for calling this method sets the expectations.
+
+        :param data_spec: The available data specification
+        :return: The degree of fulfillment
+        """
         fulfillment = DataSpecification.Fulfillment()
 
         for key in [DataSpecification.Key.name,
@@ -338,6 +349,82 @@ class ExpectedDataSpecification(DataSpecification):
                 fulfillment.status[key] = Status.OK
 
         return fulfillment
+
+    @classmethod
+    def from_requirements(cls, requirements: List[Dict[str, Any]]) -> List['DataSpecification']:
+        """
+        Get the list of DataSpecification from dictionary (keyword argument) based representation.
+
+        >>> DataSpecification.from_requirements(requirements={ "column_name": { "unit": units.m }})
+
+        :param requirements: List of dictionaries describing the data specification
+        :return: List of expectations
+        """
+        required_specs = []
+        for requirement in requirements:
+            for k, v in requirement.items():
+                kwargs = v
+                # consider the key to be the column name
+                kwargs[DataSpecification.Key.name.value] = k
+                if DataSpecification.Key.category.value not in kwargs:
+                    kwargs[DataSpecification.Key.category.value] = None
+
+                required_spec = cls(**kwargs)
+                required_specs.append(required_spec)
+        return required_specs
+
+    def merge(self,
+              other: 'DataSpecification') -> 'DataSpecification':
+
+        if self.name != other.name:
+            raise ValueError(f"{self.__class__.__name__}.merge: cannot merge specs with different name property")
+
+        ds = DataSpecification(name=self.name)
+        for key in self.Key:
+            if key == self.Key.name:
+                continue
+
+            this_value = getattr(self, key.value)
+            other_value = getattr(other, key.value)
+
+            if this_value is None:
+                setattr(ds, key.value, other_value)
+            elif other_value is None:
+                setattr(ds, key.value, this_value)
+            elif this_value != other_value:
+                raise ValueError(
+                    f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
+                    f" on self: '{this_value}' vs. other: '{other}'")
+        return ds
+
+    @classmethod
+    def merge_lists(cls,
+                    a_specs: List['DataSpecification'],
+                    b_specs: List['DataSpecification']) -> List['DataSpecification']:
+
+        result_specs: List['DataSpecification'] = []
+
+        b_column_dict = {x.name: x for x in b_specs}
+        a_columns_names = []
+
+        for a_spec in a_specs:
+            column_name = a_spec.name
+            if column_name in b_column_dict:
+                # Need to check merge
+                b_column_spec = b_column_dict[column_name]
+
+                merged_spec = a_spec.merge(other=b_column_spec)
+                result_specs.append(merged_spec)
+            else:
+                result_specs.append(a_spec)
+
+            a_columns_names.append(a_spec.name)
+
+        for b_spec in b_specs:
+            if b_spec.name not in a_columns_names:
+                result_specs.append(b_spec)
+
+        return result_specs
 
 
 class MetaData:
@@ -493,3 +580,23 @@ class MetaData:
                 return column_spec
 
         raise KeyError(f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'")
+
+    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> 'Fulfillment':
+        """
+        Get the fulfillment of the metadata with represent to the given data specification
+
+        :param expected_specs:
+        :return:
+        """
+        md_fulfillment = MetaData.Fulfillment()
+
+        for expected_spec in expected_specs:
+            if expected_spec.name in self:
+                fulfillment = expected_spec.get_fulfillment(self[expected_spec.name])
+                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
+                                               fulfillment=fulfillment)
+            else:
+                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
+                                               fulfillment=DataSpecification.MissingColumn()
+                                               )
+        return md_fulfillment

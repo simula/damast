@@ -2,12 +2,54 @@ import pandas as pd
 import pytest
 import vaex
 from astropy import units
+from sklearn.base import TransformerMixin
 from vaex.ml import CycleTransformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
+
+
+class TransformerA(TransformerMixin):
+    @damast.core.input([
+        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
+        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
+    ])
+    @damast.core.output([
+        {"latitude_x": {"unit": units.deg}},
+        {"latitude_y": {"unit": units.deg}}
+    ])
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+class TransformerB(TransformerMixin):
+    @damast.core.input([
+        {"latitude_x": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
+        {"latitude_y": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
+    ])
+    @damast.core.output([
+        {"delta_longitude": {"unit": units.deg}},
+        {"delta_latitude": {"unit": units.deg}}
+    ])
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+class TransformerC(TransformerMixin):
+    @damast.core.input([
+        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
+        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}},
+        {"delta_longitude": {"unit": units.deg}},
+        {"delta_latitude": {"unit": units.deg}}
+    ])
+    @damast.core.output([
+        {"label": {}},
+    ])
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
 
 
 @pytest.fixture()
@@ -181,3 +223,49 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
 
     with pytest.raises(RuntimeError, match="was removed by"):
         cdp.apply_lat_lon_remove_col(df=adf)
+
+
+def test_access_decorator_info():
+    input_specs = [
+        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
+        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
+    ]
+    output_specs = [
+        {"longitude": {"unit": units.deg}}
+    ]
+
+    class CustomDataProcessor:
+        @damast.core.input(input_specs)
+        @damast.core.output(output_specs)
+        def apply_lat_lon_remove_col(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_INPUT_SPECS) == \
+           DataSpecification.from_requirements(requirements=input_specs)
+
+    assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_OUTPUT_SPECS) == \
+           DataSpecification.from_requirements(requirements=output_specs)
+
+
+def test_data_processing_valid_pipeline():
+    pipeline = DataProcessingPipeline([
+        ("transform-a", TransformerA()),
+        ("transform-b", TransformerB()),
+        ("transform-c", TransformerC()),
+    ])
+    assert pipeline.output_specs is not None
+    output_columns = [x.name for x in pipeline.output_specs]
+    for column in ["longitude", "latitude",
+                   "latitude_x", "latitude_y",
+                   "delta_longitude", "delta_latitude",
+                   "label"]:
+        assert column in output_columns
+
+
+def test_data_processing_invalid_pipeline():
+    with pytest.raises(RuntimeError, match="insufficient output declared"):
+        DataProcessingPipeline([
+            ("transform-a", TransformerA()),
+            ("transform-c", TransformerC()),
+            ("transform-b", TransformerB()),
+        ])

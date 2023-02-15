@@ -3,9 +3,16 @@
 This namespace contains the core modules that are required to define metada.
 """
 
-from .validation import input, output
+from .dataprocessing import (
+    DECORATED_INPUT_SPECS,
+    DECORATED_OUTPUT_SPECS,
+    input,
+    output
+    )
 
 __all__ = [
     "input",
-    "output"
+    "output",
+    "DECORATED_INPUT_SPECS",
+    "DECORATED_OUTPUT_SPECS"
 ]
