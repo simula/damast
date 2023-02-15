@@ -21,7 +21,7 @@ def test_pipeline(tmp_path):
         ("min_max_filter", MinMaxFilter(min=1, max=3, column_name="id"))
     ])
 
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(RuntimeError) as _:
         pipeline.get_stats()
 
     pipeline.fit_transform(df)

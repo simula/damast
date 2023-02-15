@@ -6,8 +6,7 @@ Module which collects transformers that change the order of data
 from typing import Any, Dict, List
 
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
+from sklearn.base import TransformerMixin
 
 __all__ = [
     "BaseSorter",
@@ -81,6 +80,6 @@ class GroupBy(BaseSorter):
                                 group_keys=self.group_keys)
 
         df = grouped_df.apply(lambda x, self=self, y=y, fit_params=fit_params:
-                                  self.transformer.fit_transform(x, y=y, **fit_params))
+                              self.transformer.fit_transform(x, y=y, **fit_params))
 
         return df

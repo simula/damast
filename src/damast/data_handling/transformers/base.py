@@ -17,6 +17,9 @@ _log.setLevel(DEBUG)
 
 
 class BaseTransformer(BaseEstimator, TransformerMixin):
+    """
+    Base-transformer class. Keeps track of input and output columns.
+    """
     # Optional internal pipeline that might be used for the transformation
     _pipeline: Pipeline = None
 

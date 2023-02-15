@@ -17,16 +17,16 @@ from sklearn.preprocessing import Binarizer
 from damast.data_handling.transformers.augmenters import BaseAugmenter
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
-    )
+)
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
-from damast.math.spatial import (
+from damast.domains.maritime.math.spatial import (
     EARTH_RADIUS,
     angle_sat_c,
     chord_distance,
     distance_sat_vessel,
     great_circle_distance
-    )
+)
 
 __all__ = [
     "AddCombinedLabel",
@@ -90,11 +90,11 @@ class AddVesselType(BaseAugmenter):
         """
         Add vessel type to the `pandas.DataFrame`.
 
-        If the vessel type is not in look-up table, 
+        If the vessel type is not in look-up table,
 
         :param df: Input dataframe
 
-        :returns: Dataframe with vessel-type added as a column. 
+        :returns: Dataframe with vessel-type added as a column.
         """
         df0 = super().transform(df)
         # Merge the existing dataset and the known labels (per MMSI)
@@ -131,11 +131,10 @@ class AddVesselType(BaseAugmenter):
 
 
 class AddFishingVesselType(BaseAugmenter):
-    """
-    Add a column `fishing_type` to the `pandas.DataFrame'.
+    """Add a column `fishing_type` to the `pandas.DataFrame`.
 
-    TODO: this should be just a merge into vessel_type - where fishing_type is
-    detailed by the information from global fishing watch
+    ..todo:
+        Remove this as it is duplicate of `src/damast/data_handling/transformers/augmenters.py`
     """
     mmsi_name: str = None
     column_name: str = None
@@ -209,9 +208,9 @@ class AddDistanceClosestAnchorage(BaseAugmenter):
     Compute the distance to the closest anchorage.
 
     Using `DASK <https://www.dask.org/>`_ (`dd`)
-    The dataset is split in 32 partitions, one for each core
-    Then each core compute for each message the distance with all
-    the anchorage present in the `anchorage.csv` file using the great circle distance.
+    The dataset is split into suitable partitions. Dask launches multiple processes to compute
+    the distance  with all the anchorage present in the `anchorage.csv` file using the great circle distance.
+    The partitions are worked on in parallel. At the end they are gathered on the initial process.
     """
 
     # Read anchorages file
@@ -277,9 +276,6 @@ class AddDistanceClosestAnchorage(BaseAugmenter):
         # Performs global registration, see
         # https://www.coiled.io/blog/how-to-check-the-progress-of-dask-computations
         pbar.register()
-        mem_usage_in_bytes = df.memory_usage().sum()
-        partition_size_in_mb = 100.0
-        partitions = min(math.ceil(mem_usage_in_bytes / (partition_size_in_mb * 1024 * 1024)), 32)
 
         def compute_distance(x):
             """
@@ -341,7 +337,8 @@ class AddDistanceClosestSatellite(BaseAugmenter):
         """
 
         :param satellites: list of satellite (names), which shall be considered for this computation
-        :param satellite_tle_filename: The two-line element set file, for the satellite positions, see also https://en.wikipedia.org/wiki/Two-line_element_set
+        :param satellite_tle_filename: The two-line element set file, for the satellite positions,
+            see also https://en.wikipedia.org/wiki/Two-line_element_set
         :param column_name: Name of the resulting column representing the distance to the closest satellite
         :param timestamp_name: Name of the column containing the timestamp data
         """
@@ -572,7 +569,8 @@ class AddMissingAISStatus(BaseAugmenter):
         df[self.column_name] = df[self.column_name].fillna(AISNavigationalStatus.Undefined)
 
         # Remove non continuous status
-        # df.loc[df[self.column_name] != df[self.column_name].shift(self.window_size), self.column_name] = AISNavigationalStatus.Undefined
+        # df.loc[df[self.column_name] != df[self.column_name].shift(
+        #     self.window_size), self.column_name] = AISNavigationalStatus.Undefined
 
         # Set reserved and regional used flags to -1
         # log(f"[DATASET_CREATION] Replace regional use and future flags: (AIS Navigational) Status >"

@@ -1,9 +1,7 @@
 import datetime
-from pathlib import Path
 
 import astropy.units as units
 import pytest
-import vaex
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
@@ -37,7 +35,7 @@ from damast.core.metadata import DataCategory, DataSpecification, MetaData
                               "lon", float, None, units.deg, 0.01,
                               CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
                               False]
-                         ])
+])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
                             missing_value, unit, precision,
@@ -83,12 +81,11 @@ def test_data_specification(name, category, is_optional,
                              ["test-data-spec", DataCategory.DYNAMIC, False,
                               "tds", float, -1, units.m, 0.01,
                               MinMax(0.0, 100.0), {0.0: "minimum", 100.0: "maximum"}]
-                         ])
+])
 def test_data_specification_read_write(name, category, is_optional,
                                        abbreviation, representation_type,
                                        missing_value, unit, precision,
-                                       value_range, value_meanings
-                                       , tmp_path):
+                                       value_range, value_meanings, tmp_path):
     ds = DataSpecification(name=name,
                            category=category,
                            is_optional=is_optional,
@@ -159,11 +156,9 @@ def test_metadata_read_write(tmp_path):
     md = MetaData(columns=columns,
                   annotations=annotations)
 
-    metadata_yaml = tmp_path  / "test_metadata-md.yaml"
+    metadata_yaml = tmp_path / "test_metadata-md.yaml"
     md.save_yaml(filename=metadata_yaml)
     assert metadata_yaml.exists()
 
     loaded_md = MetaData.load_yaml(filename=metadata_yaml)
     assert md == loaded_md
-
-

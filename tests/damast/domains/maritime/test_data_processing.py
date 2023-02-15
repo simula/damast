@@ -7,7 +7,7 @@ from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import (
     cleanse_and_sanitise,
     process_data
-    )
+)
 from damast.domains.maritime.data_specification import ColumnName
 
 logging.basicConfig(level=logging.INFO)
@@ -23,11 +23,11 @@ def default_config(workdir):
     params = {
         "workdir": workdir,
         "outputs": {"processed":
-            {
-                "dir": "outputs/data_processing",
-                "h5_key": "data"
-            }
-        },
+                    {
+                        "dir": "outputs/data_processing",
+                        "h5_key": "data"
+                    }
+                    },
         "month": 1,
         "inputs": {
             "vessel_types": '',
@@ -82,7 +82,7 @@ def test_data_processing_with_plain_vaex(workdir,
                                          fishing_vessel_types_data,
                                          vessel_types_data,
                                          anchorages_data):
-    df = vaex.from_pandas(ais_test_data.dataframe)
+    _ = vaex.from_pandas(ais_test_data.dataframe)
 
 
 def test_data_processing(default_config, workdir,

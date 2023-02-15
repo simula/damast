@@ -10,7 +10,7 @@ from damast.data_handling.transformers.filters import (
     AreaFilter,
     DuplicateNeighboursFilter,
     MMSIFilter
-    )
+)
 from damast.domains.maritime.data_specification import MMSI, ColumnName
 
 
@@ -115,4 +115,3 @@ def test_mmsi_filter(mmsi_dataframe):
     number_of_unique_timestamps = np.unique(filtered_df[ColumnName.TIMESTAMP].values).shape[0]
 
     assert number_of_unique_timestamps == number_of_rows
-

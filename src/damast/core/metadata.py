@@ -493,4 +493,3 @@ class MetaData:
                 return column_spec
 
         raise KeyError(f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'")
-

@@ -7,7 +7,8 @@ class AISNavigationalStatus(IntEnum):
     The AIS Navigational Status:
 
     :see https://help.marinetraffic.com/hc/en-us/articles/203990998-What-is-the-significance-of-the-AIS-Navigational-Status-Values-
-    """
+
+    """  # noqa: E501
     UnderWayUsingEngine = 0
     AtAnchor = 1
     NotUnderCommand = 2
@@ -28,4 +29,3 @@ class AISNavigationalStatus(IntEnum):
     @classmethod
     def get_values(cls) -> List[int]:
         return [e.value for e in AISNavigationalStatus]
-

@@ -1,6 +1,6 @@
 import numpy as np
 import numpy.typing as npt
-
+import warnings
 __all__ = [
     "N_sigma",
     "N_sigma_limited"

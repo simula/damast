@@ -26,7 +26,7 @@ html:
   use_issues_button: true
   use_repository_button: true
 
-exclude_patterns: [".tox", ".pytest_cache"]
+exclude_patterns: [".tox", ".pytest_cache", "src/damast/domains/maritime/README.md"]
 
 
 sphinx:

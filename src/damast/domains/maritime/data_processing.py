@@ -5,7 +5,7 @@ Data Processing Module
 1. Read all files from `data/<month>/*.zip`.
 2. Concatenates the files into a single dataframe.
 3. Perform feature extraction
-  
+
   1. Filter areas (`lon_min`/`lon_max`, `lat_min`/`lat_max`).
   2. Filter vessels by MMSI range.
   3. Add labels: `"vessel_type"` and `"fishing_type"` (`data/fishing-vessels-v2.csv`).
@@ -30,9 +30,8 @@ An example of input data is shown below
 # -----------------------------------------------------------
 
 import argparse
-import datetime
-import functools
 import glob
+import time
 from logging import Formatter, StreamHandler, basicConfig, getLogger
 from pathlib import Path
 from typing import Any, Dict, List
@@ -48,17 +47,17 @@ from damast.data_handling.transformers.augmenters import (
     AddFishingVesselType,
     AddLocalMessageIndex,
     AddVesselType
-    )
+)
 from damast.data_handling.transformers.filters import (
     AreaFilter,
     DuplicateNeighboursFilter,
     MMSIFilter
-    )
+)
 from damast.data_handling.transformers.sorters import GenericSorter
 from damast.data_handling.transformers.visualisers import (
     PlotHistograms,
     PlotLatLon
-    )
+)
 from damast.domains.maritime.data_specification import ColumnName
 
 _log = getLogger(__name__)
@@ -200,7 +199,7 @@ def process_files(params: Dict[str, Any]) -> None:
 
 
     .. highlight:: python
-    .. code-block:: python 
+    .. code-block:: python
 
       params = {"workdir": "path_to_directory_of_execution",
                 "inputs": {"data":{"dir": "path_to_input_data"}},
@@ -238,7 +237,6 @@ def process_files(params: Dict[str, Any]) -> None:
 
     df = cleanse_and_sanitise(params=params,
                               df=df)
-
 
     process_data(params=params,
                  df=df,
@@ -308,56 +306,56 @@ def process_data(params: Dict[str, Any],
 
 
 if __name__ == "__main__":
-    with elapsed_time() as timer:
 
-        default_params_yaml = Path(__file__).parent.parent / "params.yaml"
+    default_params_yaml = Path(__file__).parent.parent / "params.yaml"
 
-        # Management of arguments and options
-        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    # Management of arguments and options
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-        parser.add_argument("--workdir", default=str(Path(".").resolve()))
-        parser.add_argument("-p", "--parameters", default=str(default_params_yaml), type=str)
-        parser.add_argument("-m", "--month", dest="month", default=1, help="month to process", type=int,
-                            choices=range(1, 13))
-        parser.add_argument("-F", "--filter_area", dest="filter_area", action="store_true", default=False,
-                            help="Filter by area restricted through --lat_XXX options")
-        parser.add_argument("--filter_mmsi", dest="filter_MMSI", action="store_true", default=False,
-                            help="Filter by MMSI range as specified in parameters")
-        parser.add_argument("--lat_min", dest="lat_min", default=-90.0, help="Latitude minimal", type=float)
-        parser.add_argument("--lat_max", dest="lat_max", default=90.0, help="Latitude maximal", type=float)
-        parser.add_argument("--lon_min", dest="lon_min", default=-180.0, help="Longitude minimal", type=float)
-        parser.add_argument("--lon_max", dest="lon_max", default=180.0, help="Longitude maximal", type=float)
-        parser.add_argument("-A", "--add_distance_closest_anchorage", dest="add_distance_closest_anchorage",
-                            action="store_true", default=False,
-                            help="Add a new columns that contain the distance to the closest anchorage")
-        parser.add_argument("-S", "--add_distance_satellite", dest="add_distance_satellite",
-                            action="store_true", default=False,
-                            help="Add a new columns that contain the distance to the closest anchorage")
-        parser.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
-        parser.add_argument("--logfile", dest="logfile", type=str, default=None,
-                            help="Set file for saving log (default prints to terminal)")
-        args = parser.parse_args()
+    parser.add_argument("--workdir", default=str(Path(".").resolve()))
+    parser.add_argument("-p", "--parameters", default=str(default_params_yaml), type=str)
+    parser.add_argument("-m", "--month", dest="month", default=1, help="month to process", type=int,
+                        choices=range(1, 13))
+    parser.add_argument("-F", "--filter_area", dest="filter_area", action="store_true", default=False,
+                        help="Filter by area restricted through --lat_XXX options")
+    parser.add_argument("--filter_mmsi", dest="filter_MMSI", action="store_true", default=False,
+                        help="Filter by MMSI range as specified in parameters")
+    parser.add_argument("--lat_min", dest="lat_min", default=-90.0, help="Latitude minimal", type=float)
+    parser.add_argument("--lat_max", dest="lat_max", default=90.0, help="Latitude maximal", type=float)
+    parser.add_argument("--lon_min", dest="lon_min", default=-180.0, help="Longitude minimal", type=float)
+    parser.add_argument("--lon_max", dest="lon_max", default=180.0, help="Longitude maximal", type=float)
+    parser.add_argument("-A", "--add_distance_closest_anchorage", dest="add_distance_closest_anchorage",
+                        action="store_true", default=False,
+                        help="Add a new columns that contain the distance to the closest anchorage")
+    parser.add_argument("-S", "--add_distance_satellite", dest="add_distance_satellite",
+                        action="store_true", default=False,
+                        help="Add a new columns that contain the distance to the closest anchorage")
+    parser.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
+    parser.add_argument("--logfile", dest="logfile", type=str, default=None,
+                        help="Set file for saving log (default prints to terminal)")
+    args = parser.parse_args()
 
-        if args.logfile is None:
-            basicConfig(format=LOG_FORMAT)
-        else:
-            outfile = open(args.logfile, "w")
-            ch = StreamHandler(outfile)
-            ch.setFormatter(Formatter(LOG_FORMAT, datefmt='%H:%M:%S'))
-            _log.addHandler(ch)
+    if args.logfile is None:
+        basicConfig(format=LOG_FORMAT)
+    else:
+        outfile = open(args.logfile, "w")
+        ch = StreamHandler(outfile)
+        ch.setFormatter(Formatter(LOG_FORMAT, datefmt='%H:%M:%S'))
+        _log.addHandler(ch)
 
-        _log.setLevel(args.loglevel)
+    _log.setLevel(args.loglevel)
+    start = time.perf_counter()
+    # Load parameters
+    params_yaml: Path = Path(args.parameters)
+    yaml_file = open(f"{params_yaml}")
+    params: ParamsType = yaml.load(yaml_file, Loader=yaml.FullLoader)["data_processing"]
+    # Set bas path
+    params["workdir"]: Path = Path(args.workdir)
 
-        # Load parameters
-        params_yaml: Path = Path(args.parameters)
-        yaml_file = open(f"{params_yaml}")
-        params: ParamsType = yaml.load(yaml_file, Loader=yaml.FullLoader)["data_processing"]
-        # Set bas path
-        params["workdir"]: Path = Path(args.workdir)
+    options = vars(args)
+    params.update(options)
 
-        options = vars(args)
-        params.update(options)
-
-        _log.info("[START]")
-        process_files(params)
-        _log.info(f"[END] Execution Time = {timer():.0f}s")
+    _log.info("[START]")
+    process_files(params)
+    end = time.perf_counter()
+    _log.info(f"[END] Execution Time = {end-start:.0f}s")

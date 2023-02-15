@@ -1,4 +1,4 @@
 
 
-def Interface:
+def Interface():
     pass

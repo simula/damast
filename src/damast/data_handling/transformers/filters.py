@@ -20,8 +20,6 @@ class MyTransformer:
 
 from typing import List
 
-import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 
 from damast.domains.maritime.data_specification import MMSI, ColumnName

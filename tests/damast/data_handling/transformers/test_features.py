@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 
 from damast.data_handling.transformers.features import DeltaTime
-from damast.data_handling.transformers.sorters import GroupBy
 
 
 def test_delta_time():
@@ -24,5 +23,3 @@ def test_delta_time():
     assert np.isnan(transformed_df.loc[0, "delta_time"])
     assert transformed_df.loc[1, "delta_time"] == 2.0
     assert transformed_df.loc[2, "delta_time"] == -1.0
-
-

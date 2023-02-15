@@ -7,7 +7,7 @@
 
 import numpy as np
 import numpy.typing as npt
-from numba import jit, njit
+from numba import njit
 
 __all__ = ["angle_sat_c",
            "great_circle_distance",

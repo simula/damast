@@ -11,13 +11,13 @@ from pyais.ais_types import AISType
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
-    )
+)
 from damast.domains.maritime.data_specification import (
     MMSI,
     ColumnName,
     CourseOverGround,
     SpeedOverGround
-    )
+)
 
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
@@ -162,8 +162,8 @@ class AISTestData:
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
-                            description="A simple generator for ais data that can be used as input to " \
-                                        "data processing stage")
+                            description="A simple generator for ais data that can be used as input to "
+                                        + "data processing stage")
 
     parser.add_argument("-t", "--number-of-trajectories", default=100, type=int)
     parser.add_argument("-o", "--output", default="test-data.csv", type=str)
