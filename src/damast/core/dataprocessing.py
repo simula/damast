@@ -8,18 +8,37 @@ from typing import Any, Dict, List, Tuple
 from sklearn.base import TransformerMixin
 
 from .dataframe import AnnotatedDataFrame
+from .formatting import DEFAULT_INDENT
 from .metadata import DataSpecification, MetaData
 
 __all__ = [
     "input",
     "output",
+    "describe",
     "DataProcessingPipeline",
     "DECORATED_INPUT_SPECS",
     "DECORATED_OUTPUT_SPECS"
 ]
 
+DECORATED_DESCRIPTION = '_damast_description'
 DECORATED_INPUT_SPECS = '_damast_input_specs'
 DECORATED_OUTPUT_SPECS = '_damast_output_specs'
+
+
+def describe(description: str):
+    """
+    Specify the description for the transformation for the decorated function.
+
+    The decorated function must return 'AnnotatedDataFrame'.
+
+    :param description: description of the action
+    """
+
+    def decorator(func):
+        setattr(func, DECORATED_DESCRIPTION, description)
+        return func
+
+    return decorator
 
 
 def input(requirements: List[Dict[str, Any]]):
@@ -155,3 +174,27 @@ class DataProcessingPipeline:
             current_specs = DataSpecification.merge_lists(current_specs, output_specs)
 
         return {"steps": steps, "output_spec": current_specs}
+
+    def to_str(self, indent_level: int = 0) -> str:
+        hspace = DEFAULT_INDENT * indent_level
+
+        data = hspace + self.__class__.__name__ + "\n"
+        for step in self.steps:
+            name, transformer = step
+            data += hspace + DEFAULT_INDENT + name + ":\n"
+            description = getattr(transformer.transform, DECORATED_DESCRIPTION)
+            if description is not None:
+                data += hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
+
+            data += hspace + DEFAULT_INDENT * 2 + "input:\n"
+            input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
+            data += DataSpecification.to_str(input_specs, indent_level=indent_level + 4)
+
+            data += hspace + DEFAULT_INDENT * 2 + "output:\n"
+            output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
+            data += DataSpecification.to_str(output_specs, indent_level=indent_level + 4)
+
+        return data
+
+    def __repr__(self) -> str:
+        return self.to_str()

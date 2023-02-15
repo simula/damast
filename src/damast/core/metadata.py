@@ -13,6 +13,7 @@ from astropy import units
 
 from .annotations import Annotation, History
 from .datarange import DataRange
+from .formatting import DEFAULT_INDENT
 
 __all__ = [
     "DataCategory",
@@ -66,7 +67,8 @@ class DataSpecification:
             return True
 
         def __repr__(self):
-            return f"{self.__class__.__name__}[{self.status}]"
+            status = {k.value: v.value for k, v in self.status.items()}
+            return f"{self.__class__.__name__}[{status}]"
 
     class MissingColumn(Fulfillment):
         def is_met(self) -> bool:
@@ -161,7 +163,7 @@ class DataSpecification:
         return True
 
     def __repr__(self):
-        return f"{self.__class__.__name__}[{self.name},{self.category.__class__.__name__}"
+        return f"{self.__class__.__name__}[{self.name}, {self.category.__class__.__name__}]"
 
     def _validate(self) -> None:
         """
@@ -287,6 +289,28 @@ class DataSpecification:
                 spec.value_meanings = data[cls.Key.value_meanings.value]
 
         return spec
+
+    @classmethod
+    def to_str(cls, specs: List['DataSpecification'],
+               indent_level=0):
+
+        """
+        Generate string representation for list of specs
+
+        :param specs: List of data specifications
+        :param indent_level: indentation levels
+        :param spaces: number of space for one identation leve
+        :return:
+        """
+        hspace = DEFAULT_INDENT * indent_level
+
+        data = ""
+        for spec in specs:
+            data += hspace + spec.name
+            if spec.unit is not None:
+                data += "[unit: " + spec.unit.to_string() + "]"
+            data += "\n"
+        return data
 
     def apply(self,
               df: vaex.DataFrame,

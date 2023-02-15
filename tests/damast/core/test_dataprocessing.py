@@ -13,6 +13,7 @@ from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
 class TransformerA(TransformerMixin):
+    @damast.core.describe("latitude x/y generation")
     @damast.core.input([
         {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
         {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
@@ -26,6 +27,7 @@ class TransformerA(TransformerMixin):
 
 
 class TransformerB(TransformerMixin):
+    @damast.core.describe("delta computation")
     @damast.core.input([
         {"latitude_x": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
         {"latitude_y": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
@@ -39,6 +41,7 @@ class TransformerB(TransformerMixin):
 
 
 class TransformerC(TransformerMixin):
+    @damast.core.describe("label generation")
     @damast.core.input([
         {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
         {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}},
@@ -260,6 +263,11 @@ def test_data_processing_valid_pipeline():
                    "delta_longitude", "delta_latitude",
                    "label"]:
         assert column in output_columns
+
+    representation = pipeline.to_str(indent_level=0)
+    print("\n")
+    print(representation)
+    assert representation != ""
 
 
 def test_data_processing_invalid_pipeline():
