@@ -10,7 +10,7 @@ from numpy import dtype, float_, ndarray
 
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.domains.maritime.data_specification import ColumnName
-from damast.domains.maritime.math.spatial import great_circle_distance
+from damast.domains.maritime.math.spatial import bearing, great_circle_distance
 
 __all__ = [
     "Angle",
@@ -70,7 +70,7 @@ class Feature(str, Enum):
                 f: FeatureExtractor = Feature.extractor_by_name(name=x)
                 required_input_columns.extend(f.input_columns)
                 feature_extractors.append(f)
-            except KeyError as e:
+            except KeyError:
                 columns_to_use.append(x)
 
         required_input_columns = list(set(required_input_columns))
@@ -247,8 +247,8 @@ class SecondOfDay(ReformatTimestamp):
         """
         value = pd.to_datetime(row[self.timestamp_column].astype(np.int), unit="s")
         new_value = value.dt.hour * 60 + \
-                    value.dt.minute * 60 + \
-                    value.dt.second
+            value.dt.minute * 60 + \
+            value.dt.second
         return new_value
 
     def transform(self,

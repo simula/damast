@@ -70,6 +70,7 @@ def test_01_dataframe_composition():
     assert df.units["fullname-a"] == astropy.units.s
     assert df.units["fullname-b"] == astropy.units.m
 
+    # FIXME: Should `adf` be unused?
     adf = AnnotatedDataFrame(dataframe=df,
                              metadata=md)
 
@@ -78,5 +79,4 @@ def test_01_dataframe_composition():
         md.apply(df=df)
 
     with pytest.raises(ValueError, match="lies outside of range"):
-        adf = AnnotatedDataFrame(dataframe=df,
-                                 metadata=md)
+        AnnotatedDataFrame(dataframe=df, metadata=md)

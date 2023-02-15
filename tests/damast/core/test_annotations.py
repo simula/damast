@@ -4,10 +4,10 @@ from damast.core.annotations import Annotation
 
 
 def test_annotation():
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError) as _:
         Annotation(name=Annotation.Key.Comment)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError) as _:
         Annotation(name=Annotation.Key.License)
 
     a = Annotation(name=Annotation.Key.Comment,
@@ -15,5 +15,3 @@ def test_annotation():
 
     assert a.name == Annotation.Key.Comment
     assert a.value == "test-comment"
-
-

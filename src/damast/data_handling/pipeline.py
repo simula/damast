@@ -14,7 +14,7 @@ class Pipeline(sklearn.pipeline.Pipeline):
         for step in self.steps:
             name, transformer = step
             if hasattr(transformer, "get_stats"):
-                stats.append( (name, transformer.get_stats()) )
+                stats.append((name, transformer.get_stats()))
         return stats
 
     def save_stats(self, filename: Union[str, Path]):

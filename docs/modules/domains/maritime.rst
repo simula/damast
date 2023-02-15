@@ -23,6 +23,3 @@ Transformers
 
 .. automodule:: damast.domains.maritime.transformers.augmenters
     :members:
-
-.. automodule:: damast.domains.maritime.transformers.normalisation
-    :members:

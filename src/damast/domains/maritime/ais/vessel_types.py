@@ -3,7 +3,7 @@ Module to encode the class hierarchy of the global fishing watch
 """
 
 import re
-from typing import ClassVar, List, Union
+from typing import List, Union
 
 
 class VesselType:
@@ -12,7 +12,6 @@ class VesselType:
     """
 
     _all_types: List['VesselType'] = None
-
 
     @classmethod
     def typename(cls) -> str:

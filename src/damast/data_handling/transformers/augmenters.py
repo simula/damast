@@ -2,7 +2,6 @@
 """
 Module which collects transformers that add / augment the existing data
 """
-import math
 import re
 from pathlib import Path
 from typing import Dict, List, Union
@@ -18,7 +17,7 @@ from sklearn.preprocessing import Binarizer
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
-    )
+)
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import (
@@ -27,7 +26,7 @@ from damast.domains.maritime.math.spatial import (
     chord_distance,
     distance_sat_vessel,
     great_circle_distance
-    )
+)
 
 __all__ = [
     "AddCombinedLabel",
@@ -97,11 +96,11 @@ class AddVesselType(BaseAugmenter):
         """
         Add vessel type to the `pandas.DataFrame`.
 
-        If the vessel type is not in look-up table, 
+        If the vessel type is not in look-up table,
 
         :param df: Input dataframe
 
-        :returns: Dataframe with vessel-type added as a column. 
+        :returns: Dataframe with vessel-type added as a column.
         """
         df0 = super().transform(df)
         # Merge the existing dataset and the known labels (per MMSI)
@@ -138,11 +137,19 @@ class AddVesselType(BaseAugmenter):
 
 
 class AddFishingVesselType(BaseAugmenter):
-    """
-    Add a column `fishing_type` to the `pandas.DataFrame'.
+    """Add a column `fishing_type` to the `pandas.DataFrame`.
 
-    TODO: this should be just a merge into vessel_type - where fishing_type is
-    detailed by the information from global fishing watch
+    Stores data from the Global Fishing Watch in transformer, making it possible to look up this for new entries.
+
+    :param vessel_type_data: The MMSI->vessel_type map, either as Dataframe or as path to a file
+    :param mmsi_in_name: Name of column with MMSI in `vessel_type_data`.
+    :param mmsi_out_name: Name of column with MMSI Dataframe that will be augmented.
+    :param column_name: Name of new column in augmented Dataframe.
+    :param gfw_vessel_type_name: Name of `vessel_type` column in Global Fishing Watch data.
+
+    .. todo:
+        This should be just a merge into vessel_type - where fishing_type is detailed by
+        the information from global fishing watch.
     """
     mmsi_name: str = None
     column_name: str = None
@@ -284,9 +291,6 @@ class AddDistanceClosestAnchorage(BaseAugmenter):
         # Performs global registration, see
         # https://www.coiled.io/blog/how-to-check-the-progress-of-dask-computations
         pbar.register()
-        mem_usage_in_bytes = df.memory_usage().sum()
-        partition_size_in_mb = 100.0
-        partitions = min(math.ceil(mem_usage_in_bytes / (partition_size_in_mb * 1024 * 1024)), 32)
 
         def compute_distance(x):
             """
@@ -348,7 +352,8 @@ class AddDistanceClosestSatellite(BaseAugmenter):
         """
 
         :param satellites: list of satellite (names), which shall be considered for this computation
-        :param satellite_tle_filename: The two-line element set file, for the satellite positions, see also https://en.wikipedia.org/wiki/Two-line_element_set
+        :param satellite_tle_filename: The two-line element set file, for the satellite positions, see
+            also https://en.wikipedia.org/wiki/Two-line_element_set
         :param column_name: Name of the resulting column representing the distance to the closest satellite
         :param timestamp_name: Name of the column containing the timestamp data
         """
@@ -578,14 +583,15 @@ class AddMissingAISStatus(BaseAugmenter):
         # Fill remaining NaN by {AISNavigationalStatus.Undefined}, i.e. (AIS Navigational) Status 'undefined'")
         df[self.column_name] = df[self.column_name].fillna(AISNavigationalStatus.Undefined)
 
-        # Remove non continuous status
-        # df.loc[df[self.column_name] != df[self.column_name].shift(self.window_size), self.column_name] = AISNavigationalStatus.Undefined
+        # # Remove non continuous status
+        # df.loc[df[self.column_name] != df[self.column_name].shift(
+        #     self.window_size), self.column_name] = AISNavigationalStatus.Undefined
 
-        # Set reserved and regional used flags to -1
+        # # Set reserved and regional used flags to - 1
         # log(f"[DATASET_CREATION] Replace regional use and future flags: (AIS Navigational) Status >"
-        #    {AISNavigationalStatus.UnderWaySailing} (under way sailing) by {val.UNDEFINED}")
+        #     {AISNavigationalStatus.UnderWaySailing}(under way sailing) by {val.UNDEFINED}")
         # df[self.column_name] = df[self.column_name].mask(df[self.column_name] > AISNavigationalStatus.UnderWaySailing,
-        #                                                 FieldValue.UNDEFINED)
+        #                                                  FieldValue.UNDEFINED)
         return df
 
 

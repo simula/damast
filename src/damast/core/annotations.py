@@ -96,7 +96,7 @@ class Annotation:
 
         :raise ValueError: Raises if a license is given, but it cannot be validated
         """
-        if self.value is None or self.value is '':
+        if self.value is None or self.value == '':
             raise ValueError("License cannot be empty")
 
     def validate_comment(self):

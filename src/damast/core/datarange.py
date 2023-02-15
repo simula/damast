@@ -66,7 +66,7 @@ class DataRange(ABC):
                 datarange_m = importlib.import_module("damast.core.datarange")
                 datarange_subclass = getattr(datarange_m, klass)
                 return datarange_subclass.from_data(data=values, dtype=dtype)
-            except ImportError as ie:
+            except ImportError:
                 raise ValueError(f"DataRange.from_dict: unknown range definition '{klass}'")
 
 
