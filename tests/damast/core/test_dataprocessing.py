@@ -12,45 +12,92 @@ from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
+class DataProcessorA:
+    # Consider:
+    # - mapping of input names
+    # - use regex to match columns
+    #
+    @damast.core.input({
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)},
+    })
+    @damast.core.output({
+        "longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
+    })
+    def apply_lat_lon(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        transformer = CycleTransformer(features=["latitude", "longitude"])
+        df._dataframe = transformer.fit_transform(df._dataframe)
+        return df
+
+    @damast.core.input({
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
+    })
+    @damast.core.output({
+        "longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+        "latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}
+    })
+    def apply_lat_lon_fail(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        transformer = CycleTransformer(features=["latitude", "longitude"])
+        df._dataframe = transformer.fit_transform(df._dataframe)
+        return df
+
+    @damast.core.input({
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
+    })
+    @damast.core.output({
+        "longitude": {"unit": units.deg}
+    })
+    def apply_lat_lon_remove_col(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df._dataframe.drop(columns=["latitude"], inplace=True)
+        return df
+
+
 class TransformerA(TransformerMixin):
     @damast.core.describe("latitude x/y generation")
-    @damast.core.input([
-        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-    ])
-    @damast.core.output([
-        {"latitude_x": {"unit": units.deg}},
-        {"latitude_y": {"unit": units.deg}}
-    ])
+    @damast.core.input({
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
+    })
+    @damast.core.output({
+        "latitude_x": {"unit": units.deg},
+        "latitude_y": {"unit": units.deg}
+    })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         return df
 
 
 class TransformerB(TransformerMixin):
     @damast.core.describe("delta computation")
-    @damast.core.input([
-        {"latitude_x": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-        {"latitude_y": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-    ])
-    @damast.core.output([
-        {"delta_longitude": {"unit": units.deg}},
-        {"delta_latitude": {"unit": units.deg}}
-    ])
+    @damast.core.input({
+        "latitude_x": {"unit": units.deg},
+        "latitude_y": {"unit": units.deg}
+    })
+    @damast.core.output({
+        "delta_longitude": {"unit": units.deg},
+        "delta_latitude": {"unit": units.deg}
+    })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         return df
 
 
 class TransformerC(TransformerMixin):
     @damast.core.describe("label generation")
-    @damast.core.input([
-        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}},
-        {"delta_longitude": {"unit": units.deg}},
-        {"delta_latitude": {"unit": units.deg}}
-    ])
-    @damast.core.output([
-        {"label": {}},
-    ])
+    @damast.core.input({
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)},
+        "delta_longitude": {"unit": units.deg},
+        "delta_latitude": {"unit": units.deg}
+    })
+    @damast.core.output({
+        "label": {}
+    })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         return df
 
@@ -117,31 +164,21 @@ def test_data_processor_input(height_dataframe, height_metadata):
         # - mapping of input names
         # - use regex to match columns
         #
-        @damast.core.input(
-            [
-                {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-            ]
-        )
-        @damast.core.output(
-            [
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}}
-            ]
-        )
+        @damast.core.input({
+            "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+            "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
+        })
+        @damast.core.output({
+            "longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+            "latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+            "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
+            "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
+        })
         def apply_lat_lon(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
             return df
 
-        @damast.core.input(
-            [
-                {"height": {"unit": units.m}}
-            ]
-        )
-        @damast.core.output(
-            [{"height": {"unit": units.km}}]
-        )
+        @damast.core.input({"height": {"unit": units.m}})
+        @damast.core.output({"height": {"unit": units.km}})
         def apply_height(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
             return df
 
@@ -156,71 +193,16 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
     adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
                              metadata=lat_lon_metadata)
 
-    class CustomDataProcessor:
-        # Consider:
-        # - mapping of input names
-        # - use regex to match columns
-        #
-        @damast.core.input(
-            [
-                {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}},
-            ]
-        )
-        @damast.core.output(
-            [
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}}
-            ]
-        )
-        def apply_lat_lon(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            transformer = CycleTransformer(features=["latitude", "longitude"])
-            df._dataframe = transformer.fit_transform(df._dataframe)
-            return df
-
-        @damast.core.input(
-            [
-                {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-            ]
-        )
-        @damast.core.output(
-            [
-                {"longitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_x": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}},
-                {"latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}}
-            ]
-        )
-        def apply_lat_lon_fail(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            transformer = CycleTransformer(features=["latitude", "longitude"])
-            df._dataframe = transformer.fit_transform(df._dataframe)
-            return df
-
-        @damast.core.input(
-            [
-                {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-                {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-            ]
-        )
-        @damast.core.output(
-            [
-                {"longitude": {"unit": units.deg}}
-            ]
-        )
-        def apply_lat_lon_remove_col(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            df._dataframe.drop(columns=["latitude"], inplace=True)
-            return df
-
-    cdp = CustomDataProcessor()
+    cdp = DataProcessorA()
     adf = cdp.apply_lat_lon(df=adf)
     assert "latitude_x" in adf.column_names
 
+
+def test_data_processor_output_fail(lat_lon_dataframe, lat_lon_metadata):
     adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
                              metadata=lat_lon_metadata)
 
+    cdp = DataProcessorA()
     with pytest.raises(RuntimeError, match="is not present"):
         cdp.apply_lat_lon_fail(df=adf)
 
@@ -229,13 +211,11 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
 
 
 def test_access_decorator_info():
-    input_specs = [
-        {"longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}},
-        {"latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}}
-    ]
-    output_specs = [
-        {"longitude": {"unit": units.deg}}
-    ]
+    input_specs = {
+        "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
+        "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
+    }
+    output_specs = {"longitude": {"unit": units.deg}}
 
     class CustomDataProcessor:
         @damast.core.input(input_specs)

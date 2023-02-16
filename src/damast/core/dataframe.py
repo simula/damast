@@ -29,6 +29,14 @@ class AnnotatedDataFrame:
     def __init__(self,
                  dataframe: DataFrame,
                  metadata: MetaData):
+        if not isinstance(dataframe, DataFrame):
+            raise ValueError(f"{self.__class__.__name__}.__init__: dataframe must be"
+                             f" of type 'DataFrame', but was '{type(dataframe)}")
+
+        if not isinstance(metadata, MetaData):
+            raise ValueError(f"{self.__class__.__name__}.__init__: metadata must be"
+                             f" of type 'MetaData', but was '{type(metadata)}")
+
         self._dataframe = dataframe
         self._metadata = metadata
 

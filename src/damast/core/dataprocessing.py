@@ -5,7 +5,8 @@ import functools
 import inspect
 from typing import Any, Dict, List, Tuple
 
-from sklearn.base import TransformerMixin
+import vaex.ml
+from vaex.ml.transformations import Transformer
 
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT
@@ -25,6 +26,28 @@ DECORATED_INPUT_SPECS = '_damast_input_specs'
 DECORATED_OUTPUT_SPECS = '_damast_output_specs'
 
 
+def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
+    """
+    Extract the dataframe from positional or keyword arguments
+
+    :param args: positional arguments
+    :param kwargs: keyword arguments
+    :return: AnnotedDataFrame
+    :raise KeyError: if a positional argument does not exist and keyword 'df' is missing
+    raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
+    """
+    _df: AnnotatedDataFrame = None
+    if len(args) >= 2 and isinstance(args[1], AnnotatedDataFrame):
+        _df = args[1]
+    elif "df" not in kwargs:
+        raise KeyError("Missing keyword argument 'df' to define the AnnotatedDataFrame")
+    elif not isinstance(kwargs["df"], AnnotatedDataFrame):
+        raise TypeError("Argument 'df' is not an AnnotatedDataFrame")
+    else:
+        _df: AnnotatedDataFrame = kwargs["df"]
+    return _df
+
+
 def describe(description: str):
     """
     Specify the description for the transformation for the decorated function.
@@ -41,7 +64,7 @@ def describe(description: str):
     return decorator
 
 
-def input(requirements: List[Dict[str, Any]]):
+def input(requirements: Dict[str, Any]):
     """
     Specify the input for the decorated function.
 
@@ -57,11 +80,8 @@ def input(requirements: List[Dict[str, Any]]):
 
         @functools.wraps(func)
         def check(*args, **kwargs):
-            if "df" not in kwargs:
-                raise KeyError("Missing keyword argument 'df' to define the AnnotatedDataFrame")
-            assert isinstance(kwargs["df"], AnnotatedDataFrame)
+            _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
 
-            _df: AnnotatedDataFrame = kwargs["df"]
             fulfillment = _df.get_fulfillment(expected_specs=required_input_specs)
             if fulfillment.is_met():
                 return func(*args, **kwargs)
@@ -74,7 +94,7 @@ def input(requirements: List[Dict[str, Any]]):
     return decorator
 
 
-def output(requirements: List[Dict[str, Any]]):
+def output(requirements: Dict[str, Any]):
     """
     Specify the output for the decorated function.
 
@@ -93,12 +113,7 @@ def output(requirements: List[Dict[str, Any]]):
 
         @functools.wraps(func)
         def check(*args, **kwargs) -> AnnotatedDataFrame:
-            if "df" not in kwargs:
-                raise KeyError("output: decorated function misses keyword argument"
-                               " 'df' to define the AnnotatedDataFrame")
-            assert isinstance(kwargs["df"], AnnotatedDataFrame)
-
-            _df = kwargs["df"]
+            _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
             input_columns = [c for c in _df.column_names]
 
             adf: AnnotatedDataFrame = func(*args, **kwargs)
@@ -119,21 +134,21 @@ def output(requirements: List[Dict[str, Any]]):
     return decorator
 
 
-class DataProcessingPipeline:
+class DataProcessingPipeline(Transformer):
     #: The output specs - as specified by decorators
     output_specs: List[DataSpecification] = None
 
     # The processing steps that define this pipeline
-    steps: List[TransformerMixin] = None
+    steps: List[Transformer] = None
 
-    def __init__(self, steps: List[Tuple[str, TransformerMixin]]):
+    def __init__(self, steps: List[Tuple[str, Transformer]]):
         validation_result = self.validate(steps=steps)
 
-        self.steps: List[Tuple[str, TransformerMixin]] = validation_result["steps"]
+        self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
         self.output_specs: List[DataSpecification] = validation_result["output_spec"]
 
     @classmethod
-    def validate(cls, steps: List[Tuple[str, TransformerMixin]]) -> Dict[str, Any]:
+    def validate(cls, steps: List[Tuple[str, Transformer]]) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the final (minimal output) data specification
 
@@ -148,16 +163,19 @@ class DataProcessingPipeline:
             if name is None:
                 raise RuntimeError(f"{cls.__name__}.validate: missing name processing step")
 
-            if getattr(transformer, "transform") is None:
+            if not hasattr(transformer, "transform"):
                 raise RuntimeError(f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
                                    f" TransformerMixin requirements - no method 'fit_transform' found")
 
-            input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
-            if input_specs is None:
-                raise RuntimeError(f"{cls.__name__}.validate: missing input specification for processing step '{name}'")
+            if hasattr(transformer.transform, DECORATED_INPUT_SPECS):
+                input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
+            else:
+                raise RuntimeError(
+                    f"{cls.__name__}.validate: missing input specification for processing step '{name}'")
 
-            output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
-            if output_specs is None:
+            if hasattr(transformer.transform, DECORATED_OUTPUT_SPECS):
+                output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
+            else:
                 raise RuntimeError(
                     f"{cls.__name__}.validate: missing output specification for processing step '{name}'")
 
@@ -182,8 +200,9 @@ class DataProcessingPipeline:
         for step in self.steps:
             name, transformer = step
             data += hspace + DEFAULT_INDENT + name + ":\n"
-            description = getattr(transformer.transform, DECORATED_DESCRIPTION)
-            if description is not None:
+
+            if hasattr(transformer.transform, DECORATED_DESCRIPTION):
+                description = getattr(transformer.transform, DECORATED_DESCRIPTION)
                 data += hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
 
             data += hspace + DEFAULT_INDENT * 2 + "input:\n"
@@ -195,6 +214,11 @@ class DataProcessingPipeline:
             data += DataSpecification.to_str(output_specs, indent_level=indent_level + 4)
 
         return data
+
+    def transform(self, df: AnnotatedDataFrame):
+        steps = [t for _, t in self.steps]
+        pipeline = vaex.ml.Pipeline(steps)
+        return pipeline.transform(dataframe=df)
 
     def __repr__(self) -> str:
         return self.to_str()

@@ -28,11 +28,7 @@ def vaex_dataframe():
         [1, "b"],
         [2, "c"]
     ]
-    columns = [
-        [
-            "number", "letter"
-        ]
-    ]
+    columns = ["height", "letter"]
     pandas_df = pd.DataFrame(data, columns=columns)
     return vaex.from_pandas(pandas_df)
 

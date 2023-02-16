@@ -8,12 +8,11 @@ from typing import Any, Dict, List, Optional, Union
 
 import vaex
 import yaml
-# Alternatively use pint
-from astropy import units
 
 from .annotations import Annotation, History
 from .datarange import DataRange
 from .formatting import DEFAULT_INDENT
+from .units import Unit, unit_registry, units
 
 __all__ = [
     "DataCategory",
@@ -42,6 +41,7 @@ class DataSpecification:
 
     class Key(str, Enum):
         name = "name"
+        description = "description"
         category = "category"
         is_optional = "is_optional"
         abbreviation = "abbreviation"
@@ -79,6 +79,8 @@ class DataSpecification:
 
     #: Name associated
     name: str = None
+    #: Description of the data
+    description: str = None
     #: Category of data
     category: DataCategory = None
     #: Whether this data element needs to be present
@@ -91,7 +93,7 @@ class DataSpecification:
     missing_value: Any = None
 
     #: The unit of this data element
-    unit: Optional[units.Unit] = None
+    unit: Optional[Unit] = None
     #: The precision of this data element
     precision: Optional[Union[float, List[float]]] = None
     #: The allowed data range, which remains None when being unrestricted
@@ -102,12 +104,13 @@ class DataSpecification:
 
     def __init__(self,
                  name: str,
+                 description: str = None,
                  category: Union[str, DataCategory] = None,
                  is_optional: bool = False,
                  abbreviation: str = None,
                  representation_type: Any = None,
                  missing_value: Any = None,
-                 unit: Optional[units.Unit] = None,
+                 unit: Optional[Unit] = None,
                  precision: Any = None,
                  value_range: Union[DataRange] = None,
                  value_meanings: Dict[Any, str] = None):
@@ -155,9 +158,8 @@ class DataSpecification:
         if self.__class__ != other.__class__:
             return False
 
-        for m in ["name", "category", "is_optional", "abbreviation", "representation_type",
-                  "missing_value", "unit", "precision", "value_range", "value_meanings"]:
-            if getattr(self, m) != getattr(other, m):
+        for m in DataSpecification.Key:
+            if getattr(self, m.value) != getattr(other, m.value):
                 return False
 
         return True
@@ -281,7 +283,15 @@ class DataSpecification:
             pass
 
         if cls.Key.unit.value in data:
-            spec.unit = getattr(units, data[cls.Key.unit.value])
+            # Check if unit is part of the default definitions
+            unit_value = data[cls.Key.unit.value]
+            try:
+                unit = getattr(units, unit_value)
+            except Exception:
+                # Check if unit part of definition in 'damast.core.units'
+                unit = unit_registry[unit_value]
+
+            spec.unit = unit
 
         if cls.Key.value_range.value in data:
             spec.value_range = DataRange.from_dict(data[cls.Key.value_range.value], dtype=spec.representation_type)
@@ -317,7 +327,10 @@ class DataSpecification:
               column_name: str):
         # Check if representation type is the same and apply known metadata
         if self.representation_type is not None:
-            assert df[column_name].dtype == self.representation_type
+            if df[column_name].dtype != self.representation_type:
+                raise ValueError(f"{self.__class__.__name__}.apply: column '{column_name}':"
+                                 f" expected representation type: {self.representation_type},"
+                                 f" but got '{df[column_name].dtype}'")
 
         if self.unit is not None:
             if column_name not in df.units:
@@ -346,36 +359,33 @@ class DataSpecification:
         """
         fulfillment = DataSpecification.Fulfillment()
 
-        for key in [DataSpecification.Key.name,
-                    DataSpecification.Key.category,
-                    DataSpecification.Key.abbreviation,
-                    DataSpecification.Key.unit,
-                    DataSpecification.Key.representation_type]:
-            expected_value = getattr(self, key.value)
-            if expected_value is not None:
-                spec_value = getattr(data_spec, key.name)
-                if spec_value is None:
-                    fulfillment.status[key] = Status.FAIL
-                    continue
-
-                if expected_value != spec_value:
-                    fulfillment.status[key] = Status.FAIL
-                    continue
-
-                fulfillment.status[key] = Status.OK
-
-        if self.precision is not None:
-            if data_spec.precision is None:
-                fulfillment.status[key] = Status.FAIL
-            elif self.precision < data_spec.precision:
-                fulfillment.status[key] = Status.FAIL
+        for key in DataSpecification.Key:
+            # some special handling is required for individual keys
+            if key == DataSpecification.Key.precision:
+                if self.precision is not None:
+                    if data_spec.precision is None:
+                        fulfillment.status[key] = Status.FAIL
+                    elif self.precision < data_spec.precision:
+                        fulfillment.status[key] = Status.FAIL
+                    else:
+                        fulfillment.status[key] = Status.OK
             else:
-                fulfillment.status[key] = Status.OK
+                expected_value = getattr(self, key.value)
+                if expected_value is not None:
+                    spec_value = getattr(data_spec, key.name)
+                    if spec_value is None:
+                        fulfillment.status[key] = Status.FAIL
+                        continue
 
+                    if expected_value != spec_value:
+                        fulfillment.status[key] = Status.FAIL
+                        continue
+
+                    fulfillment.status[key] = Status.OK
         return fulfillment
 
     @classmethod
-    def from_requirements(cls, requirements: List[Dict[str, Any]]) -> List['DataSpecification']:
+    def from_requirements(cls, requirements: Dict[str, Any]) -> List['DataSpecification']:
         """
         Get the list of DataSpecification from dictionary (keyword argument) based representation.
 
@@ -385,16 +395,15 @@ class DataSpecification:
         :return: List of expectations
         """
         required_specs = []
-        for requirement in requirements:
-            for k, v in requirement.items():
-                kwargs = v
-                # consider the key to be the column name
-                kwargs[DataSpecification.Key.name.value] = k
-                if DataSpecification.Key.category.value not in kwargs:
-                    kwargs[DataSpecification.Key.category.value] = None
+        for k, v in requirements.items():
+            kwargs = v
+            # consider the key to be the column name
+            kwargs[DataSpecification.Key.name.value] = k
+            if DataSpecification.Key.category.value not in kwargs:
+                kwargs[DataSpecification.Key.category.value] = None
 
-                required_spec = cls(**kwargs)
-                required_specs.append(required_spec)
+            required_spec = cls(**kwargs)
+            required_specs.append(required_spec)
         return required_specs
 
     def merge(self,
@@ -546,8 +555,12 @@ class MetaData:
 
         data_specs = []
         for data_spec_dict in data[cls.Key.columns.value]:
-            data_specification = DataSpecification.from_dict(data=data_spec_dict)
-            data_specs.append(data_specification)
+            try:
+                data_specification = DataSpecification.from_dict(data=data_spec_dict)
+                data_specs.append(data_specification)
+            except Exception as e:
+                raise RuntimeError(f"{cls.__name__}.from_dict: could not"
+                                   f" process column specification: {data_spec_dict} -- {e}")
 
         annotations = {}
         for annotation_key, annotation_value in data[cls.Key.annotations.value].items():
@@ -591,6 +604,9 @@ class MetaData:
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
                 column_spec.apply(df=df, column_name=column_spec.name)
+            else:
+                raise ValueError(f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
+                                 f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}")
 
     def __contains__(self, column_name):
         for colum_spec in self.columns:
