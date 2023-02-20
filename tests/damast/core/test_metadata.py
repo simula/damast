@@ -117,6 +117,23 @@ def test_data_specification_read_write(name, category, is_optional,
     assert ds_loaded == ds
 
 
+@pytest.mark.parametrize(["dataspec", "other_dataspec", "are_mergable"],
+                         [
+                             [DataSpecification(name="a",
+                                                unit=units.m),
+                              DataSpecification(name="a", category=DataCategory.DYNAMIC),
+                              True]
+                         ])
+def test_data_specification_merge(dataspec, other_dataspec, are_mergable):
+
+    if are_mergable:
+        dataspec.merge(other=other_dataspec)
+        assert dataspec.name == dataspec.name
+    else:
+        with pytest.raises(RuntimeError):
+            dataspec.merge(other=other_dataspec)
+
+
 def test_change():
     title = "new-change"
     description = "elaborate description of change"

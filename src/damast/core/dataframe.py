@@ -8,7 +8,7 @@ from typing import List, Union
 
 from vaex import DataFrame
 
-from .metadata import DataSpecification, ExpectedDataSpecification, MetaData
+from .metadata import DataSpecification, MetaData
 
 __all__ = [
     "AnnotatedDataFrame"
@@ -29,28 +29,25 @@ class AnnotatedDataFrame:
     def __init__(self,
                  dataframe: DataFrame,
                  metadata: MetaData):
+        if not isinstance(dataframe, DataFrame):
+            raise ValueError(f"{self.__class__.__name__}.__init__: dataframe must be"
+                             f" of type 'DataFrame', but was '{type(dataframe)}")
+
+        if not isinstance(metadata, MetaData):
+            raise ValueError(f"{self.__class__.__name__}.__init__: metadata must be"
+                             f" of type 'MetaData', but was '{type(metadata)}")
+
         self._dataframe = dataframe
         self._metadata = metadata
 
         # Ensure conformity of the metadata with the dataframe
         self._metadata.apply(df=self._dataframe)
 
-    def get_fulfillment(self, expected_specs: List[ExpectedDataSpecification]) -> MetaData.Fulfillment:
-        md_fulfillment = MetaData.Fulfillment()
-
-        for expected_spec in expected_specs:
-            if expected_spec.name in self._metadata:
-                fulfillment = expected_spec.get_fulfillment(self._metadata[expected_spec.name])
-                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
-                                               fulfillment=fulfillment)
-            else:
-                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
-                                               fulfillment=DataSpecification.MissingColumn()
-                                               )
-        return md_fulfillment
+    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> MetaData.Fulfillment:
+        return self._metadata.get_fulfillment(expected_specs=expected_specs)
 
     def update(self,
-               expectations: List[ExpectedDataSpecification]):
+               expectations: List[DataSpecification]):
         for expected_data_spec in expectations:
             column_name = expected_data_spec.name
             if column_name not in self._metadata:

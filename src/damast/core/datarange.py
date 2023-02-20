@@ -169,7 +169,9 @@ class MinMax(DataRange):
         :param min: minimum allowed value, data must be greater or equal
         :param max: maximum allowed value, data must be less or equal
         """
-        assert min < max
+        if not min < max:
+            raise RuntimeError(f"DataRange.__init__: invalid - min: {min} max: max")
+
         self.min = min
         self.max = max
 

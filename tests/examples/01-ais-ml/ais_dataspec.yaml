@@ -1,0 +1,152 @@
+annotations:
+  comment: This a standard AIS dataset specification
+#mmsi;imo_nr;length;date_time_utc;lon;lat;sog;cog;true_heading;nav_status;message_nr
+columns:
+- name: mmsi
+  description: Maritime Mobile Service Identify
+  abbreviation: mmsi
+  category: static
+  is_optional: false
+  representation_type: int
+  value_range:
+    MinMax:
+      min: 200000000
+      max: 700000000
+- name: imo_nr
+  description: International Maritime Organisation number
+  abbreviation: imo_nr
+  category: static
+  is_optional: false
+  representation_type: int
+- name: length
+  abbreviation: length
+  category: static
+  is_optional: false
+  representation_type: int
+  unit: m
+- name: date_time_utc
+  abbreviation: datetime
+  category: dynamic
+  is_optional: false
+  representation_type: str
+- name: lon
+  abbreviation: lon
+  category: dynamic
+  is_optional: false
+  representation_type: float
+  value_range:
+    CyclicMinMax:
+      min: -180.0
+      max: 180.0
+  unit: deg
+- name: lat
+  abbreviation: lat
+  category: dynamic
+  is_optional: false
+  representation_type: float
+  value_range:
+    CyclicMinMax:
+      min: -90.0
+      max: 90.0
+  unit: deg
+- name: sog
+  abbreviation: sog
+  category: dynamic
+  is_optional: false
+  representation_type: float
+  value_range:
+    MinMax:
+      min: 0
+      max: 102
+  unit: knots
+  precision: 0.1
+- name: cog
+  description: Course Over Ground
+  abbreviation: cog
+  category: dynamic
+  is_optional: false
+  representation_type: float
+  value_range:
+    CyclicMinMax:
+      min: -360.0
+      max: 360.0
+  unit: deg
+  precision: 0.1
+- name: true_heading
+  description: Real measured heading
+  abbreviation: heading
+  is_optional: false
+  category: dynamic
+  representation_type: int
+  value_range:
+    CyclicMinMax:
+      min: 0.0
+      max: 360.0
+  unit: deg
+- name: nav_status
+  description: AIS Navigational Status
+  abbreviation: ais_nav_status
+  category: dynamic
+  is_optional: false
+  representation_type: int
+  value_range:
+    MinMax:
+      min: 0
+      max: 15
+  value_mappings:
+    0: UnderWayUsingEngine
+    1: AtAnchor
+    2: NotUnderCommand
+    3: RestrictedManeuverability
+    4: ConstrainedByHerDraught
+    5: Moored
+    6: Aground
+    7: EngagedInFishing
+    8: UnderWaySailing
+    9: _RESERVED_FOR_FUTURE__HAZARDOUS_GOODS_0
+    10: _RESERVED_FOR_FUTURE__HAZARDOUS_GOODS_1
+    11: Power_DrivenVesselTowingAstern
+    12: Power_DrivenVesselPushingAheadOrTowingAlongside
+    13: _RESERVED_FOR_FUTURE_USE
+    14: AIS_SART__MOB_AIS__EPIRB_AIS
+    15: Undefined
+- name: message_nr
+  description: AIS Message Type
+  abbreviation: msg_type
+  category: dynamic
+  is_optional: false
+  representation_type: int
+  value_range:
+    MinMax:
+      min: 0
+      max: 27
+  value_mappings:
+    0: NOT_IMPLEMENTED
+    1: POS_CLASS_A1
+    2: POS_CLASS_A2
+    3: POS_CLASS_A3
+    4: BASE_STATION
+    5: STATIC_AND_VOYAGE
+    6: BINARY_ADDRESSED
+    7: BINARY_ACK
+    8: BINARY_BROADCAST
+    9: SAR_AIRCRAFT_POS
+    10: DATE_INQ
+    11: DATE_RESP
+    12: SAFETY_MSG
+    13: SAFETY_ACK
+    14: SAFETY_BROADCAST
+    15: INTERROGATE
+    16: ASSIGN_MODE
+    17: DGNSS
+    18: POS_CLASS_B
+    19: POS_CLASS_B_EXT
+    20: LINK_MGMT
+    21: AID_TO_NAV
+    22: CHANNEL_MGMT
+    23: GROUP_ASSIGN
+    24: STATIC
+    25: BINARY_SINGLE_SLOT
+    26: BINARY_MULTI_SLOT
+    27: LONG_RANGE_BROADCAST
+
