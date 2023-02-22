@@ -11,7 +11,7 @@ from damast.data_handling.transformers import (
     CyclicNormalizer,
     LogNormalizer,
     MinMaxNormalizer
-    )
+)
 from damast.domains.maritime.math.normalization import normalize
 
 

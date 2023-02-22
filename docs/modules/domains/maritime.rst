@@ -6,6 +6,13 @@ Data Specification
 .. automodule:: damast.domains.maritime.data_specification
     :members:
 
+
+Data Processing
++++++++++++++++++++
+.. automodule:: damast.domains.maritime.data_processing
+    :members:
+
+
 AIS
 ++++
 

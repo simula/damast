@@ -80,7 +80,7 @@ data_processing:
       timestamp:
         min: 1556064000
         max: 1559520000
-        type: 'int32'
+        type: 'int32' # FIXME: This constraint does not seem sensible to be, as we shouldn't rescale the timestamp in data processing
       DISTDIFF:
         min: 0
         max: 20000
