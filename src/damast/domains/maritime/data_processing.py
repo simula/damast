@@ -194,22 +194,20 @@ def process_files(params: Dict[str, Any]) -> None:
     """
     Process input data. TODO: ADD MORE INFO
 
-    Args:
-        params (Dict[str, Any]): Options for processing
+    :param  params: Options for processing
 
 
     .. highlight:: python
     .. code-block:: python
 
-      params = {"workdir": "path_to_directory_of_execution",
-                "inputs": {"data":{"dir": "path_to_input_data"}},
-                "month": "integer",
-                "columns":{"brut": ["list","of","columns","to","use]}}
+        params = {"workdir": "path_to_directory_of_execution",
+                  "inputs": {"data":{"dir": "path_to_input_data"}},
+                  "month": "integer",
+                  "columns":{"brut": ["list","of","columns","to","use]}}
 
 
-    Raises:
-        KeyError: If any of the required keys are missing from the input parameters
-        RuntimeError: No data-files are found in input data directory.
+    :raises KeyError: If any of the required keys are missing from the input parameters
+    :raises RuntimeError: No data-files are found in input data directory.
     """
     # Get the list of the file to read
     # files: List[str] = glob.glob(f"../data/{params['month']}/*.zip")

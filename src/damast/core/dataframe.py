@@ -2,6 +2,7 @@
 """
 Module to define a dataframe
 """
+from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Union
@@ -21,10 +22,10 @@ class AnnotatedDataFrame:
     """
 
     #: Metadata associated with the dataframe
-    _metadata: MetaData = None
+    _metadata: MetaData
 
     #: The actual dataframe
-    _dataframe: DataFrame = None
+    _dataframe: DataFrame
 
     def __init__(self,
                  dataframe: DataFrame,
@@ -60,17 +61,17 @@ class AnnotatedDataFrame:
                 else:
                     self._metadata.columns.append(DataSpecification.from_dict(data=expected_data_spec.to_dict()))
 
-    def save(self, *, filename: Union[str, Path]) -> 'AnnotatedDataFrame':
+    def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
         raise NotImplementedError()
 
     @classmethod
-    def from_file(cls, filename: Union[str, Path]) -> 'AnnotatedDataFrame':
+    def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:
         raise NotImplementedError()
 
     def __getattr__(self, item):
         """
-        Ensure that this object behaves like a vaex.DataFrame
-        :param item:
-        :return:
+        Ensure that this object behaves like a `vaex.DataFrame`
+        :param item: Name of column
+        :return: The column
         """
         return getattr(self._dataframe, item)

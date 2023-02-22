@@ -1,8 +1,5 @@
 Core
 =======
 
-.. automodule:: damast.core.dataframe
-   :members:
-
-.. automodule:: damast.core.metadata
+.. automodule:: damast.core
    :members:

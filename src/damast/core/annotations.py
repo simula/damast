@@ -1,3 +1,10 @@
+# Copyright (C) 2023 Simula Research Laboratory
+#
+# This file is part of Damast
+#
+# SPDX-License-Identifier:    BSD-3-Clause
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Union
@@ -10,6 +17,13 @@ __all__ = [
 
 
 class Annotation:
+    """
+    Create an annotation
+
+    :param name: Name / Type of the annotation
+    :param value: Value of the annotation
+    """
+
     class Key(str, Enum):
         """
         Enumeration of predefined keys which can be used for the annotation
@@ -22,21 +36,15 @@ class Annotation:
         Comment = "comment"
 
     #: Name of the annotation (see also Key)
-    name: str = None
+    name: str
 
     #: Value of the annotation
     value: Optional[Any] = None
 
     def __init__(self,
                  name: Union[str, Key],
-                 value: Any = None
+                 value: Optional[Any] = None
                  ):
-        """
-        Initialise an Annotation
-
-        :param name: Name / Type of the annotation
-        :param value: Value of the annotation
-        """
         self.name = name
         self.value = value
 
@@ -76,11 +84,11 @@ class Annotation:
         return {self.name: self.value}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Annotation':
+    def from_dict(cls, data: Dict[str, Any]) -> Annotation:
         """
         Create an instance from a given dictionary.
 
-        :param data:
+        :param data: The input dictionary
         :return: Annotation
         :raise RuntimeError: Raises if annotation cannot be created from dictionary
         """
@@ -118,9 +126,9 @@ class Change:
     """
     TIMESTAMP_FORMAT: ClassVar[str] = "%Y-%m-%d %H:%M:%S"
 
-    title: str = None
-    timestamp: datetime = None
-    description: str = None
+    title: str
+    timestamp: datetime
+    description: str
 
     def __init__(self,
                  title: str,
@@ -170,9 +178,9 @@ class History(Annotation):
     """
     Representation of the history of changes
     """
-    changes: List[Change] = None
+    changes: List[Change]
 
-    def __init__(self, changes: List[Change] = None):
+    def __init__(self, changes: Optional[List[Change]] = None):
         super().__init__(name=Annotation.Key.History)
         if changes is None:
             self.changes = []

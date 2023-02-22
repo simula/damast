@@ -1,6 +1,8 @@
 """
 Module to collect all features that can be added
 """
+from __future__ import annotations
+
 from enum import Enum
 from typing import Any, List, Tuple
 
@@ -52,7 +54,7 @@ class Feature(str, Enum):
     @classmethod
     def get_feature_extractors(cls,
                                column_list: List[str],
-                               ) -> Tuple[List['FeatureExtractor'], List[str], List[str]]:
+                               ) -> Tuple[List[FeatureExtractor], List[str], List[str]]:
         """
         Get the feature extractors for a given list of columns, which can include feature column and 'original' ones.
 
@@ -86,7 +88,7 @@ class Feature(str, Enum):
     @classmethod
     def extractor_by_name(cls,
                           name: str,
-                          **kwargs) -> 'FeatureExtractor':
+                          **kwargs) -> FeatureExtractor:
         """
         Get a FeatureExtractor by its name
 
@@ -116,7 +118,7 @@ class FeatureExtractor(BaseTransformer):
     input_columns: List[str] = None
 
     @classmethod
-    def all_subclasses(cls) -> List['FeatureExtractor']:
+    def all_subclasses(cls) -> List[FeatureExtractor]:
         """
         Get all subclasses of FeatureExtractor, i.e., available implementations
 

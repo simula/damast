@@ -3,7 +3,7 @@ Module containing decorators and classes to model data processing pipelines
 """
 import functools
 import inspect
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import vaex.ml
 from vaex.ml.transformations import Transformer
@@ -32,11 +32,11 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
 
     :param args: positional arguments
     :param kwargs: keyword arguments
-    :return: AnnotedDataFrame
+    :return: The annotated data frame
     :raise KeyError: if a positional argument does not exist and keyword 'df' is missing
     raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
     """
-    _df: AnnotatedDataFrame = None
+    _df: AnnotatedDataFrame
     if len(args) >= 2 and isinstance(args[1], AnnotatedDataFrame):
         _df = args[1]
     elif "df" not in kwargs:
@@ -44,7 +44,7 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     elif not isinstance(kwargs["df"], AnnotatedDataFrame):
         raise TypeError("Argument 'df' is not an AnnotatedDataFrame")
     else:
-        _df: AnnotatedDataFrame = kwargs["df"]
+        _df = kwargs["df"]
     return _df
 
 
@@ -52,7 +52,7 @@ def describe(description: str):
     """
     Specify the description for the transformation for the decorated function.
 
-    The decorated function must return 'AnnotatedDataFrame'.
+    The decorated function must return :class:`AnnotatedDataFrame`.
 
     :param description: description of the action
     """
@@ -68,7 +68,7 @@ def input(requirements: Dict[str, Any]):
     """
     Specify the input for the decorated function.
 
-    The decorated function must return 'AnnotatedDataFrame'.
+    The decorated function must return :class:`AnnotatedDataFrame`.
 
     :param requirements: List of input requirements
     """
@@ -98,7 +98,7 @@ def output(requirements: Dict[str, Any]):
     """
     Specify the output for the decorated function.
 
-    The decorated function must return 'AnnotatedDataFrame'.
+    The decorated function must return :class:`AnnotatedDataFrame`.
 
     :param requirements: List of input requirements
     """
@@ -135,48 +135,61 @@ def output(requirements: Dict[str, Any]):
 
 
 class DataProcessingPipeline(Transformer):
+    """
+    A data-processing pipeline for a sequence of transformers
+
+    :param steps: A list of tuples (name_of_transformer, :class:`Transformer`)
+    :raises ValueError: If any of the transformer names are `None`
+    :raises AttributeError: If the transformer is missing the :func:`transform` function
+    :raises AttributeError: If transformer is missing input or output decoration
+    :raises RuntimeError: If the sequence of transformers does not satisfy the sequential requirements
+    """
+
     #: The output specs - as specified by decorators
-    output_specs: List[DataSpecification] = None
+    output_specs: List[DataSpecification]
 
     # The processing steps that define this pipeline
-    steps: List[Transformer] = None
+    steps: List[Tuple[str, Transformer]]
 
     def __init__(self, steps: List[Tuple[str, Transformer]]):
         validation_result = self.validate(steps=steps)
 
-        self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
-        self.output_specs: List[DataSpecification] = validation_result["output_spec"]
+        self.steps = validation_result["steps"]
+        self.output_specs = validation_result["output_spec"]
 
     @classmethod
     def validate(cls, steps: List[Tuple[str, Transformer]]) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the final (minimal output) data specification
 
+        .. todo::
+
+            Document output
+
         :param steps: processing steps
-        :return: Tul
+        :return:
         """
         # Keep track of the expected (minimal) specs at each step in the pipeline
-        current_specs: List[DataSpecification] = None
-        for step in steps:
-            name, transformer = step
+        current_specs: Optional[List[DataSpecification]] = None
+        for name, transformer in steps:
 
             if name is None:
-                raise RuntimeError(f"{cls.__name__}.validate: missing name processing step")
+                raise ValueError(f"{cls.__name__}.validate: missing name processing step")
 
             if not hasattr(transformer, "transform"):
-                raise RuntimeError(f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
-                                   f" TransformerMixin requirements - no method 'fit_transform' found")
+                raise AttributeError(f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
+                                     f" TransformerMixin requirements - no method 'fit_transform' found")
 
             if hasattr(transformer.transform, DECORATED_INPUT_SPECS):
                 input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
             else:
-                raise RuntimeError(
+                raise AttributeError(
                     f"{cls.__name__}.validate: missing input specification for processing step '{name}'")
 
             if hasattr(transformer.transform, DECORATED_OUTPUT_SPECS):
                 output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
             else:
-                raise RuntimeError(
+                raise AttributeError(
                     f"{cls.__name__}.validate: missing output specification for processing step '{name}'")
 
             if current_specs is None:
@@ -194,6 +207,12 @@ class DataProcessingPipeline(Transformer):
         return {"steps": steps, "output_spec": current_specs}
 
     def to_str(self, indent_level: int = 0) -> str:
+        """
+        Output pipeline as string
+
+        :param indent_level: Indentation per step. It is multiplied by :attr:`DEFAULT_INDENT`.
+        :returns: The pipeline in string representation
+        """
         hspace = DEFAULT_INDENT * indent_level
 
         data = hspace + self.__class__.__name__ + "\n"
@@ -215,7 +234,13 @@ class DataProcessingPipeline(Transformer):
 
         return data
 
-    def transform(self, df: AnnotatedDataFrame):
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Apply pipeline on given annotated dataframe
+
+        :param df: The input dataframe
+        :returns: The transformed dataframe
+        """
         steps = [t for _, t in self.steps]
         pipeline = vaex.ml.Pipeline(steps)
         return pipeline.transform(dataframe=df)
