@@ -1,6 +1,8 @@
 """
 Module to collect the classes to define meta data
 """
+from __future__ import annotations
+
 import builtins
 from enum import Enum
 from pathlib import Path
@@ -37,6 +39,20 @@ class Status(str, Enum):
 class DataSpecification:
     """
     Specification of a single column and/or dimension in a dataframe.
+
+    .. todo::
+
+        Document inputs
+
+    :param name: Name of the element
+    :param category: Category
+    :param is_optional:
+    :param abbreviation:
+    :param representation_type:
+    :param missing_value:
+    :param unit:
+    :param precision:
+    :param range:
     """
 
     class Key(str, Enum):
@@ -78,14 +94,14 @@ class DataSpecification:
             return f"{self.__class__.__name__}"
 
     #: Name associated
-    name: str = None
+    name: str
     #: Description of the data
-    description: str = None
+    description: Optional[str] = None
     #: Category of data
-    category: DataCategory = None
+    category: Optional[DataCategory] = None
     #: Whether this data element needs to be present
-    is_optional: bool = None
-    abbreviation: str = None
+    is_optional: Optional[bool] = None
+    abbreviation: Optional[str] = None
 
     #: The underlying representation type for this data element
     representation_type: Any = None
@@ -95,37 +111,29 @@ class DataSpecification:
     #: The unit of this data element
     unit: Optional[Unit] = None
     #: The precision of this data element
-    precision: Optional[Union[float, List[float]]] = None
+    # FIXME: The input to precision could be a `List[float]`, but this is not currently handled
+    precision: Optional[float] = None
+
     #: The allowed data range, which remains None when being unrestricted
-    value_range: Union[DataRange] = None
+    value_range: Optional[DataRange] = None
     #: An explanation - str-based descriptor for the range, if this is a dictionary then it must provide
     #: a mapping from the value to a human-readable descriptor
-    value_meanings: Dict[Any, str] = None
+    value_meanings: Optional[Dict[Any, str]] = None
 
     def __init__(self,
                  name: str,
-                 description: str = None,
-                 category: Union[str, DataCategory] = None,
+                 description: Optional[str] = None,
+                 category: Optional[Union[str, DataCategory]] = None,
                  is_optional: bool = False,
-                 abbreviation: str = None,
+                 abbreviation: Optional[str] = None,
                  representation_type: Any = None,
                  missing_value: Any = None,
                  unit: Optional[Unit] = None,
                  precision: Any = None,
-                 value_range: Union[DataRange] = None,
-                 value_meanings: Dict[Any, str] = None):
+                 value_range: Optional[DataRange] = None,
+                 value_meanings: Optional[Dict[Any, str]] = None):
         """
-        Initialise the MetaData instance
-
-        :param name: Name of the element
-        :param category: Category
-        :param is_optional:
-        :param abbreviation:
-        :param representation_type:
-        :param missing_value:
-        :param unit:
-        :param precision:
-        :param range:
+        Constructor
         """
 
         if name is None:
@@ -133,8 +141,8 @@ class DataSpecification:
                              f"name cannot be None")
 
         self.name = name
-        if type(category) is str:
-            self.category = DataCategory[category]
+        if isinstance(category, str):
+            self.category = DataCategory(category)
         else:
             self.category = category
 
@@ -151,7 +159,8 @@ class DataSpecification:
         self.precision = precision
         self.value_range = value_range
         self.value_meanings = value_meanings
-
+        if description is None:
+            self.description = ""
         self._validate()
 
     def __eq__(self, other):
@@ -167,7 +176,7 @@ class DataSpecification:
     def __repr__(self):
         return f"{self.__class__.__name__}[{self.name}, {self.category.__class__.__name__}]"
 
-    def _validate(self) -> None:
+    def _validate(self):
         """
         Validate the data specification
 
@@ -188,14 +197,17 @@ class DataSpecification:
         """
         Resolve the representation type from a given string.
 
-        >>> int_type = DataSpecification.resolve_representation_type("int")
-        >>> assert int_type == int
+        .. highlight:: python
+        .. code-block:: python
+
+            int_type = DataSpecification.resolve_representation_type("int")
+            assert int_type == int
 
         :param type_name: Name of the type
         :return: Instance of the type object
         :raise ValueError: Raises if type_name cannot be resolved to a known type (in builtins or vaex)
         """
-        exceptions = []
+        exceptions: List[Any] = []
         try:
             dtype = getattr(builtins, type_name)
             return dtype
@@ -219,10 +231,12 @@ class DataSpecification:
 
         :return: dictionary
         """
-        data = {}
+        data: Dict[str, Any] = {}
         data["name"] = self.name
-        data["is_optional"] = self.is_optional
-        data["abbreviation"] = self.abbreviation
+        if self.is_optional is not None:
+            data["is_optional"] = self.is_optional
+        if self.abbreviation is not None:
+            data["abbreviation"] = self.abbreviation
 
         if self.category is not None:
             data["category"] = self.category.value
@@ -248,14 +262,14 @@ class DataSpecification:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DataSpecification':
+    def from_dict(cls, data: Dict[str, Any]) -> DataSpecification:
         """
         Load the data specification from a given dictionary.
 
         This function in intended to deserialize specifications from a string-based
         representation
 
-        :param data: data dictionary using primitive data types to represent the specificatoin
+        :param data: data dictionary using primitive data types to represent the specification
         :return: the loaded data specification
         :raise KeyError: Raise if a required key is missing
         """
@@ -301,16 +315,15 @@ class DataSpecification:
         return spec
 
     @classmethod
-    def to_str(cls, specs: List['DataSpecification'],
+    def to_str(cls, specs: List[DataSpecification],
                indent_level=0):
-
         """
         Generate string representation for list of specs
 
         :param specs: List of data specifications
         :param indent_level: indentation levels
-        :param spaces: number of space for one identation leve
-        :return:
+        :param spaces: number of space for one indentation level
+        :return: String representation of specification
         """
         hspace = DEFAULT_INDENT * indent_level
 
@@ -348,7 +361,7 @@ class DataSpecification:
                 raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
                                  f" lies outside of range {self.value_range}")
 
-    def get_fulfillment(self, data_spec: 'DataSpecification') -> 'Fulfillment':
+    def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
         Check the fulfillment of an existing and expected data specification against an available one.
 
@@ -385,11 +398,11 @@ class DataSpecification:
         return fulfillment
 
     @classmethod
-    def from_requirements(cls, requirements: Dict[str, Any]) -> List['DataSpecification']:
+    def from_requirements(cls, requirements: Dict[str, Any]) -> List[DataSpecification]:
         """
         Get the list of DataSpecification from dictionary (keyword argument) based representation.
 
-        >>> DataSpecification.from_requirements(requirements={ "column_name": { "unit": units.m }})
+        DataSpecification.from_requirements(requirements={ "column_name": { "unit": units.m }})
 
         :param requirements: List of dictionaries describing the data specification
         :return: List of expectations
@@ -407,7 +420,7 @@ class DataSpecification:
         return required_specs
 
     def merge(self,
-              other: 'DataSpecification') -> 'DataSpecification':
+              other: DataSpecification) -> DataSpecification:
 
         if self.name != other.name:
             raise ValueError(f"{self.__class__.__name__}.merge: cannot merge specs with different name property")
@@ -432,10 +445,10 @@ class DataSpecification:
 
     @classmethod
     def merge_lists(cls,
-                    a_specs: List['DataSpecification'],
-                    b_specs: List['DataSpecification']) -> List['DataSpecification']:
+                    a_specs: List[DataSpecification],
+                    b_specs: List[DataSpecification]) -> List[DataSpecification]:
 
-        result_specs: List['DataSpecification'] = []
+        result_specs: List[DataSpecification] = []
 
         b_column_dict = {x.name: x for x in b_specs}
         a_columns_names = []
@@ -495,14 +508,14 @@ class MetaData:
             return txt
 
     #: Specification of columns in the
-    columns: List[DataSpecification] = None
+    columns: List[DataSpecification]
 
     #: Dictionary containing all annotations
-    annotations: Dict[str, Annotation] = None
+    annotations: Dict[str, Annotation]
 
     def __init__(self,
                  columns: List[DataSpecification],
-                 annotations: Dict[str, Annotation] = None):
+                 annotations: Optional[Dict[str, Annotation]] = None):
         """
         Initialise MetaData
 
@@ -531,7 +544,7 @@ class MetaData:
         return True
 
     def to_dict(self) -> Dict[str, Any]:
-        data = {}
+        data: Dict[str, Any] = {}
         data[self.Key.columns.value] = []
         for ds in self.columns:
             data[self.Key.columns.value].append(ds.to_dict())
@@ -548,7 +561,7 @@ class MetaData:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'MetaData':
+    def from_dict(cls, data: Dict[str, Any]) -> MetaData:
         for key in [cls.Key.annotations.value, cls.Key.columns.value]:
             if key not in data:
                 raise KeyError(f"{cls.__name__}.from_dict: Missing {key} key in MetaData")
@@ -576,7 +589,7 @@ class MetaData:
         return metadata
 
     @classmethod
-    def load_yaml(cls, filename: Union[str, Path]) -> 'MetaData':
+    def load_yaml(cls, filename: Union[str, Path]) -> MetaData:
         yaml_path = Path(filename)
         if not yaml_path.exists():
             raise FileNotFoundError(f"{cls.__name__}.load_yaml: file "
@@ -598,7 +611,7 @@ class MetaData:
             # the dictionary has been constructed
             yaml.dump(self.to_dict(), f, sort_keys=False)
 
-    def apply(self, df: Union[vaex.DataFrame]):
+    def apply(self, df: vaex.DataFrame):
         assert isinstance(df, vaex.DataFrame)
 
         for column_spec in self.columns:
@@ -621,11 +634,11 @@ class MetaData:
 
         raise KeyError(f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'")
 
-    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> 'Fulfillment':
+    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> Fulfillment:
         """
         Get the fulfillment of the metadata with represent to the given data specification
 
-        :param expected_specs:
+        :param expected_specs: A list of data specifications
         :return:
         """
         md_fulfillment = MetaData.Fulfillment()

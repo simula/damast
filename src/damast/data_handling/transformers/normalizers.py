@@ -88,8 +88,8 @@ class CyclicNormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
         y = (\\sin(2 \\pi X_n), \\cos(2 \\pi X_n))
 
 
-    Args:
-        Normalizer (_type_): _description_
+    :param X_min: Minimal input value
+    :param X_max: Maximum input value
     """
 
     X_min: float

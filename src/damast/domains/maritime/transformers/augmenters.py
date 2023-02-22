@@ -505,13 +505,17 @@ class AddCombinedLabel(BaseAugmenter):
 
     def transform(self, df):
         """
-        Combine two existing labels to create a new one .
-        >>> AddCombinedLabel(column_names=[col.FISHING_TYPE, col.STATUS],
-        >>>                  column_permitted_values={col.FISHING_TYPE: {...},col.STATUS: { ... }) },
-        >>>                  combination_name="combination")
+        Combine two existing labels to create a new one
 
-        :param df:
-        :return:
+        .. highlight:: python
+        .. code-block:: python
+
+            AddCombinedLabel(column_names=[col.FISHING_TYPE, col.STATUS],
+                                column_permitted_values={col.FISHING_TYPE: {...},col.STATUS: { ... }) },
+                                combination_name="combination")
+
+        :param df: Input dataframe
+        :return: Output dataframe
         """
         df = super().transform(df)
 

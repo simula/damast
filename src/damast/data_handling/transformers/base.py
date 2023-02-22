@@ -2,6 +2,7 @@
 """
 Module containing the base functionality for custom transformer implementation in this project.
 """
+from __future__ import annotations
 from datetime import datetime
 from logging import DEBUG, Logger, getLogger
 from typing import Any, ClassVar, Dict, List, Union
@@ -33,7 +34,7 @@ class BaseTransformer(BaseEstimator, TransformerMixin):
     OUTPUT_COLUMNS: ClassVar[str] = "output_columns"
     OUTPUT_SHAPE: ClassVar[str] = "output_shape"
 
-    def fit(self, df, y=None) -> 'BaseTransformer':
+    def fit(self, df, y=None) -> BaseTransformer:
         return self
 
     def transform(self, df: Union[pd.DataFrame, vaex.DataFrame]) -> Union[pd.DataFrame, vaex.DataFrame]:

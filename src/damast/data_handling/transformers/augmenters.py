@@ -474,6 +474,17 @@ class AddLocalMessageIndex(BaseAugmenter):
 class AddCombinedLabel(BaseAugmenter):
     """
     Create a single label from two existing ones
+
+    :param column_names: List of columns to combine
+    :param column_permitted_values: For each entry in `column names` the permitted values in each column
+    :param combination name: Name of new label
+
+    .. highlight:: python
+    .. code-block:: python
+
+        AddCombinedLabel(column_names=[col.FISHING_TYPE, col.STATUS],
+                        column_permitted_values={col.FISHING_TYPE: {...},col.STATUS: { ... }) },
+                        combination_name="combination")
     """
     #: List of columns that shall be combined
     column_names: List[str] = None
@@ -484,7 +495,7 @@ class AddCombinedLabel(BaseAugmenter):
     def __init__(self,
                  column_names: List[str],
                  column_permitted_values: Dict[str, List[str]],
-                 combination_name: str = ColumnName.COMBINATION) -> None:
+                 combination_name: str = ColumnName.COMBINATION):
         number_of_columns = len(column_names)
         if number_of_columns != 2:
             raise ValueError("AddCombinedLabel: currently only the combination of exactly two columns is supported")
@@ -520,13 +531,9 @@ class AddCombinedLabel(BaseAugmenter):
 
     def transform(self, df):
         """
-        Combine two existing labels to create a new one .
-        >>> AddCombinedLabel(column_names=[col.FISHING_TYPE, col.STATUS],
-        >>>                  column_permitted_values={col.FISHING_TYPE: {...},col.STATUS: { ... }) },
-        >>>                  combination_name="combination")
-
-        :param df:
-        :return:
+        Combine two existing labels to create a new one
+        :param df: Input dataframe
+        :return: Output dataframe
         """
         df = super().transform(df)
 

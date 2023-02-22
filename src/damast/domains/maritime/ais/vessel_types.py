@@ -1,7 +1,7 @@
 """
 Module to encode the class hierarchy of the global fishing watch
 """
-
+from __future__ import annotations
 import re
 from typing import List, Union
 
@@ -11,7 +11,7 @@ class VesselType:
     The base class for all vessel types defined by the global fishing watch.
     """
 
-    _all_types: List['VesselType'] = None
+    _all_types: List[VesselType] = None
 
     @classmethod
     def typename(cls) -> str:
@@ -26,7 +26,7 @@ class VesselType:
         return snake_case_name
 
     @classmethod
-    def get_types(cls) -> List['VesselType']:
+    def get_types(cls) -> List[VesselType]:
         """
         Get all available vessel types.
 
@@ -39,11 +39,11 @@ class VesselType:
         return klasses
 
     @classmethod
-    def get_types_as_str(cls) -> List['VesselType']:
+    def get_types_as_str(cls) -> List[VesselType]:
         return [x.typename() for x in cls.get_types()]
 
     @staticmethod
-    def _subclasses(cls) -> List['VesselType']:
+    def _subclasses(cls) -> List[VesselType]:
         klasses = []
         for subclass in cls.__subclasses__():
             klasses.append(subclass)
@@ -72,16 +72,16 @@ class VesselType:
 
     @classmethod
     def by_id(cls, *,
-              identifier: int) -> 'VesselType':
+              identifier: int) -> VesselType:
         cls._initialize_types()
 
         return cls._all_types[identifier]
 
     @classmethod
     def to_id(cls, *,
-              klass: Union[str, 'VesselType'] = None) -> int:
+              klass: Union[str, VesselType] = None) -> int:
         """
-        Get the id for a klass name or class type of 'VesselType'.
+        Get the id for a klass name or class type of VesselType.
 
         :param klass:
         :return: id for a particular vessel class
@@ -100,7 +100,7 @@ class VesselType:
 
     @classmethod
     def by_name(cls,
-                name: str) -> 'VesselType':
+                name: str) -> VesselType:
         """
         Get the VesselType by given name
 
