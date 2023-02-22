@@ -1,4 +1,6 @@
 import logging
+import pathlib
+from typing import Tuple
 
 import pytest
 import vaex
@@ -36,43 +38,46 @@ def default_config(workdir):
         "columns": {
             "useless": [],
             "unused": [],
-            "constraints": {}
-        }
+            "constraints": {"LAT": {
+                "min": -90,
+                "max": 90,
+                "type": 'float32',
+                "default": 0}
+            }}
     }
     return params
 
 
 @pytest.fixture()
-def ais_test_data():
+def ais_test_data() -> AISTestData:
     return AISTestData(number_of_trajectories=20)
 
 
 @pytest.fixture()
-def vessel_types_data(ais_test_data, workdir):
+def vessel_types_data(ais_test_data: AISTestData,
+                      workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
     df = ais_test_data.generate_vessel_type_data()
-
-    csv_path = workdir / "vessel_types.csv"
-    df.to_csv(csv_path, sep=";", index=False)
-
-    return df, csv_path
+    hdf5_path = workdir / "vessel_types.hdf5"
+    df.export_hdf5(hdf5_path)
+    return df, hdf5_path
 
 
 @pytest.fixture()
-def fishing_vessel_types_data(ais_test_data, workdir):
+def fishing_vessel_types_data(ais_test_data: AISTestData,
+                              workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
     df = ais_test_data.generate_fishing_vessel_type_data()
-
-    csv_path = workdir / "fishing_vessel_types.csv"
-    df.to_csv(csv_path, sep=",", index=False)
-
-    return df, csv_path
+    hdf5_path = workdir / "fishing_vessel_types.hdf5"
+    df.export_hdf5(hdf5_path)
+    return df, hdf5_path
 
 
 @pytest.fixture()
-def anchorages_data(ais_test_data, workdir):
+def anchorages_data(ais_test_data: AISTestData,
+                    workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
     df = ais_test_data.generate_anchorage_type_data()
 
-    anchorages_csv = workdir / "anchorages.csv"
-    df.to_csv(anchorages_csv, sep=",", index=False)
+    anchorages_csv = workdir / "anchorages.hdf5"
+    df.export_hdf5(anchorages_csv)
 
     return df, anchorages_csv
 
@@ -98,20 +103,20 @@ def test_data_processing(default_config, workdir,
     params["columns"]["useless"] = ["rot", "BaseDateTime", "source"]
 
     # Data processing currently expects the following columns
-    ais_test_data.dataframe.rename(
-        columns={
-            "mmsi": ColumnName.MMSI,
-            "lon": ColumnName.LONGITUDE,
-            "lat": ColumnName.LATITUDE,
-            "date_time_utc": "BaseDateTime",
-            "sog": ColumnName.SPEED_OVER_GROUND,
-            "cog": ColumnName.COURSE_OVER_GROUND,
-            "true_heading": ColumnName.HEADING,
-            "nav_status": ColumnName.STATUS,
-            "message_nr": "MessageType",
-        },
-        inplace=True
-    )
+    columns = {
+        "mmsi": ColumnName.MMSI,
+        "lon": ColumnName.LONGITUDE,
+        "lat": ColumnName.LATITUDE,
+        "date_time_utc": "BaseDateTime",
+        "sog": ColumnName.SPEED_OVER_GROUND,
+        "cog": ColumnName.COURSE_OVER_GROUND,
+        "true_heading": ColumnName.HEADING,
+        "nav_status": ColumnName.STATUS,
+        "message_nr": "MessageType",
+    }
+    for (old_name, new_name) in columns.items():
+        ais_test_data.dataframe.rename(old_name, new_name)
+
     df = cleanse_and_sanitise(params=params, df=ais_test_data.dataframe)
     process_data(params=params,
                  df=df,

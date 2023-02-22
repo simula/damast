@@ -14,15 +14,6 @@ Data Processing Module
   6. Add historic message size (whatever that means).
 
 7. Write data to `data/processed/<month>.h5`.
-
-
-An example of input data is shown below
-
-.. csv-table:: Snapshot of data from `data/1/20220101.zip`
-   :file: example.csv
-   :align: center
-   :header-rows: 1
-
 """
 # -----------------------------------------------------------
 # (C) 2020 Pierre Bernabe, Oslo, Norway
@@ -30,6 +21,7 @@ An example of input data is shown below
 # -----------------------------------------------------------
 
 import argparse
+import datetime
 import glob
 import time
 from logging import Formatter, StreamHandler, basicConfig, getLogger
@@ -38,6 +30,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
+import vaex
 import yaml
 
 from damast.data_handling.exploration import plot_lat_lon
@@ -59,6 +52,8 @@ from damast.data_handling.transformers.visualisers import (
     PlotLatLon
 )
 from damast.domains.maritime.data_specification import ColumnName
+
+__all__ = ["cleanse_and_sanitise", "process_files", "process_data"]
 
 _log = getLogger(__name__)
 LOG_FORMAT = '%(asctime)-5s [%(filename)s:%(lineno)d] %(message)s'
@@ -83,24 +78,32 @@ def get_plots_dir(params: ParamsType) -> Path:
     return plots_dir
 
 
-def cleanse_and_sanitise(params: ParamsType, df: pd.DataFrame) -> pd.DataFrame:
+def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFrame:
     """
     Cleanse and sanitise the dataframe by adjusting the type and performing a cleanup.
 
-    This also reduces the amount of data.
+    :param params: The parameters used for cleaning the data, giving parameter types and ranges
+    :param df: The input data
+    :returns: The cleaned and santised data
 
-    TODO: Consider other message types
-    TODO: Mark rows which contain invalid (out-of-spec data)
+    .. note::
 
-    1. Keep only data from satellite, i.e. source != 'g'
+        Very little computation is actually done inside this module, as we are using `vaex` for
+        lazy evaluation.
+
+    .. todo::
+        * Consider other message types
+        * Mark rows which contain invalid (out-of-spec data)
+
+    1. Keep only data from satellite, i.e. `source != 'g'`
     2. Remove row which do not have a timestamp
     3. Keep only Message Position Messages (TODO: are there not distress signals part of the other messages?)
     4. Create a "timestamp" field
     5. Remove 'useless_columns' as defined in params
-    6. Multiply SOG and COG by 10 to eliminate need for comma
-    7. Replace NaN with default values as defined in '["columns"]["constraints"][<col_name>]["default"]' in params
-    8. Set types via '["columns"]["constraints"][<col_name>]["type"]' in params
-    9. Drop '["columns"]["unused"]' as defined in params
+    6. Drop `["columns"]["unused"]` as defined in params (TODO: what is the difference to useless_columns)
+    7. Multiply SOG and COG by 10 to eliminate need for comma (TODO: Why do we need to multiply by 10)
+    8. Replace NaN/Na with default values as defined in `["columns"]["constraints"][<col_name>]["default"]` in params
+    9. Set types via `["columns"]["constraints"][<col_name>]["type"]` in params
 
     :return: The cleaned dataset
     """
@@ -112,82 +115,88 @@ def cleanse_and_sanitise(params: ParamsType, df: pd.DataFrame) -> pd.DataFrame:
     fill_hdr = header.format(action="FILLNA")
     type_hdr = header.format(action="TYPE")
 
-    # Keep only satellite data
-    before = df.shape[0]
+    # 1. Keep only satellite data
+    df_1 = df[df.source == "g"]
 
-    df.drop(df[df.source == "g"].index, inplace=True)
+    _log.info(f"{drop_hdr} The files contain {df.shape[0]} messages in total."
+              f"Only {df_1.shape[0]} come from satellite(s) and are kept")
 
-    _log.info(f"{drop_hdr} The files contain {before} messages in total."
-              f"Only {df.shape[0]} come from satellite(s) and are kept")
+    # 2. Remove line where date is null
+    df_2 = df_1.dropmissing(column_names=["BaseDateTime"])
+    _log.info(f"{drop_hdr} {df_1.shape[0] - df_2.shape[0]} lines have been dropped."
+              " They do not have a time stamp")
 
-    # Remove line where date is null
-    before = df.shape[0]
-    df.drop(df[df.BaseDateTime.isnull()].index, inplace=True)
-
-    # Keep only the position message
-    df.drop(df[~df.MessageType.isin(params["MessageTypePosition"])].index, inplace=True)
-    _log.info(f"{drop_hdr} {before - df.shape[0]} lines have been dropped."
+    # 3. Keep only the position message
+    df_3 = df_2[df_2.MessageType.isin(params["MessageTypePosition"])]
+    _log.info(f"{drop_hdr} {df_2.shape[0] - df_3.shape[0]} lines have been dropped."
               " They are not of type position report")
 
-    # Date parsing
-    df.loc[:, 'BaseDateTime'] = pd.to_datetime(df['BaseDateTime'], format="%Y-%m-%dT%H:%M:%S")
+    # 4. Add "timestamp" field (and modify basedatetime type)
+    def convert_to_datetime(date_string):
+        return np.datetime64(datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S"))
 
-    # Date to Timestamp
-    df['timestamp'] = df.BaseDateTime.values.astype(np.int64) // 10 ** 9
+    def convert_to_timestamp(date):
+        return np.int64(convert_to_datetime(date))
+    df_3["timestamp"] = df_3["BaseDateTime"].apply(convert_to_timestamp)
+    df_3["BaseDateTime"] = df_3["BaseDateTime"].apply(convert_to_datetime)
     _log.info(f"{add_hdr} Column timestamps added")
 
-    # Drop useless columns
+    # 5. Drop useless columns
     useless_columns = params["columns"]["useless"]
-    df.drop(columns=useless_columns, inplace=True)
+    df_3.drop(useless_columns, inplace=True)
     _log.info(f"{drop_hdr} These columns have been removed: " + ', '.join(
         useless_columns))
 
-    # Drop unused columns
+    # 6. Drop unused columns
     # TODO: what is the difference to useless_columns (?)
     unused_columns = params["columns"]["unused"]
-    df.drop(columns=unused_columns, inplace=True)
+    df_3.drop(unused_columns, inplace=True)
     _log.info(f"{drop_hdr} These columns have been removed: " + ', '.join(unused_columns))
 
-    # multiply columns in order to remove comma
-    df.loc[:, 'SOG'] *= 10
-    df.loc[:, 'COG'] *= 10
+    # 7. multiply columns in order to remove comma
+    # FIXME: Unclear why SOG and COG was multiplied by 10
+    df_3["SOG"] *= 10
+    df_3["COG"] *= 10
 
-    # Fill empty value for then reduce the size thanks to the type
+    # 8. Fill empty value for then reduce the size thanks to the type
     columns_constraints = params["columns"]["constraints"]
-
     for column in columns_constraints:
         constraints = columns_constraints[column]
-        if column not in df.columns:
-            continue
 
-        if df[column].hasnans:
-            if "default" in constraints:
+        if column not in df_3.column_names:
+            continue
+        if df_3[column].countnan() > 0:
+            if "default" in constraints.keys():
                 default_value = constraints["default"]
-                _log.debug(f"{fill_hdr} The NaN values for {column} have been filled"
+                df_3[column].fillnan(default_value)
+                df_3[column].fillna(default_value)
+
+                _log.debug(f"{fill_hdr} The NaN values for {column} have been filled" +
                            f" with {default_value} based on settings in params.yaml")
-                df[column].fillna(default_value, inplace=True)
             else:
                 _log.debug(f"{fill_hdr} {column} has NaN values,"
                            f" but not default value is specified in params.yaml")
         else:
             _log.debug(f"{fill_hdr} No NaN values in {column} - nothing to do")
 
-    # Reduction maximum des types
-    _log.info(f"{type_hdr} Updating columns type for: {df.columns}")
+    # 9. Reduction maximum des types
+    _log.info(f"{type_hdr} Updating columns type for: {columns_constraints.keys()}")
 
-    columns_type = {}
-    for col in df.columns:
-        if col in columns_constraints:
-            if "type" in columns_constraints[col]:
-                columns_type[col] = columns_constraints[col]["type"]
+    column_types = {}
+    for column in columns_constraints:
+        constraints = columns_constraints[column]
+        if column not in df_3.column_names:
+            continue
+        else:
+            if "type" in constraints.keys():
+                df_3[column] = df_3[column].astype(constraints["type"])
+                column_types[column] = constraints["type"]
             else:
-                raise KeyError(f"Missing type information in params.yaml for column '{col}'")
+                raise KeyError(f"Missing type information in params.yaml for column '{column}'")
 
-    df = df.astype(columns_type)
     _log.info(f"{type_hdr} The type of the columns have been modified"
-              f" to {columns_type} as defined in params.yaml")
-
-    return df
+              f" to {column_types} as defined in params.yaml")
+    return df_3
 
 
 def process_files(params: Dict[str, Any]) -> None:
@@ -242,27 +251,43 @@ def process_files(params: Dict[str, Any]) -> None:
 
 
 def process_data(params: Dict[str, Any],
-                 df: pd.DataFrame,
+                 df: vaex.DataFrame,
                  workdir: Path):
-    df.reset_index(drop=True, inplace=True)
+
     # region PROCESSING PIPELINE
     plots_dir = get_plots_dir(params=params)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     # Data Feature extraction and augmentation
-    vessel_type_csv = params["inputs"]["vessel_types"]
-    fishing_vessel_type_csv = params["inputs"]["fishing_vessel_types"]
-    anchorages_csv = params["inputs"]["anchorages"]
+    vessel_type_hdf5 = params["inputs"]["vessel_types"]
+    fishing_vessel_type_hdf5 = params["inputs"]["fishing_vessel_types"]
+    anchorages_hdf5 = params["inputs"]["anchorages"]
     # https://en.wikipedia.org/wiki/Two-line_element_set
     # tle_filename = params["inputs"]["tle_file"]
 
     # Output an overview over the existing anchorages
-    anchorages_data = pd.read_csv(anchorages_csv)
+    anchorages_data = vaex.open(anchorages_hdf5)
     plot_lat_lon(df=anchorages_data,
                  latitude_name="latitude",
                  longitude_name="longitude",
                  output_dir=plots_dir,
                  filename_prefix="anchorages-lat-lon")
+    # Temporary converters to csv to be compatible
+    if isinstance(vessel_type_hdf5, Path):
+        vessel_type_csv = vaex.open(vessel_type_hdf5).to_pandas_df()
+    else:
+        vessel_type_csv = vessel_type_hdf5.to_pandas_df()
+
+    if isinstance(anchorages_hdf5, Path):
+        anchorages_csv = vaex.open(anchorages_hdf5).to_pandas_df()
+    else:
+        anchorages_csv = anchorages_hdf5.to_pandas_df()
+    if isinstance(fishing_vessel_type_hdf5, Path):
+        fishing_vessel_type_csv = vaex.open(fishing_vessel_type_hdf5).to_pandas_df()
+    else:
+        fishing_vessel_type_csv = fishing_vessel_type_hdf5.to_pandas_df()
+
+    df = df.to_pandas_df()
 
     pipeline = Pipeline([
         ("plot_input-histograms", PlotHistograms(output_dir=plots_dir,

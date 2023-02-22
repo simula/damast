@@ -5,7 +5,7 @@ import numpy.typing as npt
 import pandas
 import pandas as pd
 from numba import njit
-from sklearn.base import ClassNamePrefixFeaturesOutMixin, OneToOneFeatureMixin
+from sklearn.base import ClassNamePrefixFeaturesOutMixin, OneToOneFeatureMixin, BaseEstimator, TransformerMixin
 
 from damast.data_handling.transformers.base import BaseTransformer
 
@@ -78,7 +78,7 @@ class MinMaxNormalizer(Normalizer):
         return output
 
 
-class CyclicNormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
+class CyclicNormalizer(BaseEstimator, TransformerMixin, ClassNamePrefixFeaturesOutMixin):
     """
     Normalize data `X` in range `[X_min, X_max]` to cyclic coordinates
 
@@ -101,9 +101,8 @@ class CyclicNormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
         self.y_min = 0
         self.y_max = 1
 
-        self._n_features_out = 2
-
     def fit(self, X, y=None):
+        self._n_features_out = 2
         return self
 
     def transform(self, X):
@@ -113,7 +112,7 @@ class CyclicNormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
         return np.hstack([X_sin, X_cos])
 
 
-class CyclicDenormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
+class CyclicDenormalizer(BaseEstimator, TransformerMixin, ClassNamePrefixFeaturesOutMixin):
     """
     Transform cyclic data (X_sin, X_cos) to non-cyclic data between `[y_min, y_max]`.
     """
@@ -131,6 +130,11 @@ class CyclicDenormalizer(Normalizer, ClassNamePrefixFeaturesOutMixin):
         return self
 
     def transform(self, X):
+        """Apply cyclic denormalizer
+
+        :param X: The data with columns (X_sin, X_cos)
+        :returns: The transformed data into range `[y_min, y_max]`.
+        """
         if isinstance(X, pandas.DataFrame):
             X_np = X.to_numpy()
         else:

@@ -5,9 +5,9 @@ from random import choice, randint, random
 from typing import Any, List
 
 import numpy as np
-import pandas as pd
+import vaex
 from pyais.ais_types import AISType
-
+import pandas as pd
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
@@ -42,7 +42,7 @@ TRAJECTORY_MAX_SIZE = 200
 
 
 class AISTestData:
-    dataframe: pd.DataFrame = None
+    dataframe: vaex.DataFrame = None
 
     def __init__(self,
                  number_of_trajectories: int,
@@ -53,11 +53,11 @@ class AISTestData:
         self.min_length = min_length
         self.max_length = max_length
 
-        self.dataframe: pd.DataFrame = self._generate_data()
+        self.dataframe: vaex.DataFrame = self._generate_data()
 
     @staticmethod
     def generate_trajectory(min_size: int, max_size: int) -> List[List[Any]]:
-        mmsi = randint(MMSI.min_value, MMSI.max_value)
+        mmsi = randint(2*MMSI.min_value, 2*MMSI.max_value)  # Create some invalid messages as well
 
         lat_start = (random() * 180.0) - 90.0
         lon_start = (random() * 360.0) - 180.0
@@ -105,12 +105,12 @@ class AISTestData:
                  nav_status,
                  rot_start,
                  msg_id,
-                 source
+                 choice(["s", "g"])  # Create some ground data that should be removed in processing
                  ])
 
         return trajectory
 
-    def _generate_data(self) -> pd.DataFrame:
+    def _generate_data(self) -> vaex.DataFrame:
         df = None
         for i in range(0, self.number_of_trajectories):
             trajectory = AISTestData.generate_trajectory(min_size=self.min_length, max_size=self.max_length)
@@ -119,19 +119,28 @@ class AISTestData:
                 df = t_df
             else:
                 df = pd.concat([df, t_df], axis=0, ignore_index=True)
-        return df
+        return vaex.from_pandas(df)
 
-    def generate_vessel_type_data(self):
+    def generate_vessel_type_data(self) -> vaex.DataFrame:
+        """Generate a `vaex.Dataframe` with data imitating vessel-type info
+
+        Returns:
+            A dataframe with an `ColumnName.MMSI` column and a `ColumnName.VESSEL_TYPE` column.
+        """
         vessel_type_data = []
-        for mmsi in np.unique(self.dataframe[ColumnName.MMSI.lower()]):
+        for mmsi in self.dataframe[ColumnName.MMSI.lower()].unique():
             vessel_type_data.append([mmsi, vessel_types.Fishing.to_id()])
         df = pd.DataFrame(vessel_type_data, columns=[ColumnName.MMSI, ColumnName.VESSEL_TYPE])
-        return df
+        return vaex.from_pandas(df)
 
-    def generate_fishing_vessel_type_data(self):
+    def generate_fishing_vessel_type_data(self) -> vaex.DataFrame:
+        """Generate a `vaex.Dataframe` with data imitating vessel info from Global Fishing Watch
+
+        Returns:
+            A dataframe with an `ColumnName.MMSI` (lower-cased) column and a `ColumnName.VESSEL_TYPE` column.
+        """
         fishing_vessel_type_data = []
-
-        for mmsi in np.unique(self.dataframe[ColumnName.MMSI.lower()]):
+        for mmsi in self.dataframe[ColumnName.MMSI.lower()].unique():
             fishing_vessel_type_data.append([mmsi, choice([
                 vessel_types.DriftingLonglines.to_id(),
                 vessel_types.PoleAndLine.to_id(),
@@ -139,37 +148,32 @@ class AISTestData:
             ])])
 
         df = pd.DataFrame(fishing_vessel_type_data, columns=[ColumnName.MMSI.lower(), ColumnName.VESSEL_TYPE_GFW])
-        return df
 
-    def generate_anchorage_type_data(self):
+        return vaex.from_pandas(df)
+
+    def generate_anchorage_type_data(self) -> vaex.DataFrame:
         # Generate anchorages close to starting points of vessel trajectories
-        lat = self.dataframe.groupby(ColumnName.MMSI.lower())["lat"].first() * 1.05
-        lat_df = lat.reset_index()
-        lat_df.rename(
-            columns={"lat": "latitude"},
-            inplace=True
-        )
-
-        lon = self.dataframe.groupby(ColumnName.MMSI.lower())["lon"].first() * -0.95
-        lon_df = lon.reset_index()
-        lon_df.rename(
-            columns={"lon": "longitude"},
-            inplace=True
-        )
-        anchorages_df = pd.merge(lat_df, lon_df, on=[ColumnName.MMSI.lower()])
-        return anchorages_df
+        mmsi = ColumnName.MMSI.lower()
+        lat_vaex = self.dataframe.groupby(mmsi).agg({"lat": vaex.agg.first})
+        lat_vaex.rename("lat", "latitude")
+        lat_vaex["latitude"] *= 1.05
+        lon_vaex = self.dataframe.groupby(mmsi).agg({"lon": vaex.agg.first})
+        lon_vaex.rename("lon", "longitude")
+        lon_vaex["longitude"] *= -0.95
+        df = lat_vaex.join(lon_vaex, on=mmsi)
+        return df
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
                             description="A simple generator for ais data that can be used as input to "
-                                        + "data processing stage")
+                            + "data processing stage")
 
     parser.add_argument("-t", "--number-of-trajectories", default=100, type=int)
-    parser.add_argument("-o", "--output", default="test-data.csv", type=str)
+    parser.add_argument("-o", "--output", default="test-data.hdf5", type=str)
 
     args = parser.parse_args()
 
     ais_test_data = AISTestData(number_of_trajectories=args.number_of_trajectories)
-    ais_test_data.dataframe.to_csv(str(args.output), sep=";", index=False)
+    ais_test_data.dataframe.export_hdf5(args.output)
     _log.info("Written: {args.output}")
