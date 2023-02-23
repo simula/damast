@@ -62,7 +62,17 @@ class AnnotatedDataFrame:
                     self._metadata.columns.append(DataSpecification.from_dict(data=expected_data_spec.to_dict()))
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
-        raise NotImplementedError()
+        """
+        Save this instance in an hdf5 file.
+
+        :param filename: Filename to use for saving
+
+        """
+        if self._dataframe is not None:
+            self._dataframe.export_hdf5(filename)
+        else:
+            raise ValueError(f"{self.__class__.__name__}.save: no dataframe to save")
+
 
     @classmethod
     def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:

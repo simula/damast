@@ -1,9 +1,12 @@
 """
 Module containing decorators and classes to model data processing pipelines
 """
+from __future__ import annotations
+
 import functools
 import inspect
-from typing import Any, Dict, List, Tuple, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import vaex.ml
 from vaex.ml.transformations import Transformer
@@ -18,7 +21,8 @@ __all__ = [
     "describe",
     "DataProcessingPipeline",
     "DECORATED_INPUT_SPECS",
-    "DECORATED_OUTPUT_SPECS"
+    "DECORATED_OUTPUT_SPECS",
+    "PipelineElement"
 ]
 
 DECORATED_DESCRIPTION = '_damast_description'
@@ -134,33 +138,78 @@ def output(requirements: Dict[str, Any]):
     return decorator
 
 
-class DataProcessingPipeline(Transformer):
+class PipelineElement(Transformer):
+    """
+    Allow to get the reference to a parent pipeline
+    """
+
+    #: Pipeline in which context this processor will be run
+    parent_pipeline: DataProcessingPipeline
+
+    def set_parent(self, pipeline: DataProcessingPipeline):
+        """
+        Sets the parent pipeline for this pipeline element
+
+        :param pipeline: Parent pipeline
+        """
+        self.parent_pipeline = pipeline
+
+
+class DataProcessingPipeline(PipelineElement):
     """
     A data-processing pipeline for a sequence of transformers
 
-    :param steps: A list of tuples (name_of_transformer, :class:`Transformer`)
+    :param name: Name of the pipeline
+    :param base_dir: Base directory towards which transformer output which be relative
+
     :raises ValueError: If any of the transformer names are `None`
     :raises AttributeError: If the transformer is missing the :func:`transform` function
     :raises AttributeError: If transformer is missing input or output decoration
     :raises RuntimeError: If the sequence of transformers does not satisfy the sequential requirements
     """
+    #: Name of the processing pipeline
+    name: str
+
+    #: Base path (which is forwarded to transformers, when calling
+    #: transform)
+    base_dir: Path
 
     #: The output specs - as specified by decorators
     output_specs: List[DataSpecification]
 
+    #: Check if the pipeline is ready to be run
+    is_ready: bool
     # The processing steps that define this pipeline
     steps: List[Tuple[str, Transformer]]
 
-    def __init__(self, steps: List[Tuple[str, Transformer]]):
-        validation_result = self.validate(steps=steps)
+    def __init__(self,
+                 name: str,
+                 base_dir: Union[str, Path]):
+        self.name = name
+        self.base_dir = Path(base_dir)
 
-        self.steps = validation_result["steps"]
-        self.output_specs = validation_result["output_spec"]
+        self.steps = []
+        self.is_ready = False
+
+    def add(self, name: str, transformer: PipelineElement) -> DataProcessingPipeline:
+        """
+        Add a pipeline step
+
+        :param name: Name of the step
+        :param transformer: The transformer that shall be executed
+        :param kwargs:
+        :return:
+        """
+        transformer.set_parent(pipeline=self)
+
+        self.steps.append([name, transformer])
+        self.is_ready = False
+        return self
 
     @classmethod
     def validate(cls, steps: List[Tuple[str, Transformer]]) -> Dict[str, Any]:
         """
-        Validate the existing pipeline and collect the final (minimal output) data specification
+        Validate the existing pipeline and collect the final (minimal output) data specification.
 
         .. todo::
 
@@ -208,7 +257,7 @@ class DataProcessingPipeline(Transformer):
 
     def to_str(self, indent_level: int = 0) -> str:
         """
-        Output pipeline as string
+        Output pipeline as string.
 
         :param indent_level: Indentation per step. It is multiplied by :attr:`DEFAULT_INDENT`.
         :returns: The pipeline in string representation
@@ -234,16 +283,40 @@ class DataProcessingPipeline(Transformer):
 
         return data
 
-    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+    def prepare(self) -> DataProcessingPipeline:
+        """
+        Prepare the pipeline by validating all step that define the pipeline.
+
+        A :class:`DataProcessingPipeline` must be prepared before execution.
+
+        :returns: This instance of data processing pipeline
+        """
+        validation_result = self.validate(steps=self.steps)
+        self.is_ready = True
+
+        self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
+        self.output_specs: List[DataSpecification] = validation_result["output_spec"]
+
+        return self
+
+    def transform(self, df: AnnotatedDataFrame) -> Any:
         """
         Apply pipeline on given annotated dataframe
 
         :param df: The input dataframe
         :returns: The transformed dataframe
         """
+        if not self.is_ready:
+            self.prepare()
+
         steps = [t for _, t in self.steps]
         pipeline = vaex.ml.Pipeline(steps)
         return pipeline.transform(dataframe=df)
 
     def __repr__(self) -> str:
+        """
+        Create the representation string for this :class:`DataProcessingPipeline`.
+
+        :returns: String representation
+        """
         return self.to_str()
