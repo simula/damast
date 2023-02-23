@@ -66,9 +66,17 @@ class TransformerA(PipelineElement):
     })
     @damast.core.output({
         "latitude_x": {"unit": units.deg},
-        "latitude_y": {"unit": units.deg}
+        "latitude_y": {"unit": units.deg},
+        "longitude_x": {"unit": units.deg},
+        "longitude_y": {"unit": units.deg}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        lat_cyclic_transformer = vaex.ml.CycleTransformer(features=["latitude"], n=180.0)
+        lon_cyclic_transformer = vaex.ml.CycleTransformer(features=["longitude"], n=360.0)
+
+        _df = lat_cyclic_transformer.fit_transform(df=df)
+        _df = lon_cyclic_transformer.fit_transform(df=_df)
+        df._dataframe = _df
         return df
 
 
@@ -76,13 +84,19 @@ class TransformerB(PipelineElement):
     @damast.core.describe("delta computation")
     @damast.core.input({
         "latitude_x": {"unit": units.deg},
-        "latitude_y": {"unit": units.deg}
+        "latitude_y": {"unit": units.deg},
+        "longitude_x": {"unit": units.deg},
+        "longitude_y": {"unit": units.deg}
     })
     @damast.core.output({
         "delta_longitude": {"unit": units.deg},
         "delta_latitude": {"unit": units.deg}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        # This operation is does not really make sense, but acts as a placeholder to generate
+        # the desired output columns
+        df["delta_longitude"] = df["longitude_x"] - df["longitude_y"]
+        df["delta_latitude"] = df["latitude_x"] - df["latitude_y"]
         return df
 
 
@@ -98,6 +112,7 @@ class TransformerC(PipelineElement):
         "label": {}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df["label"] = "data-label"
         return df
 
 
@@ -229,7 +244,7 @@ def test_access_decorator_info():
            DataSpecification.from_requirements(requirements=output_specs)
 
 
-def test_data_processing_valid_pipeline(tmp_path):
+def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp_path):
     pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
         .add("transform-b", TransformerB()) \
@@ -252,6 +267,10 @@ def test_data_processing_valid_pipeline(tmp_path):
     print("\n")
     print(representation)
     assert representation != ""
+
+    adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
+                             metadata=lat_lon_metadata)
+    pipeline.transform(df=adf)
 
 
 def test_data_processing_invalid_pipeline(tmp_path):

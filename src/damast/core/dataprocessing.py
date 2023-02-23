@@ -122,7 +122,11 @@ def output(requirements: Dict[str, Any]):
 
             adf: AnnotatedDataFrame = func(*args, **kwargs)
             if adf is None:
-                raise RuntimeError("output: decorated function must return 'AnnotatedDataFrame', but was 'None'")
+                raise RuntimeError(f"output: decorated function {func} must return 'AnnotatedDataFrame',"
+                                   f" but was 'None'")
+            elif not isinstance(adf, AnnotatedDataFrame):
+                raise RuntimeError(f"output: decorated function {func} must return 'AnnotatedDataFrame', but was '"
+                                   f"{type(adf)}")
 
             for c in input_columns:
                 if c not in adf._dataframe.column_names:
@@ -309,7 +313,7 @@ class DataProcessingPipeline(PipelineElement):
 
         return self
 
-    def transform(self, df: AnnotatedDataFrame) -> Any:
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
         Apply pipeline on given annotated dataframe
 
@@ -321,7 +325,13 @@ class DataProcessingPipeline(PipelineElement):
 
         steps = [t for _, t in self.steps]
         pipeline = vaex.ml.Pipeline(steps)
-        return pipeline.transform(dataframe=df)
+
+        if df.is_empty():
+            raise RuntimeError(f"{self.__class__.__name__}.transform: there is no data available to transform")
+
+        adf = pipeline.transform(dataframe=df)
+        assert isinstance(adf, AnnotatedDataFrame)
+        return adf
 
     def __repr__(self) -> str:
         """
