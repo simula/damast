@@ -57,7 +57,8 @@ dev = [
     "tox",
     "flake8-gl-codeclimate",
     "jupyter-book",
-    "isort"
+    "isort",
+    "sphinx-autoapi"
 ]
 test = [
     "pytest",
