@@ -1,5 +1,0 @@
-Domains
-=======
-
-
-.. ::automodule:: damast.domains

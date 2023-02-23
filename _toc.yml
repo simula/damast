@@ -1,6 +1,7 @@
 # Table of contents
 # Learn more at https://jupyterbook.org/customize/toc.html
 
+
 format: jb-book
 root: README
 parts:
@@ -10,10 +11,3 @@ parts:
   - caption: API Documentation
     chapters:
       - file: docs/modules
-        sections:
-          - file: docs/modules/cli
-          - file: docs/modules/core
-          - file: docs/modules/data_handling
-          - file: docs/modules/domains
-            sections:
-              - file: docs/modules/domains/maritime
