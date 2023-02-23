@@ -175,7 +175,7 @@ class DataProcessingPipeline(PipelineElement):
     base_dir: Path
 
     #: The output specs - as specified by decorators
-    output_specs: List[DataSpecification]
+    _output_specs: List[DataSpecification]
 
     #: Check if the pipeline is ready to be run
     is_ready: bool
@@ -188,8 +188,18 @@ class DataProcessingPipeline(PipelineElement):
         self.name = name
         self.base_dir = Path(base_dir)
 
+        self._output_specs = None
+
         self.steps = []
         self.is_ready = False
+
+    @property
+    def output_specs(self):
+        if not self.is_ready:
+            raise RuntimeError(f"{self.__class__.__name__}.output_specs: pipeline is not yet ready to run. "
+                               f"Please call 'prepare()' to set the correct output specs")
+
+        return self._output_specs
 
     def add(self, name: str, transformer: PipelineElement) -> DataProcessingPipeline:
         """
@@ -295,7 +305,7 @@ class DataProcessingPipeline(PipelineElement):
         self.is_ready = True
 
         self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
-        self.output_specs: List[DataSpecification] = validation_result["output_spec"]
+        self._output_specs: List[DataSpecification] = validation_result["output_spec"]
 
         return self
 

@@ -2,12 +2,11 @@ import pandas as pd
 import pytest
 import vaex
 from astropy import units
-from sklearn.base import TransformerMixin
 from vaex.ml import CycleTransformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.dataprocessing import DataProcessingPipeline
+from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
@@ -59,7 +58,7 @@ class DataProcessorA:
         return df
 
 
-class TransformerA(TransformerMixin):
+class TransformerA(PipelineElement):
     @damast.core.describe("latitude x/y generation")
     @damast.core.input({
         "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
@@ -73,7 +72,7 @@ class TransformerA(TransformerMixin):
         return df
 
 
-class TransformerB(TransformerMixin):
+class TransformerB(PipelineElement):
     @damast.core.describe("delta computation")
     @damast.core.input({
         "latitude_x": {"unit": units.deg},
@@ -87,7 +86,7 @@ class TransformerB(TransformerMixin):
         return df
 
 
-class TransformerC(TransformerMixin):
+class TransformerC(PipelineElement):
     @damast.core.describe("label generation")
     @damast.core.input({
         "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
@@ -230,13 +229,18 @@ def test_access_decorator_info():
            DataSpecification.from_requirements(requirements=output_specs)
 
 
-def test_data_processing_valid_pipeline():
-    pipeline = DataProcessingPipeline([
-        ("transform-a", TransformerA()),
-        ("transform-b", TransformerB()),
-        ("transform-c", TransformerC()),
-    ])
+def test_data_processing_valid_pipeline(tmp_path):
+    pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
+        .add("transform-a", TransformerA()) \
+        .add("transform-b", TransformerB()) \
+        .add("transform-c", TransformerC())
+
+    with pytest.raises(RuntimeError, match="set the correct output specs"):
+        pipeline.output_specs
+
+    pipeline.prepare()
     assert pipeline.output_specs is not None
+
     output_columns = [x.name for x in pipeline.output_specs]
     for column in ["longitude", "latitude",
                    "latitude_x", "latitude_y",
@@ -250,10 +254,10 @@ def test_data_processing_valid_pipeline():
     assert representation != ""
 
 
-def test_data_processing_invalid_pipeline():
+def test_data_processing_invalid_pipeline(tmp_path):
+    pipeline = DataProcessingPipeline(name="acb", base_dir=tmp_path) \
+        .add("transform-a", TransformerA()) \
+        .add("transform-c", TransformerC()) \
+        .add("transform-b", TransformerB())
     with pytest.raises(RuntimeError, match="insufficient output declared"):
-        DataProcessingPipeline([
-            ("transform-a", TransformerA()),
-            ("transform-c", TransformerC()),
-            ("transform-b", TransformerB()),
-        ])
+        pipeline.prepare()
