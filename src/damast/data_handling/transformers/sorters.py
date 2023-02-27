@@ -1,4 +1,3 @@
-# code=utf-8
 """
 Module which collects transformers that change the order of data
 """

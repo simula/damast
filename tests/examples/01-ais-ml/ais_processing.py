@@ -31,7 +31,9 @@ class HDF5Export(PipelineElement):
         self.filename = Path(filename)
 
     @damast.core.input({})
-    @damast.core.output({})
+    @damast.core.artifacts({
+        "hdf5_export": "*.hdf5"
+    })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         df.save(filename=self.parent_pipeline.base_dir / self.filename)
         return df

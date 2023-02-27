@@ -1,4 +1,3 @@
-# code=utf-8
 """
 Module containing the base functionality for custom transformer implementation in this project.
 """

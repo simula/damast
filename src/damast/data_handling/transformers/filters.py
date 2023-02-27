@@ -1,4 +1,3 @@
-# code=utf-8
 """
 Module which collect all filters that have been implemented as sklearn Transformers.
 

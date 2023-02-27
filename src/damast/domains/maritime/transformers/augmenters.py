@@ -1,4 +1,3 @@
-# code=utf-8
 """
 Module which collects transformers that add / augment the existing data
 """

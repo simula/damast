@@ -17,6 +17,7 @@ from .formatting import DEFAULT_INDENT
 from .units import Unit, unit_registry, units
 
 __all__ = [
+    "ArtifactSpecification",
     "DataCategory",
     "DataSpecification",
     "MetaData",
@@ -34,6 +35,40 @@ class DataCategory(str, Enum):
 class Status(str, Enum):
     OK = "OK"
     FAIL = "FAIL"
+
+
+class ArtifactSpecification:
+    """
+    Specification of a (file) artifact that might be generated during data processing.
+
+    :param requirements: Dictionary describing expected path artifacts, key is a descriptor,
+                         value an absolute path or a relative path (pattern)
+    """
+
+    #: Dictionary mapping an artifact description to a file glob pattern
+    artifacts: Dict[str, str]
+
+    def __init__(self, requirements: Dict[str, Any]) -> None:
+        self.artifacts = requirements
+
+    def validate(self, base_dir: Path):
+        """
+        Validate the list of artifacts.
+
+        :param base_dir: Relative paths/patterns will be interpreted with base_dir as current working directory
+        :raise RuntimeError: When a matching file could not be found
+        """
+        for name, path_pattern in self.artifacts.items():
+            a_path = Path(path_pattern)
+            if a_path.is_absolute():
+                if not a_path.exists():
+                    raise RuntimeError(f"{self.__class__.__name__}.validate: artifact '{a_path}' is "
+                                       "missing")
+            else:
+                files = [x for x in Path(base_dir).glob(path_pattern)]
+                if len(files) == 0:
+                    raise RuntimeError(f"{self.__class__.__name__}.validate: no artifact matching "
+                                       f" {path_pattern} found in '{base_dir}'")
 
 
 class DataSpecification:
@@ -87,11 +122,33 @@ class DataSpecification:
             return f"{self.__class__.__name__}[{status}]"
 
     class MissingColumn(Fulfillment):
+        """
+        Represent a missing column fulfillment.
+
+        :param missing_column: Name of the missing column
+        :param known_columns: Names of the (by specification) known columns
+        """
+
+        missing_column: str
+        known_columns: List[str]
+
+        def __init__(self, missing_column: str = None,
+                     known_columns: List[str] = None):
+            super().__init__()
+
+            self.missing_column = missing_column
+            self.known_columns = known_columns
+
         def is_met(self) -> bool:
+            """
+            Check if fulfillment is met.
+
+            :return: Always returns False, since this represents a missing fulfillment
+            """
             return False
 
         def __repr__(self) -> str:
-            return f"{self.__class__.__name__}"
+            return f"{self.__class__.__name__}: '{self.missing_column}', known: {','.join(self.known_columns)}"
 
     #: Name associated
     name: str
@@ -147,9 +204,7 @@ class DataSpecification:
             self.category = category
 
         self.is_optional = is_optional
-        if abbreviation is None:
-            self.abbreviation = name
-        else:
+        if abbreviation is not None and abbreviation != '':
             self.abbreviation = abbreviation
 
         self.representation_type = representation_type
@@ -273,18 +328,27 @@ class DataSpecification:
         :return: the loaded data specification
         :raise KeyError: Raise if a required key is missing
         """
-        for key in [cls.Key.name, cls.Key.is_optional, cls.Key.abbreviation]:
+        for key in [cls.Key.name, cls.Key.is_optional]:
             if key.value not in data:
                 raise KeyError(f"{cls.__name__}.from_dict: missing '{key.value}'")
 
+        abbreviation = None
+        if cls.Key.abbreviation.value in data:
+            abbreviation = data[cls.Key.abbreviation.value]
+            if not isinstance(abbreviation, str):
+                raise TypeError(f"{cls.__name__}.from_dict: "
+                                f"abbreviation must be of type 'str'")
+
         data_category = None
         if cls.Key.category.value in data:
-            data_category = DataCategory(data[cls.Key.category])
+            data_category = data[cls.Key.category]
+            if not isinstance(data_category, DataCategory):
+                data_category = DataCategory(data_category)
 
         spec = cls(name=data[cls.Key.name],
                    category=data_category,
                    is_optional=bool(data[cls.Key.is_optional]),
-                   abbreviation=data[cls.Key.abbreviation])
+                   abbreviation=abbreviation)
 
         if cls.Key.representation_type.value in data:
             spec.representation_type = cls.resolve_representation_type(data[cls.Key.representation_type.value])
@@ -299,16 +363,27 @@ class DataSpecification:
         if cls.Key.unit.value in data:
             # Check if unit is part of the default definitions
             unit_value = data[cls.Key.unit.value]
-            try:
-                unit = getattr(units, unit_value)
-            except Exception:
-                # Check if unit part of definition in 'damast.core.units'
-                unit = unit_registry[unit_value]
+            if isinstance(unit_value, str):
+                try:
+                    unit = getattr(units, unit_value)
+                except Exception:
+                    # Check if unit part of definition in 'damast.core.units'
+                    unit = unit_registry[unit_value]
+            elif isinstance(unit_value, Unit):
+                unit = unit_value
+            else:
+                raise RuntimeError(f"{cls.__name__}.from_dict: cannot interprete unit type "
+                                   f"'{type(unit_value)}")
 
             spec.unit = unit
 
         if cls.Key.value_range.value in data:
-            spec.value_range = DataRange.from_dict(data[cls.Key.value_range.value], dtype=spec.representation_type)
+            value_range = data[cls.Key.value_range.value]
+            if isinstance(value_range, DataRange):
+                spec.value_range = value_range
+            else:
+                spec.value_range = DataRange.from_dict(value_range, dtype=spec.representation_type)
+
             if cls.Key.value_meanings.value in data:
                 spec.value_meanings = data[cls.Key.value_meanings.value]
 
@@ -437,7 +512,9 @@ class DataSpecification:
                 setattr(ds, key.value, other_value)
             elif other_value is None:
                 setattr(ds, key.value, this_value)
-            elif this_value != other_value:
+            elif this_value == other_value:
+                setattr(ds, key.value, this_value)
+            else:
                 raise ValueError(
                     f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
                     f" on self: '{this_value}' vs. other: '{other}'")
@@ -650,6 +727,8 @@ class MetaData:
                                                fulfillment=fulfillment)
             else:
                 md_fulfillment.add_fulfillment(column_name=expected_spec.name,
-                                               fulfillment=DataSpecification.MissingColumn()
-                                               )
+                                               fulfillment=DataSpecification.MissingColumn(
+                                                   missing_column=expected_spec.name,
+                                                   known_columns=[x.name for x in self.columns]
+                                               ))
         return md_fulfillment
