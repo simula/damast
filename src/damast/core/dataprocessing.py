@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -73,8 +74,7 @@ def _apply_name_mappings(transformer: PipelineElement, specs: List[DataSpecifica
         raise TypeError(f"_apply_name_mappings: specs needs to be a list of DataSpecification")
 
     for spec in specs:
-        if spec.name in transformer.name_mappings:
-            spec.name = transformer.name_mappings[spec.name]
+        spec.name = transformer.get_name(spec.name)
 
 
 def describe(description: str):
@@ -244,6 +244,28 @@ class PipelineElement(Transformer):
         if not hasattr(self, "_name_mappings"):
             self._name_mappings = {}
         return self._name_mappings
+
+    def get_name(self, name: str) -> Any:
+        """
+        Add the fully resolved input/output name for this key.
+
+        :param name: Name as used in the input spec, or pattern "{{x}}_suffix" in order to create a dynamic
+                     output based an existing and renameable input
+        :return: Name for this input after resolving name mappings and references
+        """
+        if name in self.name_mappings:
+            return self.name_mappings[name]
+
+        # Allow to use patterns, so that an existing input
+        # reference can be reused for dynamic labelling
+        while re.match('{{\\w}}', name):
+            for match in re.finditer('{{\\w}}', name):
+                resolved_name = match.group()[2:-2]
+                if resolved_name in self.name_mappings:
+                    resolved_name = self.name_mappings[resolved_name]
+
+                name = name.replace(match.group(), resolved_name)
+        return name
 
 
 class DataProcessingPipeline(PipelineElement):

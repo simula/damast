@@ -299,8 +299,9 @@ def test_single_element_pipeline(tmp_path):
 
         @damast.core.describe("Generic transform of x")
         @damast.core.input({"x": {"unit": units.deg}})
-        @damast.core.output({"x": {"unit": units.deg}})
+        @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
         def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
             return df
 
     pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
