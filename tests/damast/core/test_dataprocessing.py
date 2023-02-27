@@ -11,7 +11,7 @@ from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
-class DataProcessorA:
+class DataProcessorA(PipelineElement):
     # Consider:
     # - mapping of input names
     # - use regex to match columns
@@ -173,7 +173,7 @@ def test_data_processor_input(height_dataframe, height_metadata):
     height_adf = AnnotatedDataFrame(dataframe=height_dataframe,
                                     metadata=height_metadata)
 
-    class CustomDataProcessor:
+    class CustomDataProcessor(PipelineElement):
         # Consider:
         # - mapping of input names
         # - use regex to match columns
@@ -280,3 +280,32 @@ def test_data_processing_invalid_pipeline(tmp_path):
         .add("transform-b", TransformerB())
     with pytest.raises(RuntimeError, match="insufficient output declared"):
         pipeline.prepare()
+
+
+def test_single_element_pipeline(tmp_path):
+    data = [["10000000", 0]]
+    column_names = ["mmsi", "status"]
+
+    column_specs = [
+        DataSpecification(name="mmsi"),
+        DataSpecification(name="status", unit=units.deg)
+    ]
+
+    df_pd = pd.DataFrame(data, columns=column_names)
+    df = vaex.from_pandas(df_pd)
+    adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
+
+    class TransformX(PipelineElement):
+
+        @damast.core.describe("Generic transform of x")
+        @damast.core.input({"x": {"unit": units.deg}})
+        @damast.core.output({"x": {"unit": units.deg}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+    pipeline.add("Transform status",
+                 TransformX(),
+                 name_mappings={"x": "status"})
+
+    pipeline.transform(df=adf)

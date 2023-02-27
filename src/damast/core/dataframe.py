@@ -1,4 +1,3 @@
-# code=utf-8
 """
 Module to define a dataframe
 """

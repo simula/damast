@@ -1,4 +1,3 @@
-# code=utf-8
 """
 This namespace contains the core modules that are required to define metadata.
 """
@@ -6,6 +5,8 @@ This namespace contains the core modules that are required to define metadata.
 from .annotations import Annotation
 from .dataframe import AnnotatedDataFrame
 from .dataprocessing import (
+    artifacts,
+    DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
@@ -14,14 +15,16 @@ from .dataprocessing import (
     output,
 )
 from .datarange import DataRange, MinMax
-from .metadata import MetaData, DataSpecification
+from .metadata import ArtifactSpecification, MetaData, DataSpecification
 from .dataprocessing import DataProcessingPipeline
 
 __all__ = [
     "AnnotatedDataFrame",
+    "artifacts",
     "describe",
     "input",
     "output",
+    "DECORATED_ARTIFACT_SPECS",
     "DECORATED_DESCRIPTION",
     "DECORATED_INPUT_SPECS",
     "DECORATED_OUTPUT_SPECS",

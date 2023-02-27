@@ -13,19 +13,24 @@ from vaex.ml.transformations import Transformer
 
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT
-from .metadata import DataSpecification, MetaData
+from .metadata import ArtifactSpecification, DataSpecification, MetaData
 
 __all__ = [
+    "artifacts",
     "input",
     "output",
     "describe",
     "DataProcessingPipeline",
+    "DECORATED_ARTIFACT_SPECS",
+    "DECORATED_DESCRIPTION",
     "DECORATED_INPUT_SPECS",
     "DECORATED_OUTPUT_SPECS",
     "PipelineElement"
 ]
 
 DECORATED_DESCRIPTION = '_damast_description'
+
+DECORATED_ARTIFACT_SPECS = '_damast_artifact_specs'
 DECORATED_INPUT_SPECS = '_damast_input_specs'
 DECORATED_OUTPUT_SPECS = '_damast_output_specs'
 
@@ -50,6 +55,26 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     else:
         _df = kwargs["df"]
     return _df
+
+
+def _apply_name_mappings(transformer: PipelineElement, specs: List[DataSpecification]):
+    """
+    Apply a name mapping to an existing spec
+
+    :param transformer: the transformer instance for which the transformation spec will be updated
+    :param specs: The input / output specification
+    :raise TypeError: If transformer is not a PipelineElement
+    """
+    if not isinstance(transformer, PipelineElement):
+        raise TypeError(f"_apply_name_mappings: transformer needs to be a PipelineElement,"
+                        f" but was {transformer.__class__}")
+
+    if not isinstance(specs, list):
+        raise TypeError(f"_apply_name_mappings: specs needs to be a list of DataSpecification")
+
+    for spec in specs:
+        if spec.name in transformer.name_mappings:
+            spec.name = transformer.name_mappings[spec.name]
 
 
 def describe(description: str):
@@ -85,6 +110,10 @@ def input(requirements: Dict[str, Any]):
         @functools.wraps(func)
         def check(*args, **kwargs):
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
+
+            # Ensure that name mapping are applied correctly
+            assert isinstance(args[0], PipelineElement)
+            _apply_name_mappings(args[0], required_input_specs)
 
             fulfillment = _df.get_fulfillment(expected_specs=required_input_specs)
             if fulfillment.is_met():
@@ -133,9 +162,58 @@ def output(requirements: Dict[str, Any]):
                     raise RuntimeError(f"output: column '{c}' was removed by decorated function."
                                        f" Only adding of columns is permitted.")
 
+            # Ensure that name mapping are applied correctly
+            assert isinstance(args[0], PipelineElement)
+            _apply_name_mappings(args[0], required_output_specs)
+
             # Ensure that metadata is up to date with the dataframe
             adf.update(expectations=required_output_specs)
             return adf
+
+        return check
+
+    return decorator
+
+
+def artifacts(requirements: Dict[str, Any]):
+    """
+    Specify the output for the decorated function.
+
+    The decorated function must return :class:`AnnotatedDataFrame`.
+
+    :param requirements: List of input requirements
+    """
+    required_artifact_specs = ArtifactSpecification(requirements=requirements)
+
+    def decorator(func):
+        return_type = inspect.signature(func).return_annotation
+        if return_type != AnnotatedDataFrame:
+            raise RuntimeError("artifacts: decorator requires 'AnnotatedDataFrame' to be returned by function")
+
+        setattr(func, DECORATED_ARTIFACT_SPECS, required_artifact_specs)
+
+        # When a pipeline does generate artifacts, then it might not provide any output, but serves only as
+        # passthrough element. Hence, per default set an empty output spec if there is none.
+        if not hasattr(func, DECORATED_OUTPUT_SPECS):
+            setattr(func, DECORATED_OUTPUT_SPECS, DataSpecification.from_requirements(requirements={}))
+
+        @functools.wraps(func)
+        def check(*args, **kwargs) -> AnnotatedDataFrame:
+            result = func(*args, **kwargs)
+
+            if not isinstance(args[0], PipelineElement):
+                raise RuntimeError(f"{args[0].__class__.__name__} must inherit from PipelineElement")
+
+            # Validate the spec with respect to the existing parent pipeline
+            try:
+                instance = args[0]
+                required_artifact_specs.validate(base_dir=instance.parent_pipeline.base_dir)
+            except RuntimeError as e:
+                raise RuntimeError(f"artifacts: {func} is expected to generate an artifact. "
+                                   f" Pipeline element ran as part of pipeline: '{instance.parent_pipeline.name}'"
+                                   f" -- {e}")
+
+            return result
 
         return check
 
@@ -150,6 +228,9 @@ class PipelineElement(Transformer):
     #: Pipeline in which context this processor will be run
     parent_pipeline: DataProcessingPipeline
 
+    #: Map names of input and outputs for a particular pipeline
+    _name_mappings: Dict[str, str]
+
     def set_parent(self, pipeline: DataProcessingPipeline):
         """
         Sets the parent pipeline for this pipeline element
@@ -157,6 +238,12 @@ class PipelineElement(Transformer):
         :param pipeline: Parent pipeline
         """
         self.parent_pipeline = pipeline
+
+    @property
+    def name_mappings(self):
+        if not hasattr(self, "_name_mappings"):
+            self._name_mappings = {}
+        return self._name_mappings
 
 
 class DataProcessingPipeline(PipelineElement):
@@ -205,23 +292,27 @@ class DataProcessingPipeline(PipelineElement):
 
         return self._output_specs
 
-    def add(self, name: str, transformer: PipelineElement) -> DataProcessingPipeline:
+    def add(self, name: str,
+            transformer: PipelineElement,
+            name_mappings: Dict[str, str] = None) -> DataProcessingPipeline:
         """
         Add a pipeline step
 
         :param name: Name of the step
         :param transformer: The transformer that shall be executed
-        :param kwargs:
+        :param name_mappings: Allow to define a name mapping for this pipeline element instance
         :return:
         """
         transformer.set_parent(pipeline=self)
+        if name_mappings is not None:
+            transformer._name_mappings = name_mappings
 
         self.steps.append([name, transformer])
         self.is_ready = False
         return self
 
     @classmethod
-    def validate(cls, steps: List[Tuple[str, Transformer]]) -> Dict[str, Any]:
+    def validate(cls, steps: List[Tuple[str, PipelineElement]]) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the final (minimal output) data specification.
 
@@ -245,12 +336,15 @@ class DataProcessingPipeline(PipelineElement):
 
             if hasattr(transformer.transform, DECORATED_INPUT_SPECS):
                 input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
+                # Adapt spec/Rename if necessary for individual pipelines
+                _apply_name_mappings(transformer, input_specs)
             else:
                 raise AttributeError(
                     f"{cls.__name__}.validate: missing input specification for processing step '{name}'")
 
             if hasattr(transformer.transform, DECORATED_OUTPUT_SPECS):
                 output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
+                _apply_name_mappings(transformer, output_specs)
             else:
                 raise AttributeError(
                     f"{cls.__name__}.validate: missing output specification for processing step '{name}'")
