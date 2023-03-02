@@ -39,3 +39,5 @@ sphinx:
   config:
     todo_include_todos: True
     autoapi_dirs: ['src']    
+    # Ref: https://github.com/executablebooks/sphinx-external-toc/issues/36
+    suppress_warnings: ["etoc.toctree"]

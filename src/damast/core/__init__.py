@@ -3,7 +3,7 @@ This namespace contains the core modules that are required to define metadata.
 """
 
 from .annotations import Annotation
-from .dataframe import AnnotatedDataFrame
+from .dataframe import AnnotatedDataFrame, replace_na
 from .dataprocessing import (
     artifacts,
     DECORATED_ARTIFACT_SPECS,
@@ -17,7 +17,6 @@ from .dataprocessing import (
 from .datarange import DataRange, MinMax
 from .metadata import ArtifactSpecification, MetaData, DataSpecification
 from .dataprocessing import DataProcessingPipeline
-
 __all__ = [
     "AnnotatedDataFrame",
     "artifacts",
@@ -34,4 +33,6 @@ __all__ = [
     "DataSpecification",
     "DataProcessingPipeline",
     "MinMax",
+    "replace_na",
+    "ArtifactSpecification"
 ]

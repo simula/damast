@@ -37,9 +37,8 @@ from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.pipeline import Pipeline
 from damast.data_handling.transformers.augmenters import (
     AddDistanceClosestAnchorage,
-    AddFishingVesselType,
     AddLocalMessageIndex,
-    AddVesselType
+    JoinDataFrameByColumn
 )
 from damast.data_handling.transformers.filters import (
     AreaFilter,
@@ -300,8 +299,17 @@ def process_data(params: Dict[str, Any],
         ("sort_mmsi_timestamp", GenericSorter(column_names=[ColumnName.MMSI, ColumnName.TIMESTAMP])),
         ("filter_duplicate_timestamp", DuplicateNeighboursFilter(column_names=[ColumnName.MMSI, ColumnName.TIMESTAMP])),
         # Add and update data
-        ("augment_vessel_type", AddVesselType(vessel_type_data=vessel_type_csv)),
-        ("augment_fishing_vessel_type", AddFishingVesselType(vessel_type_data=fishing_vessel_type_csv)),
+
+        # ("augment_vessel_type", JoinDataFrameByColumn(dataset=vessel_type_csv,
+        #                                               left_on=ColumnName.MMSI,
+        #                                               right_on=ColumnName.MMSI,
+        #                                               dataset_col=ColumnName.VESSEL_TYPE,
+        #                                               col_name=ColumnName.VESSEL_TYPE, sep=";")),
+        # ("augment_fishing_vessel_type", JoinDataFrameByColumn(dataset=fishing_vessel_type_csv,
+        #                                                       left_on=ColumnName.MMSI,
+        #                                                       right_on=ColumnName.MMSI.lower(),
+        #                                                       dataset_col=ColumnName.VESSEL_TYPE_GFW,
+        #                                                       col_name=ColumnName.FISHING_TYPE, sep=",")),
         ("augment_distance_to_closest_anchorage", AddDistanceClosestAnchorage(anchorages_data=anchorages_csv)),
         # ("augment_distance_to_closest_satellite", AddDistanceClosestSatellite(satellite_tle_filename=tle_filename,
         #                                                                      latitude_name=ColumnName.LATITUDE,

@@ -1,4 +1,4 @@
-from .augmenters import AddVesselType
+from .augmenters import JoinDataFrameByColumn
 from .normalizers import (
     CyclicDenormalizer,
     CyclicNormalizer,
@@ -6,10 +6,10 @@ from .normalizers import (
     MinMaxNormalizer,
     Normalizer,
     normalize
-    )
+)
 
 __all__ = [
-    "AddVesselType",
+    "JoinDataFrameByColumn",
     "CyclicDenormalizer",
     "CyclicNormalizer",
     "LogNormalizer",
