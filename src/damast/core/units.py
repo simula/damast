@@ -1,12 +1,12 @@
-from astropy import units
-from astropy.units import Unit
+import astropy.units as _units
 
 __all__ = [
     "units",
     "unit_registry",
     "Unit"
 ]
-
+units = _units
+Unit = _units.Unit
 # Additional type
 knots = units.def_unit('knots', 1.852 * units.km / units.h)
 

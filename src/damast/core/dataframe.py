@@ -7,12 +7,28 @@ from pathlib import Path
 from typing import List, Union
 
 from vaex import DataFrame
-
+import numpy as np
 from .metadata import DataSpecification, MetaData
 
 __all__ = [
-    "AnnotatedDataFrame"
+    "AnnotatedDataFrame", "replace_na"
 ]
+
+
+def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
+    """
+    Replace `Not Available` and `Not a Number` with a mask, and convert to given `dtype`.
+    This means that one later call `df[column].fill_missing(...)` to replace values
+
+    :param df: The dataframe to modify
+    :param dtype: The datatype to convert the columns to
+    :param column_names: The list of columns to change
+    """
+    if column_names is None:
+        column_names = []
+    for column in column_names:
+        mask = df[column].isnan() or df[column].isna()
+        df[column] = np.ma.masked_array(df[column].evaluate(), mask.evaluate(), dtype=dtype)
 
 
 class AnnotatedDataFrame:
@@ -93,7 +109,6 @@ class AnnotatedDataFrame:
             self._dataframe.export_hdf5(filename)
         else:
             raise ValueError(f"{self.__class__.__name__}.save: no dataframe to save")
-
 
     @classmethod
     def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:

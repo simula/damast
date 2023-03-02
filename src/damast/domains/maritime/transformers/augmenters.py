@@ -12,11 +12,13 @@ from dask.diagnostics import ProgressBar
 from pyorbital.orbital import Orbital
 from sklearn.neighbors import BallTree
 from sklearn.preprocessing import Binarizer
-
+import vaex
 from damast.data_handling.transformers.augmenters import BaseAugmenter
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
 )
+import damast.data_handling.transformers.augmenters as augmenters
+import damast.core
 from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import (
@@ -31,175 +33,36 @@ __all__ = [
     "AddCombinedLabel",
     "AddDistanceClosestAnchorage",
     "AddDistanceClosestSatellite",
-    "AddFishingVesselType",
     "AddLocalMessageIndex",
     "AddMissingAISStatus",
-    "AddVesselType",
 ]
 
 
-class AddVesselType(BaseAugmenter):
-    """
-    Add a column `vessel_type` to the `pandas.DataFrame`.
+class AddMissingAISStatus(augmenters.AddUndefinedValue):
+    def __init__(self):
+        self._fill_value = int(AISNavigationalStatus.Undefined)
 
-    :param vessel_type_data: Path to map between MMSI identifier and vessel_type (.csv) file.
-        Could also be a `pandas.DataFrame`.
-    :param mmsi_name: Name of MMSI column in input data
-    :param vessel_type_name: Name of column with vessel types
-    """
-    mmsi_name: str = None
-    vessel_type_name: str = None
-    vessel_types: pd.DataFrame = None
-
-    def __init__(self,
-                 vessel_type_data: Union[str, Path, pd.DataFrame],
-                 mmsi_name: str = ColumnName.MMSI,
-                 vessel_type_name: str = ColumnName.VESSEL_TYPE):
-        self.mmsi_name = mmsi_name
-        self.vessel_type_name: str = vessel_type_name
-
-        # Load vessel type map
-        if type(vessel_type_data) is not pd.DataFrame:
-            vessel_type_data = AddVesselType.load_data(filename=vessel_type_data)
-
-        # Check that the columns exist in input data
-        for col_name in [mmsi_name, vessel_type_name]:
-            if col_name not in vessel_type_data.columns:
-                raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{vessel_type_data.head()}'"
-                               " - available are {','.join(vessel_type_data.columns)}")
-
-        self.vessel_types = vessel_type_data
-
-    @classmethod
-    def load_data(cls,
-                  filename: Union[str, Path]) -> pd.DataFrame:
-        """
-        Load the vessel type map (MMSI->vessel_type).
-
-        :param filename: The input file (or path)
-        :return: A `pandas.DataFrame` where each row has a column MMSI and vessel_type
-        """
-        vessel_type_csv = Path(filename)
-        if not vessel_type_csv.exists():
-            raise RuntimeError(f"Vessel type information not accessible. File {vessel_type_csv} not found")
-        vessel_types = pd.read_csv(vessel_type_csv, sep=";")
-        return vessel_types
-
-    def transform(self, df):
-        """
-        Add vessel type to the `pandas.DataFrame`.
-
-        If the vessel type is not in look-up table,
-
-        :param df: Input dataframe
-
-        :returns: Dataframe with vessel-type added as a column.
-        """
-        df0 = super().transform(df)
-        # Merge the existing dataset and the known labels (per MMSI)
-        df = pd.merge(df0, self.vessel_types,
-                      on=self.mmsi_name,
-                      how="left")
-
-        known_vessel_types = VesselType.get_types_as_str()
-        df[self.vessel_type_name].replace(Unspecified.typename(), np.nan, inplace=True)
-        df[self.vessel_type_name] = pd.Categorical(df[self.vessel_type_name], categories=known_vessel_types)
-        df[self.vessel_type_name] = df[self.vessel_type_name].cat.codes
-        df.reset_index(drop=True, inplace=True)
-        df[self.vessel_type_name].fillna(-1, inplace=True)
-        known_vessel_types = VesselType.get_types_as_str()
-
-        # Set unspecified to nan, to later set all nan to -1
-        # X[self.vessel_type_name].replace(self.vessel_unspecified, np.nan, inplace=True)
-
-        # X[self.vessel_type_name] = pd.Categorical(X[self.vessel_type_name])
-        # vessel_type_categories = dict(enumerate(df[col.VESSEL_TYPE].cat.categories))
-        # _log.info(f"Collected vessel types: {json.dumps(vessel_type_categories, indent=4)}")
-        # predefined_vessel_types = VesselType.get_types_as_str()
-        # for x in df[col.VESSEL_TYPE].cat.categories:
-        #    if x not in predefined_vessel_types:
-        #        raise KeyError(f"Encountered a new vessel type: {x} - pls update vessel_type.py")
-
-        # df[col.VESSEL_TYPE] = df[col.VESSEL_TYPE].cat.codes
-        # _log.info(f"Category value count: {df[col.VESSEL_TYPE].value_counts()}")
-        # df.reset_index(drop=True, inplace=True)
-
-        # Set undefined values to -1 (as expected in later data processing)
-        # df[self.vessel_type_name].fillna(-1, inplace=True)
-        return df
+    @damast.core.describe("Fill missing AIS status")
+    @damast.core.input({"x": {"representation_type": int}})
+    @damast.core.output({"x": {"representation_type": int}})
+    def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
+        return super().transform(df)
 
 
-class AddFishingVesselType(BaseAugmenter):
-    """Add a column `fishing_type` to the `pandas.DataFrame`.
+class AddVesselType(augmenters.JoinDataFrameByColumn):
+    def __init__(self, right_on: str,
+                 dataset_col: str,
+                 dataset: vaex.DataFrame,
+                 inplace: bool = False
+                 ):
+        super().__init__(dataset=dataset, right_on=right_on, dataset_col=dataset_col,
+                         inplace=inplace)
 
-    ..todo:
-        Remove this as it is duplicate of `src/damast/data_handling/transformers/augmenters.py`
-    """
-    mmsi_name: str = None
-    column_name: str = None
-
-    #: Global Fishing Watch global vessel type name
-    # Fishing type according to http://globalfishingwatch.org
-    gfw_vessel_type_name: str = None
-    vessel_types: pd.DataFrame = None
-
-    def __init__(self,
-                 vessel_type_data: Union[str, Path, pd.DataFrame],
-                 mmsi_in_name: str = ColumnName.MMSI.lower(),
-                 mmsi_out_name: str = ColumnName.MMSI,
-                 column_name: str = ColumnName.FISHING_TYPE,
-                 gfw_vessel_type_name: str = ColumnName.VESSEL_TYPE_GFW):
-        self.mmsi_in_name = mmsi_in_name
-        self.mmsi_out_name = mmsi_out_name
-        self.column_name: str = column_name
-
-        if type(vessel_type_data) is not pd.DataFrame:
-            vessel_type_data = AddFishingVesselType.load_data(filename=vessel_type_data)
-
-        for col_name in [mmsi_in_name, gfw_vessel_type_name]:
-            if col_name not in vessel_type_data.columns:
-                raise KeyError(
-                    f"Missing column: '{col_name}' in fishing vessel type information: '{vessel_type_data.head()}'"
-                    " - available are {','.join(vessel_type_data.columns)}")
-        vessel_type_data.rename(columns={mmsi_in_name: mmsi_out_name,
-                                         gfw_vessel_type_name: column_name}, inplace=True)
-        self.vessel_types = vessel_type_data
-
-    @classmethod
-    def load_data(cls,
-                  filename: Union[str, Path]) -> pd.DataFrame:
-        """
-        Load the vessel type data into a `pandas.DataFrame` with (MMSI, VesselType) as columns.
-
-        :param filename: Path to file
-        :return: The `pandas.DataFrame`
-        """
-        vessel_type_csv = Path(filename)
-        if not vessel_type_csv.exists():
-            raise RuntimeError(f"Fishing vessel type information not accessible. File {vessel_type_csv} not found")
-        vessel_types = pd.read_csv(vessel_type_csv)
-        return vessel_types
-
-    def transform(self, df):
-        df = super().transform(df)
-
-        # Merge fishing type information into the existing dataset
-        df = pd.merge(left=df,
-                      right=self.vessel_types[[self.mmsi_out_name, self.column_name]],
-                      on=self.mmsi_out_name,
-                      how="left")
-        # Set 'unspecified' to nan, to later set all nan to -1
-        df[self.column_name].replace(Unspecified.typename(), np.nan, inplace=True)
-
-        known_vessel_types = VesselType.get_types_as_str()
-        df[self.column_name].replace(Unspecified.typename(), np.nan, inplace=True)
-        df[self.column_name] = pd.Categorical(df[self.column_name], categories=known_vessel_types)
-        df[self.column_name] = df[self.column_name].cat.codes
-        df.reset_index(drop=True, inplace=True)
-
-        # Set undefined values to -1 (as expected in later data processing)
-        df[self.column_name].fillna(-1, inplace=True)
-        return df
+    @damast.core.describe("Add vessel-type from other dataset to current dataset")
+    @damast.core.input({"x": {}})
+    @damast.core.output({"out": {}})
+    def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
+        return super().transform(df)
 
 
 class AddDistanceClosestAnchorage(BaseAugmenter):
@@ -533,53 +396,6 @@ class AddCombinedLabel(BaseAugmenter):
               ])
 
         df[self.combination_name] = np.select(conditions, choices, default=FieldValue.UNDEFINED)
-        return df
-
-
-class AddMissingAISStatus(BaseAugmenter):
-    """
-    Fill missing AIS Status with the latest known previous status, otherwise "undefined".
-    """
-    column_name: str = None
-    mmsi_name: str = None
-    window_size: int = None
-
-    def __init__(self,
-                 column_name: str = ColumnName.STATUS,
-                 mmsi_name: str = ColumnName.MMSI,
-                 window_size: int = 50):
-        self.column_name = column_name
-        self.window_size = window_size
-        self.mmsi_name = mmsi_name
-
-    def transform(self, df):
-        """
-        Fill the missing value using ffill.
-
-        AIS comes with a navigational status defined in the range of 0 to 15, where 15 means
-        'undefined'.
-
-        ffill means 'forward fill' and will propagate last valid observation
-        """
-        # Replace undefined status by NaN
-        df[self.column_name] = df[self.column_name].replace([-99, AISNavigationalStatus.Undefined], np.NaN)
-
-        # Fill NaN using ffill (forward fill) to propagate last valid observation
-        # for each vessel (therefore groupby MMSI)
-        df[self.column_name] = df.groupby(self.mmsi_name)[self.column_name].fillna(method="ffill")
-
-        # Fill remaining NaN by {AISNavigationalStatus.Undefined}, i.e. (AIS Navigational) Status 'undefined'")
-        df[self.column_name] = df[self.column_name].fillna(AISNavigationalStatus.Undefined)
-
-        # Remove non continuous status
-        # df.loc[df[self.column_name] != df[self.column_name].shift(
-        #     self.window_size), self.column_name] = AISNavigationalStatus.Undefined
-
-        # Set reserved and regional used flags to -1
-        # log(f"[DATASET_CREATION] Replace regional use and future flags: (AIS Navigational) Status >"
-        #    {AISNavigationalStatus.UnderWaySailing} (under way sailing) by {val.UNDEFINED}")
-        # df[self.column_name] = df[self.column_name].mask(df[self.column_name] > AISNavigationalStatus.UnderWaySailing,
-        #                                                 FieldValue.UNDEFINED)
         return df
 
 

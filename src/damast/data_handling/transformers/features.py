@@ -12,7 +12,7 @@ from numpy import dtype, float_, ndarray
 
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.domains.maritime.data_specification import ColumnName
-from damast.domains.maritime.math.spatial import bearing, great_circle_distance
+from damast.domains.maritime.math.spatial import bearing
 
 __all__ = [
     "Angle",
@@ -321,86 +321,6 @@ class LatLonFeatureExtractor(FeatureExtractor):
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         return super().transform(df)
-
-
-class DeltaDistance(LatLonFeatureExtractor):
-    """
-    FeatureExtractor to compute the distance between location given by latitude/longitude
-    """
-
-    def __init__(self, *,
-                 name: str = Feature.DELTA_DISTANCE.value,
-                 lat_name: str = ColumnName.LATITUDE,
-                 lon_name: str = ColumnName.LONGITUDE):
-        super().__init__(name=name,
-                         lat_name=lat_name,
-                         lon_name=lon_name)
-
-    def compute_distance(self, df) -> pd.DataFrame:
-        dataframe = great_circle_distance(df[self.lat_name],
-                                          df[self.lon_name],
-                                          df[self.lat_name].shift(1),
-                                          df[self.lat_name].shift(1))
-        # default value for the first entry
-        dataframe[dataframe.index[0]] = 0.0
-        return dataframe
-
-    def transform(self,
-                  df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Implementation of the feature extraction.
-
-        :param df: Dataframe to run the feature extraction on
-        """
-        df = super().transform(df)
-        df[self.name] = self.compute_distance(df)
-        return df
-
-
-class DeltaDistanceX(DeltaDistance):
-    """
-    FeatureExtractor to compute the x-distance between location given by latitude/longitude
-    """
-
-    def __init__(self, *,
-                 name: str = Feature.DELTA_DISTANCE_X.value,
-                 lat_name: str = ColumnName.LATITUDE,
-                 lon_name: str = ColumnName.LONGITUDE):
-        super().__init__(name=name,
-                         lat_name=lat_name,
-                         lon_name=lon_name)
-
-    def compute_distance(self, df):
-        dataframe = great_circle_distance(df[self.lat_name].shift(1),
-                                          df[self.lon_name],
-                                          df[self.lat_name].shift(1),
-                                          df[self.lat_name].shift(1))
-        # default value for the first entry
-        dataframe[dataframe.index[0]] = 0.0
-        return dataframe
-
-
-class DeltaDistanceY(DeltaDistance):
-    """
-    FeatureExtractor to compute the y-distance between location given by latitude/longitude
-    """
-
-    def __init__(self, *,
-                 name: str = Feature.DELTA_DISTANCE_Y.value,
-                 lat_name: str = ColumnName.LATITUDE,
-                 lon_name: str = ColumnName.LONGITUDE):
-        super().__init__(name=name,
-                         lat_name=lat_name,
-                         lon_name=lon_name)
-
-    def compute_distance(self, df):
-        dataframe = great_circle_distance(df[self.lat_name],
-                                          df[self.lon_name].shift(1),
-                                          df[self.lat_name].shift(1),
-                                          df[self.lat_name].shift(1))
-        # default value for the first entry
-        dataframe[dataframe.index[0]] = 0.0
-        return dataframe
 
 
 class Angle(LatLonFeatureExtractor):
