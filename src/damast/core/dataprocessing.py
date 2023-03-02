@@ -3,6 +3,7 @@ Module containing decorators and classes to model data processing pipelines
 """
 from __future__ import annotations
 
+import copy
 import functools
 import inspect
 import re
@@ -58,25 +59,6 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     return _df
 
 
-def _apply_name_mappings(transformer: PipelineElement, specs: List[DataSpecification]):
-    """
-    Apply a name mapping to an existing spec
-
-    :param transformer: the transformer instance for which the transformation spec will be updated
-    :param specs: The input / output specification
-    :raise TypeError: If transformer is not a PipelineElement
-    """
-    if not isinstance(transformer, PipelineElement):
-        raise TypeError(f"_apply_name_mappings: transformer needs to be a PipelineElement,"
-                        f" but was {transformer.__class__}")
-
-    if not isinstance(specs, list):
-        raise TypeError(f"_apply_name_mappings: specs needs to be a list of DataSpecification")
-
-    for spec in specs:
-        spec.name = transformer.get_name(spec.name)
-
-
 def describe(description: str):
     """
     Specify the description for the transformation for the decorated function.
@@ -110,12 +92,9 @@ def input(requirements: Dict[str, Any]):
         @functools.wraps(func)
         def check(*args, **kwargs):
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
-
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
-            _apply_name_mappings(args[0], required_input_specs)
-
-            fulfillment = _df.get_fulfillment(expected_specs=required_input_specs)
+            fulfillment = _df.get_fulfillment(expected_specs=args[0].input_specs)
             if fulfillment.is_met():
                 return func(*args, **kwargs)
             else:
@@ -146,6 +125,8 @@ def output(requirements: Dict[str, Any]):
 
         @functools.wraps(func)
         def check(*args, **kwargs) -> AnnotatedDataFrame:
+            setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
+
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
             input_columns = [c for c in _df.column_names]
 
@@ -164,10 +145,9 @@ def output(requirements: Dict[str, Any]):
 
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
-            _apply_name_mappings(args[0], required_output_specs)
 
             # Ensure that metadata is up to date with the dataframe
-            adf.update(expectations=required_output_specs)
+            adf.update(expectations=args[0].output_specs)
             return adf
 
         return check
@@ -267,6 +247,34 @@ class PipelineElement(Transformer):
                 name = name.replace(match.group(), resolved_name)
         return name
 
+    @property
+    def input_specs(self) -> List[DataSpecification]:
+        if not hasattr(self.transform, DECORATED_INPUT_SPECS):
+            raise AttributeError(
+                f"{self.__class__.__name__}.validate: missing input specification"
+                f" for processing step '{self.__class__.__name__}'")
+
+        generic_spec = getattr(self.transform, DECORATED_INPUT_SPECS)
+        specs = copy.deepcopy(generic_spec)
+        for spec in specs:
+            spec.name = self.get_name(spec.name)
+
+        return specs
+
+    @property
+    def output_specs(self) -> List[DataSpecification]:
+        if not hasattr(self.transform, DECORATED_OUTPUT_SPECS):
+            raise AttributeError(
+                f"{self.__class__.__name__}.validate: missing output specification"
+                f" for processing step '{self.__class__.__name__}'")
+
+        generic_spec = getattr(self.transform, DECORATED_OUTPUT_SPECS)
+        specs = copy.deepcopy(generic_spec)
+        for spec in specs:
+            spec.name = self.get_name(spec.name)
+
+        return specs
+
 
 class DataProcessingPipeline(PipelineElement):
     """
@@ -356,20 +364,8 @@ class DataProcessingPipeline(PipelineElement):
                 raise AttributeError(f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
                                      f" TransformerMixin requirements - no method 'fit_transform' found")
 
-            if hasattr(transformer.transform, DECORATED_INPUT_SPECS):
-                input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
-                # Adapt spec/Rename if necessary for individual pipelines
-                _apply_name_mappings(transformer, input_specs)
-            else:
-                raise AttributeError(
-                    f"{cls.__name__}.validate: missing input specification for processing step '{name}'")
-
-            if hasattr(transformer.transform, DECORATED_OUTPUT_SPECS):
-                output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
-                _apply_name_mappings(transformer, output_specs)
-            else:
-                raise AttributeError(
-                    f"{cls.__name__}.validate: missing output specification for processing step '{name}'")
+            input_specs = transformer.input_specs
+            output_specs = transformer.output_specs
 
             if current_specs is None:
                 current_specs = input_specs
@@ -404,12 +400,10 @@ class DataProcessingPipeline(PipelineElement):
                 data += hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
 
             data += hspace + DEFAULT_INDENT * 2 + "input:\n"
-            input_specs = getattr(transformer.transform, DECORATED_INPUT_SPECS)
-            data += DataSpecification.to_str(input_specs, indent_level=indent_level + 4)
+            data += DataSpecification.to_str(transformer.input_specs, indent_level=indent_level + 4)
 
             data += hspace + DEFAULT_INDENT * 2 + "output:\n"
-            output_specs = getattr(transformer.transform, DECORATED_OUTPUT_SPECS)
-            data += DataSpecification.to_str(output_specs, indent_level=indent_level + 4)
+            data += DataSpecification.to_str(transformer.output_specs, indent_level=indent_level + 4)
 
         return data
 

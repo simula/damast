@@ -6,7 +6,8 @@ from vaex.ml import CycleTransformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
+from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement, DECORATED_INPUT_SPECS, \
+    DECORATED_OUTPUT_SPECS
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
@@ -26,11 +27,13 @@ class DataProcessorA(PipelineElement):
         "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
         "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
-    def apply_lat_lon(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         transformer = CycleTransformer(features=["latitude", "longitude"])
         df._dataframe = transformer.fit_transform(df._dataframe)
         return df
 
+
+class DataProcessorAFail(PipelineElement):
     @damast.core.input({
         "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
         "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
@@ -41,11 +44,13 @@ class DataProcessorA(PipelineElement):
         "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
         "latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
-    def apply_lat_lon_fail(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         transformer = CycleTransformer(features=["latitude", "longitude"])
         df._dataframe = transformer.fit_transform(df._dataframe)
         return df
 
+
+class DataProcessorARemoveCol(PipelineElement):
     @damast.core.input({
         "longitude": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)},
         "latitude": {"unit": units.deg, "value_range": CyclicMinMax(-90.0, 90.0)}
@@ -53,7 +58,7 @@ class DataProcessorA(PipelineElement):
     @damast.core.output({
         "longitude": {"unit": units.deg}
     })
-    def apply_lat_lon_remove_col(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         df._dataframe.drop(columns=["latitude"], inplace=True)
         return df
 
@@ -173,7 +178,7 @@ def test_data_processor_input(height_dataframe, height_metadata):
     height_adf = AnnotatedDataFrame(dataframe=height_dataframe,
                                     metadata=height_metadata)
 
-    class CustomDataProcessor(PipelineElement):
+    class ApplyLatLonProcessor(PipelineElement):
         # Consider:
         # - mapping of input names
         # - use regex to match columns
@@ -188,19 +193,21 @@ def test_data_processor_input(height_dataframe, height_metadata):
             "longitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)},
             "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
         })
-        def apply_lat_lon(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
             return df
 
+    class ApplyHeight(PipelineElement):
         @damast.core.input({"height": {"unit": units.m}})
         @damast.core.output({"height": {"unit": units.km}})
-        def apply_height(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
             return df
 
-    cdp = CustomDataProcessor()
+    lat_lon_processor = ApplyLatLonProcessor()
     with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
-        cdp.apply_lat_lon(df=height_adf)
+        lat_lon_processor.transform(df=height_adf)
 
-    cdp.apply_height(df=height_adf)
+    height_processor = ApplyHeight()
+    height_processor.transform(df=height_adf)
 
 
 def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
@@ -208,7 +215,7 @@ def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
                              metadata=lat_lon_metadata)
 
     cdp = DataProcessorA()
-    adf = cdp.apply_lat_lon(df=adf)
+    adf = cdp.transform(df=adf)
     assert "latitude_x" in adf.column_names
 
 
@@ -216,12 +223,13 @@ def test_data_processor_output_fail(lat_lon_dataframe, lat_lon_metadata):
     adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
                              metadata=lat_lon_metadata)
 
-    cdp = DataProcessorA()
+    a_fail = DataProcessorAFail()
     with pytest.raises(RuntimeError, match="is not present"):
-        cdp.apply_lat_lon_fail(df=adf)
+        a_fail.transform(df=adf)
 
+    a_remove_col = DataProcessorARemoveCol()
     with pytest.raises(RuntimeError, match="was removed by"):
-        cdp.apply_lat_lon_remove_col(df=adf)
+        a_remove_col.transform(df=adf)
 
 
 def test_access_decorator_info():
@@ -310,3 +318,56 @@ def test_single_element_pipeline(tmp_path):
                  name_mappings={"x": "status"})
 
     pipeline.transform(df=adf)
+
+
+def test_decorator_renaming(tmp_path):
+    data = [["10000000", 0]]
+    column_names = ["mmsi", "status"]
+
+    column_specs = [
+        DataSpecification(name="mmsi"),
+        DataSpecification(name="status", unit=units.deg)
+    ]
+
+    df_pd = pd.DataFrame(data, columns=column_names)
+    df = vaex.from_pandas(df_pd)
+    adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
+
+    class TransformX(PipelineElement):
+
+        @damast.core.describe("Generic transform of x")
+        @damast.core.input({"x": {"unit": units.deg}})
+        @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
+            return df
+
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+
+    with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
+        pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+        pipeline.add("Transform status",
+                     TransformX(),
+                     name_mappings={"x": "extra_status"})
+        pipeline.transform(df=adf)
+
+    pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+    pipeline.add("Transform status",
+                 TransformX(),
+                 name_mappings={"x": "status"})
+
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+
+    name, transformer = pipeline.steps[0]
+    assert transformer.input_specs[0].name == "status"
+    assert transformer.output_specs[0].name == "status_suffix"
+
+    repr_before = pipeline.to_str()
+    pipeline.transform(df=adf)
+    repr_after = pipeline.to_str()
+    assert repr_before == repr_after
+
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
