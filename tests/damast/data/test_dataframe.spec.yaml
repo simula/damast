@@ -1,0 +1,9 @@
+columns:
+- name: height
+  is_optional: false
+  abbreviation: height
+  category: static
+  unit: m
+annotations:
+  license: MIT License
+  comment: test dataframe

@@ -9,6 +9,7 @@ from vaex.dataframe import astropy
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.datarange import MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
+from damast.core.annotations import Annotation
 
 
 @pytest.fixture()
@@ -17,7 +18,14 @@ def metadata():
                                     category=DataCategory.STATIC,
                                     unit=units.m)
 
-    metadata = MetaData(columns=[column_spec])
+    license = Annotation(name=Annotation.Key.License, value="MIT License")
+    comment = Annotation(name=Annotation.Key.Comment, value="test dataframe")
+    annotations = {         
+        Annotation.Key.License.value: license,
+        Annotation.Key.Comment.value: comment
+    } 
+    
+    metadata = MetaData(columns=[column_spec], annotations=annotations)
     return metadata
 
 
@@ -33,20 +41,68 @@ def vaex_dataframe():
     return vaex.from_pandas(pandas_df)
 
 
-def test_annotated_dataframe_export(metadata, vaex_dataframe, tmp_path):
+def test_annotated_dataframe_export_hdf5(metadata, vaex_dataframe, tmp_path):
     """
-    Simple test of the annotated dataframe export
+    Simple test of the annotated dataframe export to HDF5
 
     :param metadata: metadata to use
     :param vaex_dataframe: vaex dataframe to use
-    :param tmp_path: where to temporarily save the data
+    :param tmp_path: where to temporarily save the data to HDF5
     """
     adf = AnnotatedDataFrame(dataframe=vaex_dataframe,
                              metadata=metadata)
 
     test_file = tmp_path / "test_dataframe.hdf5"
-    adf.export_hdf5(test_file)
+    adf.save(filename=test_file)
     assert test_file.exists()
+
+
+def test_annotated_dataframe_export_csv(metadata, vaex_dataframe, tmp_path):
+    """
+    Simple test of the annotated dataframe export to csv
+
+    :param metadata: metadata to use
+    :param vaex_dataframe: vaex dataframe to use
+    :param tmp_path: where to temporarily save the data to csv
+    """
+    adf = AnnotatedDataFrame(dataframe=vaex_dataframe,
+                             metadata=metadata)
+
+    test_file = tmp_path / "test_dataframe.csv"
+    metadata_test_file = tmp_path / "test_dataframe.spec.yaml"
+    adf.save(filename=test_file)
+    assert test_file.exists()
+    assert metadata_test_file.exists()
+
+
+def test_annotated_dataframe_import_hdf5():
+    """
+    Simple test of the annotated dataframe import for HDF5
+    """
+    data_path = Path(__file__).parent.parent / "data"
+    hdf5_path = data_path / "data.hdf5"
+
+    adf = AnnotatedDataFrame.from_file(hdf5_path)
+    assert adf.column_names == ["height", "letter"]
+    assert adf._dataframe.to_pandas_df().equals(vaex.open(hdf5_path).to_pandas_df())
+    assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License") 
+    assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe") 
+    assert adf._metadata.columns[0] == DataSpecification(name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m)
+
+
+def test_annotated_dataframe_import_csv():
+    """
+    Simple test of the annotated dataframe import for HDF5
+    """
+    data_path = Path(__file__).parent.parent / "data"
+    hdf5_path = data_path / "test_dataframe.csv"
+
+    adf = AnnotatedDataFrame.from_file(hdf5_path)
+    assert adf.column_names == ["height", "letter"]
+    assert adf._dataframe.to_pandas_df().equals(vaex.open(hdf5_path).to_pandas_df())
+    assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License") 
+    assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe") 
+    assert adf._metadata.columns[0] == DataSpecification(name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m)
 
 
 def test_01_dataframe_composition():
@@ -58,6 +114,7 @@ def test_01_dataframe_composition():
     spec_path = data_path / "dataspec.yaml"
 
     md = MetaData.load_yaml(filename=spec_path)
+
     df = vaex.from_csv(filename_or_buffer=csv_path)
 
     md.apply(df=df)
