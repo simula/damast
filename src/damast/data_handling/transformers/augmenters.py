@@ -1,26 +1,24 @@
 """
 Module which collects transformers that add / augment the existing data
 """
+import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Union
-
-import dask.dataframe as dd
+import datetime
 import numpy as np
 import pandas as pd
 import vaex
-from dask.diagnostics import ProgressBar
 from pyorbital.orbital import Orbital
 from sklearn.neighbors import BallTree
 from sklearn.preprocessing import Binarizer
-
+import numpy.typing as npt
 import damast.core
 from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import DataSpecification, PipelineElement
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import (
-    EARTH_RADIUS,
     angle_sat_c,
     chord_distance,
     distance_sat_vessel,
@@ -29,13 +27,13 @@ from damast.domains.maritime.math.spatial import (
 
 __all__ = [
     "AddCombinedLabel",
-    "AddDistanceClosestAnchorage",
     "AddDistanceClosestSatellite",
     "AddLocalMessageIndex",
-    "AddMissingAISStatus",
     "JoinDataFrameByColumn",
     "BaseAugmenter",
-    "InvertedBinariser"
+    "InvertedBinariser",
+    "BallTreeAugmenter",
+    "AddUndefinedValue"
 ]
 
 
@@ -130,100 +128,56 @@ class JoinDataFrameByColumn(PipelineElement):
                 metadata))
 
 
-class AddDistanceClosestAnchorage(BaseAugmenter):
+class BallTreeAugmenter():
     """
-    Compute the distance to the closest anchorage.
+    A class for computation  in distance computation using BallTree.
 
-    Using `DASK <https://www.dask.org/>`_ (`dd`)
-    The dataset is split in 32 partitions, one for each core
-    Then each core compute for each message the distance with all
-    the anchorage present in the `anchorage.csv` file using the great circle distance.
+    Uses the `sklearn.neighbours.BallTree` to compute the distance for any n-dimensional
+    feature. The BallTree is created prior to being passed in as the lambda function of a
+    `vaex.DataFrame.add_virtual_column`. The object can later be depickled from the state,
+    and one can retrieve any meta-data added to the class after construction.
+
+    :param x: The points to use in the BallTree
+    :param metric: The metric to use in the BallTree, for available metrics see: 
+        https://docs.scipy.org/doc/scipy/reference/spatial.distance.html
     """
 
-    # Read anchorages file
-    def __init__(self,
-                 anchorages_data: Union[str, Path, pd.DataFrame],
-                 latitude_name: str = ColumnName.LATITUDE,
-                 longitude_name: str = ColumnName.LONGITUDE,
-                 anchorage_latitude_name: str = "latitude",
-                 anchorage_longitude_name: str = "longitude",
-                 column_name: str = ColumnName.DISTANCE_CLOSEST_ANCHORAGE,
-                 ):
+    _tree: BallTree
+    _metric: str
+    _modified: datetime.datetime
 
-        if type(anchorages_data) is pd.DataFrame:
-            self.anchorages = anchorages_data
+    def __init__(self, x: npt.NDArray[np.float64], metric: str):
+        self._tree = BallTree(x, metric=metric)
+        self._metric = metric
+        self.__name__ = f"Balltree_{self._metric}"
+        self._modified = datetime.datetime.now()
+
+    def update_balltree(self, x: npt.NDArray[np.float64]):
+        """
+        Replace points in the Balltree
+
+        :param x: (npt.NDArray[np.float64]): The new points
+        """
+        logger = logging.getLogger("damast")
+        if not np.allclose(self._tree.get_arrays()[0], x):
+            logger.debug("Recreating balltree with new inputs")
+            self._tree = BallTree(x, metric=self._metric)
+            self._modified = datetime.datetime.now()
         else:
-            self.anchorages = AddDistanceClosestAnchorage.load_data(filename=anchorages_data,
-                                                                    latitude_name=anchorage_latitude_name,
-                                                                    longitude_name=anchorage_longitude_name)
+            logger.debug("No points to update in balltree")
 
-        self.latitude_name = latitude_name
-        self.longitude_name = longitude_name
-        self.anchorage_latitude_name = anchorage_latitude_name
-        self.anchorage_longitude_name = anchorage_longitude_name
-        self.column_name = column_name
-
-    @classmethod
-    def load_data(cls,
-                  filename: Union[str, Path],
-                  latitude_name: str,
-                  longitude_name: str) -> pd.DataFrame:
+    def __call__(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        Load the vessel type data.
+        Compute distances between the Balltree and each entry in `x`"""
+        return self._tree.query(np.vstack([x, y]).T, return_distance=True)[
+            0].reshape(-1)
 
-        :param filename: Filename for that anchorages data csv file
-        :param latitude_name:  name of the latitude column
-        :param longitude_name: name of the longitude column
-        :return: the loaded data as DataFrame containing (only) the latitude and longitude column (if there are more)
+    @property
+    def modified(self) -> datetime.datetime:
         """
-        anchorages_csv = Path(filename)
-        if not anchorages_csv.exists():
-            raise RuntimeError(f"Anchorages data not accessible. File {anchorages_csv} not found")
-        anchorages = pd.read_csv(filepath_or_buffer=filename,
-                                 usecols=[latitude_name, longitude_name])
-        return anchorages
-
-    def transform(self, df):
-        df = super().transform(df)
-
-        # Ensure that radians can be used for LAT/LON
-        for column in [self.anchorage_latitude_name, self.anchorage_longitude_name]:
-            self.anchorages[f'{column}_in_rad'] = self.anchorages[column].map(np.deg2rad)
-
-        # Adding temporary columns
-        lat_lon_rad_columns = []
-        for data_column, anchorage_column in [(self.latitude_name, self.anchorage_latitude_name),
-                                              (self.longitude_name, self.anchorage_longitude_name)]:
-            col_in_rad = f'{anchorage_column}_in_rad'
-            lat_lon_rad_columns.append(col_in_rad)
-            df[col_in_rad] = df[data_column].map(np.deg2rad)
-
-        # Provide a dask progress bar
-        pbar = ProgressBar()
-        # Performs global registration, see
-        # https://www.coiled.io/blog/how-to-check-the-progress-of-dask-computations
-        pbar.register()
-
-        def compute_distance(x):
-            """
-            Compute the Haversine distance between the closest anchorage and a set of points
-            """
-            # NOTE: We have to define the ball-tree on each process to gain any speedup
-            # We also need to copy the input to avoid tkinter issues
-            tree = BallTree(self.anchorages[lat_lon_rad_columns].copy(), metric='haversine')
-            output = tree.query(np.array(x[lat_lon_rad_columns]), k=1, return_distance=True)
-            return output[0].reshape(-1)
-
-        dask_dataframe = dd.from_pandas(df[lat_lon_rad_columns], chunksize=1000000)
-        dist_output = dask_dataframe.map_partitions(lambda df_part:
-                                                    compute_distance(df_part))
-        z = dist_output.compute()
-        df[self.column_name] = z * EARTH_RADIUS * 1000
-        df[self.column_name] = df[self.column_name].astype(np.int32)
-        # Drop the temporary columns
-        df.drop(columns=lat_lon_rad_columns, inplace=True)
-
-        return df
+        Last time the underlying BallTree was modified
+        """
+        return self._modified
 
 
 class AddDistanceClosestSatellite(BaseAugmenter):
@@ -468,12 +422,14 @@ class AddCombinedLabel(BaseAugmenter):
 
 
 class AddUndefinedValue(PipelineElement):
-    """
-    Replace missing and Not Available (NA) entries in a column with a given value.
+    """Replace missing and Not Available (NA) entries in a column with a given value.
+
+    :param fill_value: The value replacing NA
     """
     _fill_value: Any
 
     def __init__(self, fill_value: Any):
+        """Constructor"""
         self._fill_value = fill_value
 
     @property

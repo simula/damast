@@ -109,28 +109,29 @@ class GroupSequenceAccessor:
 
         .. highlight:: python
         .. code-block:: python
-             from damast.data_handling.accessors import GroupSequenceAccessor
-             import tensorflow.keras as K
 
-             df = ...
-             features = ['lat', 'lon']
-             target = ['nav_status']
+            from damast.data_handling.accessors import GroupSequenceAccessor
+            import tensorflow.keras as K
 
-             gsa = GroupSequenceAccessor(df=df, group_column="mmsi", sort_columns=["timestamp"])
-             train_ids, validate_ids, test_ids = gsa.split_random(ratios=[0.8, 0.1, 0.1])
+            df = ...
+            features = ['lat', 'lon']
+            target = ['nav_status']
 
-             # Create a training generator
-             train_generator = gsa.to_keras_generator(features=features, target=target, sequence_length=50, sequence_forecast=1, batch_size=10)
+            gsa = GroupSequenceAccessor(df=df, group_column="mmsi", sort_columns=["timestamp"])
+            train_ids, validate_ids, test_ids = gsa.split_random(ratios=[0.8, 0.1, 0.1])
 
-             # Build a recurrent neural network model to deal with the sequence, e.g.,
-             # to forecast the next sequence element
-             nn_model = K.Sequential()
-             nn_model.add(K.layers.SimpleRNN(2, return_sequences=True, input_shape=[50, 2])
-             nn_model.add(K.layers.SimpleRNN(2, return_sequences=True))
-             nn_model.add(K.layers.SimpleRNN(2))
-             nn_model.compile(optimizer='sgd', loss='mse')
+            # Create a training generator
+            train_generator = gsa.to_keras_generator(features=features, target=target, sequence_length=50, sequence_forecast=1, batch_size=10)
 
-             nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
+            # Build a recurrent neural network model to deal with the sequence, e.g.,
+            # to forecast the next sequence element
+            nn_model = K.Sequential()
+            nn_model.add(K.layers.SimpleRNN(2, return_sequences=True, input_shape=[50, 2])
+            nn_model.add(K.layers.SimpleRNN(2, return_sequences=True))
+            nn_model.add(K.layers.SimpleRNN(2))
+            nn_model.compile(optimizer='sgd', loss='mse')
+
+            nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
         """
 
         if verbose:

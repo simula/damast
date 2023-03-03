@@ -3,23 +3,24 @@ Module which collects transformers that add / augment the existing data
 """
 import re
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Callable, Dict, List, Union
 
-import dask.dataframe as dd
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
-from dask.diagnostics import ProgressBar
-from pyorbital.orbital import Orbital
-from sklearn.neighbors import BallTree
-from sklearn.preprocessing import Binarizer
 import vaex
-from damast.data_handling.transformers.augmenters import BaseAugmenter
+from pyorbital.orbital import Orbital
+from sklearn.preprocessing import Binarizer
+import damast.core
+from damast.core.dataprocessing import PipelineElement
+import damast.data_handling.transformers.augmenters as augmenters
+from damast.data_handling.transformers.augmenters import (
+    BallTreeAugmenter,
+    BaseAugmenter
+)
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
 )
-import damast.data_handling.transformers.augmenters as augmenters
-import damast.core
-from damast.domains.maritime.ais.vessel_types import Unspecified, VesselType
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import (
     EARTH_RADIUS,
@@ -35,10 +36,97 @@ __all__ = [
     "AddDistanceClosestSatellite",
     "AddLocalMessageIndex",
     "AddMissingAISStatus",
+    "ComputeClosestAnchorage"
 ]
 
 
+class ComputeClosestAnchorage(PipelineElement):
+    _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
+    _inplace: bool
+
+    def __init__(self,
+                 dataset: Union[str, Path, vaex.DataFrame],
+                 columns: List[str],
+                 sep: str = ";", inplace: bool = True):
+        """
+        Compute the closest anchorage given a data-set with all closest anchorages
+
+        :param dataset: Path to data-set with closest anchorages
+        :param columns: Names of columns used to define the distance to anchorage (The data should be in radians)
+        :param sep: Separator used in dataset if dataset is a csv file
+        :param inplace: If False copy dataset during transform_
+        """
+        if isinstance(dataset, vaex.DataFrame):
+            _dataset = dataset
+        else:
+            _dataset = self.load_data(dataset, sep)
+        radian_dataset = [_dataset[column].deg2rad().evaluate() for column in columns]
+        self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
+        self._inplace = inplace
+
+    @classmethod
+    def load_data(cls,
+                  filename: Union[str, Path], sep: str) -> vaex.DataFrame:
+        """
+        Load dataset from file
+
+        :param filename: The input file (or path)
+        :param sep: Separator in csv
+        :return: A `pandas.DataFrame` where each row has a column MMSI and vessel_type
+        """
+        vessel_type_csv = Path(filename)
+        if not vessel_type_csv.exists():
+            raise RuntimeError(f"Vessel type information not accessible. File {vessel_type_csv} not found")
+
+        if vessel_type_csv.suffix == ".csv":
+            vessel_types = vaex.from_csv(vessel_type_csv, sep=sep)
+        elif vessel_type_csv.suffix == ".hdf5":
+            vessel_types = vaex.open(vessel_type_csv)
+        vessel_types = pd.read_csv(vessel_type_csv, sep=sep)
+        return vessel_types
+
+    @damast.core.describe("Compute distance from dataset to closest anchorage")
+    @damast.core.input({"x": {"representation_type": np.float64, "unit": damast.core.units.units.deg},
+                        "y": {"representation_type": np.float64, "unit": damast.core.units.units.deg}})
+    @damast.core.output({"distance": {"representation_type": np.float64}})
+    def transform(self, df:  damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
+        if not self._inplace:
+            dataframe = df._dataframe.copy()
+        else:
+            dataframe = df._dataframe
+
+        # Transform latitude and longitude to radians
+        dataframe.add_virtual_column(f"{self.get_name('x')}_rad",
+                                     dataframe.apply(np.deg2rad, [self.get_name('x')], vectorize=True))
+        dataframe.add_virtual_column(f"{self.get_name('y')}_rad",
+                                     dataframe.apply(np.deg2rad, [self.get_name('y')], vectorize=True))
+        dataframe.add_virtual_column(self.get_name("distance"),
+                                     dataframe.apply(self._function,
+                                                     [f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"],
+                                                     vectorize=True))
+
+        # Drop/hide conversion columns
+        dataframe.drop(columns=[f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"], inplace=True)
+
+        # Multiply distance column by earth radius
+        dataframe[self.get_name("distance")] *= EARTH_RADIUS
+        dataframe.units[self.get_name("distance")] = damast.core.units.units.km
+        new_spec = damast.core.DataSpecification(self.get_name("out"), unit=damast.core.units.units.km)
+        if self._inplace:
+            df._metadata.columns.append(new_spec)
+            return df
+        else:
+            metadata = df._metadata.columns.copy()
+            metadata.append(new_spec)
+            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
+                metadata))
+
+
 class AddMissingAISStatus(augmenters.AddUndefinedValue):
+    """For a given column replace rows with missing entries with
+    :attr:`damast.domains.maritime.ais.AISNavigationalStatus.Undefined`.
+    """
+
     def __init__(self):
         self._fill_value = int(AISNavigationalStatus.Undefined)
 
@@ -52,9 +140,16 @@ class AddMissingAISStatus(augmenters.AddUndefinedValue):
 class AddVesselType(augmenters.JoinDataFrameByColumn):
     def __init__(self, right_on: str,
                  dataset_col: str,
-                 dataset: vaex.DataFrame,
+                 dataset: Union[str, Path, vaex.DataFrame],
                  inplace: bool = False
                  ):
+        """Add in vessel type based on external data-set
+
+        :param right_on: Name in data-set column to use for merging datasets
+        :param dataset_col: Column to add to input dataframe
+        :param dataset: Dataset or path to dataset
+        :param inplace (bool, optional): If inplace do not copy input dataframe
+        """
         super().__init__(dataset=dataset, right_on=right_on, dataset_col=dataset_col,
                          inplace=inplace)
 
@@ -63,102 +158,6 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
     @damast.core.output({"out": {}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         return super().transform(df)
-
-
-class AddDistanceClosestAnchorage(BaseAugmenter):
-    """
-    Compute the distance to the closest anchorage.
-
-    Using `DASK <https://www.dask.org/>`_ (`dd`)
-    The dataset is split into suitable partitions. Dask launches multiple processes to compute
-    the distance  with all the anchorage present in the `anchorage.csv` file using the great circle distance.
-    The partitions are worked on in parallel. At the end they are gathered on the initial process.
-    """
-
-    # Read anchorages file
-    def __init__(self,
-                 anchorages_data: Union[str, Path, pd.DataFrame],
-                 latitude_name: str = ColumnName.LATITUDE,
-                 longitude_name: str = ColumnName.LONGITUDE,
-                 anchorage_latitude_name: str = "latitude",
-                 anchorage_longitude_name: str = "longitude",
-                 column_name: str = ColumnName.DISTANCE_CLOSEST_ANCHORAGE,
-                 ):
-
-        if type(anchorages_data) is pd.DataFrame:
-            self.anchorages = anchorages_data
-        else:
-            self.anchorages = AddDistanceClosestAnchorage.load_data(filename=anchorages_data,
-                                                                    latitude_name=anchorage_latitude_name,
-                                                                    longitude_name=anchorage_longitude_name)
-
-        self.latitude_name = latitude_name
-        self.longitude_name = longitude_name
-        self.anchorage_latitude_name = anchorage_latitude_name
-        self.anchorage_longitude_name = anchorage_longitude_name
-        self.column_name = column_name
-
-    @classmethod
-    def load_data(cls,
-                  filename: Union[str, Path],
-                  latitude_name: str,
-                  longitude_name: str) -> pd.DataFrame:
-        """
-        Load the vessel type data.
-
-        :param filename: Filename for that anchorages data csv file
-        :param latitude_name:  name of the latitude column
-        :param longitude_name: name of the longitude column
-        :return: the loaded data as DataFrame containing (only) the latitude and longitude column (if there are more)
-        """
-        anchorages_csv = Path(filename)
-        if not anchorages_csv.exists():
-            raise RuntimeError(f"Anchorages data not accessible. File {anchorages_csv} not found")
-        anchorages = pd.read_csv(filepath_or_buffer=filename,
-                                 usecols=[latitude_name, longitude_name])
-        return anchorages
-
-    def transform(self, df):
-        df = super().transform(df)
-
-        # Ensure that radians can be used for LAT/LON
-        for column in [self.anchorage_latitude_name, self.anchorage_longitude_name]:
-            self.anchorages[f'{column}_in_rad'] = self.anchorages[column].map(np.deg2rad)
-
-        # Adding temporary columns
-        lat_lon_rad_columns = []
-        for data_column, anchorage_column in [(self.latitude_name, self.anchorage_latitude_name),
-                                              (self.longitude_name, self.anchorage_longitude_name)]:
-            col_in_rad = f'{anchorage_column}_in_rad'
-            lat_lon_rad_columns.append(col_in_rad)
-            df[col_in_rad] = df[data_column].map(np.deg2rad)
-
-        # Provide a dask progress bar
-        pbar = ProgressBar()
-        # Performs global registration, see
-        # https://www.coiled.io/blog/how-to-check-the-progress-of-dask-computations
-        pbar.register()
-
-        def compute_distance(x):
-            """
-            Compute the Haversine distance between the closest anchorage and a set of points
-            """
-            # NOTE: We have to define the ball-tree on each process to gain any speedup
-            # We also need to copy the input to avoid tkinter issues
-            tree = BallTree(self.anchorages[lat_lon_rad_columns].copy(), metric='haversine')
-            output = tree.query(np.array(x[lat_lon_rad_columns]), k=1, return_distance=True)
-            return output[0].reshape(-1)
-
-        dask_dataframe = dd.from_pandas(df[lat_lon_rad_columns], chunksize=1000000)
-        dist_output = dask_dataframe.map_partitions(lambda df_part:
-                                                    compute_distance(df_part))
-        z = dist_output.compute()
-        df[self.column_name] = z * EARTH_RADIUS * 1000
-        df[self.column_name] = df[self.column_name].astype(np.int32)
-        # Drop the temporary columns
-        df.drop(columns=lat_lon_rad_columns, inplace=True)
-
-        return df
 
 
 class AddDistanceClosestSatellite(BaseAugmenter):

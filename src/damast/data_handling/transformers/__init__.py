@@ -1,4 +1,4 @@
-from .augmenters import JoinDataFrameByColumn
+from .augmenters import JoinDataFrameByColumn, BallTreeAugmenter, AddUndefinedValue
 from .normalizers import (
     CyclicDenormalizer,
     CyclicNormalizer,
@@ -16,4 +16,6 @@ __all__ = [
     "Normalizer",
     "MinMaxNormalizer",
     "normalize",
+    "BallTreeAugmenter",
+    "AddUndefinedValue"
 ]
