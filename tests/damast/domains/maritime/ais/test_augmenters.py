@@ -13,7 +13,8 @@ from damast.domains.maritime.math import great_circle_distance
 from damast.domains.maritime.transformers import (
     AddMissingAISStatus,
     DeltaDistance,
-    AddVesselType
+    AddVesselType,
+    ComputeClosestAnchorage
 )
 
 from damast.data_handling.transformers.augmenters import AddUndefinedValue
@@ -189,3 +190,44 @@ def test_add_vessel_type(tmp_path):
         entries_per_mmsi = fixed_adf[fixed_adf[ColumnName.MMSI] == mmsi]
         vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
         assert (vessel_types == "unspecified").all()
+
+
+def test_add_distance_closest_anchorage(tmp_path):
+    columns = ["s2id", "latitude", "longitude", "label", "sublabel", "iso3"]
+    anchorage_data = [
+        ["356ec741", 34.839059469352883, 128.42069569869318, "TONGYEONG", None, "KOR"],
+        ["3574e907", 34.691433022457183, 125.4429067750192, "HEUKSANDO", None, "KOR"],
+        ["356f2c7b", 35.137774967951927, 128.6030742948769, "MASAN", None, "KOR"],
+        ["356f2af7", 35.080054265204275, 128.61175951519579, "NANPO- RI", None, "KOR"]
+    ]
+
+    dataset_pd = pandas.DataFrame(anchorage_data, columns=columns)
+    dataset = vaex.from_pandas(dataset_pd)
+    data = [
+        [34.839059469352883, 128.42069569869318],
+        [30.0, 125.0]
+    ]
+    df_pd = pandas.DataFrame(data, columns=[ColumnName.LATITUDE, ColumnName.LONGITUDE])
+    df = vaex.from_pandas(df_pd)
+    metadata = damast.core.MetaData(
+        columns=[damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg,
+                                               representation_type=np.float64),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg,
+                                               representation_type=np.float64)])
+    adf = damast.core.AnnotatedDataFrame(df, metadata)
+
+    transformer = ComputeClosestAnchorage(dataset, [columns[1], columns[2]])
+    pipeline = damast.core.DataProcessingPipeline("Compute closest anchorage", tmp_path)
+
+    pipeline.add("Add distance to achorage", transformer,
+                 name_mappings={"x": ColumnName.LATITUDE,
+                                "y": ColumnName.LONGITUDE,
+                                "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
+    pipeline.transform(adf)
+    closest_anchorages = adf._dataframe[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].evaluate()
+    distances = np.zeros(len(anchorage_data))
+    for idx in range(len(adf._dataframe)):
+        for i, anchorage in enumerate(anchorage_data):
+            pos = anchorage[1:3]
+            distances[i] = great_circle_distance(pos[0], pos[1], data[idx][0], data[idx][1])
+        assert np.isclose(np.min(distances), closest_anchorages[idx])

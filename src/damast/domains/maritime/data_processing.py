@@ -36,10 +36,10 @@ import yaml
 from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.pipeline import Pipeline
 from damast.data_handling.transformers.augmenters import (
-    AddDistanceClosestAnchorage,
     AddLocalMessageIndex,
-    JoinDataFrameByColumn
+    #    JoinDataFrameByColumn
 )
+from damast.domains.maritime.transformers import ComputeClosestAnchorage
 from damast.data_handling.transformers.filters import (
     AreaFilter,
     DuplicateNeighboursFilter,
@@ -310,7 +310,7 @@ def process_data(params: Dict[str, Any],
         #                                                       right_on=ColumnName.MMSI.lower(),
         #                                                       dataset_col=ColumnName.VESSEL_TYPE_GFW,
         #                                                       col_name=ColumnName.FISHING_TYPE, sep=",")),
-        ("augment_distance_to_closest_anchorage", AddDistanceClosestAnchorage(anchorages_data=anchorages_csv)),
+        #("augment_distance_to_closest_anchorage", ComputeClosestAnchorage(anchorages_data=anchorages_csv, columns=[])),
         # ("augment_distance_to_closest_satellite", AddDistanceClosestSatellite(satellite_tle_filename=tle_filename,
         #                                                                      latitude_name=ColumnName.LATITUDE,
         #                                                                      longitude_name=ColumnName.LONGITUDE)),
