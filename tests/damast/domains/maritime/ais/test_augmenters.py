@@ -6,6 +6,7 @@ import vaex
 from astropy import units
 
 import damast.core
+from damast.data_handling.transformers.augmenters import AddLocalMessageIndex
 from damast.data_handling.transformers.features import Feature
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.data_specification import ColumnName
@@ -14,7 +15,7 @@ from damast.domains.maritime.transformers import (
     AddMissingAISStatus,
     DeltaDistance,
     AddVesselType,
-    ComputeClosestAnchorage
+    ComputeClosestAnchorage,
 )
 
 from damast.data_handling.transformers.augmenters import AddUndefinedValue
@@ -78,6 +79,7 @@ def test_delta_column(tmp_path):
     lon = 0.0
 
     data = []
+    data.append([mmsi_a, timestamp + dt.timedelta(seconds=100), lat, lon])
     for i in range(1, 90):
         data.append([mmsi_a, timestamp + dt.timedelta(seconds=i * 1), lat + i * 1.0, lon + i * 1.0])
         data.append([mmsi_b, timestamp + dt.timedelta(seconds=i * 1), lat - i * 0.5, lon - i * 0.5])
@@ -105,14 +107,14 @@ def test_delta_column(tmp_path):
     new_adf = pipeline.transform(adf)
 
     assert Feature.DELTA_DISTANCE in new_adf._dataframe.column_names
+    pd_sorted = df_pd.sort_values(ColumnName.TIMESTAMP)
+    df_grouped = pd_sorted.groupby(by=ColumnName.MMSI)
 
-    df_grouped = df_pd.groupby(by=ColumnName.MMSI, sort=ColumnName.TIMESTAMP)
-    vaex_groups = new_adf._dataframe.groupby(by=ColumnName.MMSI, sort=ColumnName.TIMESTAMP)
+    vaex_groups = new_adf._dataframe.groupby(by=ColumnName.MMSI)
     for mmsi, global_indices in df_grouped.groups.items():
-
-        vg = vaex_groups.get_group(mmsi)
+        vg_unsorted = vaex_groups.get_group(mmsi)
+        vg = vg_unsorted.sort(ColumnName.TIMESTAMP)
         distances = vg[Feature.DELTA_DISTANCE.value].evaluate()
-
         lat = np.ma.masked_invalid(df_pd["LAT"][global_indices].shift(1).array)
         lat_prev = np.ma.masked_invalid(df_pd["LAT"][global_indices].array)
         lon = np.ma.masked_invalid(df_pd["LON"][global_indices].shift(1).array)
@@ -231,3 +233,49 @@ def test_add_distance_closest_anchorage(tmp_path):
             pos = anchorage[1:3]
             distances[i] = great_circle_distance(pos[0], pos[1], data[idx][0], data[idx][1])
         assert np.isclose(np.min(distances), closest_anchorages[idx])
+
+
+def test_message_index(tmp_path):
+    mmsi_a = 400000000
+    mmsi_b = 500000000
+    timestamp = dt.datetime.utcnow()
+
+    lat = 0.0
+    lon = 0.0
+
+    data = []
+    num_messages_A = 90
+    num_messages_B = num_messages_A - 2
+
+    # Insert last message first
+    data.append([mmsi_a, timestamp + dt.timedelta(seconds=num_messages_A), lat, lon, num_messages_A-1, 0])
+    # Next insert first message
+    data.append([mmsi_a, timestamp - dt.timedelta(seconds=1), lat, lon, 0, num_messages_A-1])
+
+    for i in range(num_messages_B):
+        data.append([mmsi_a, timestamp + dt.timedelta(seconds=i * 1), lat + i * 1.0, lon + i * 1.0,
+                     i+1, num_messages_A-(i+2)])
+        data.append([mmsi_b, timestamp + dt.timedelta(seconds=i * 1), lat - i * 0.5, lon - i * 0.5,
+                     i, num_messages_B-(i+1)])
+    df_pd = pandas.DataFrame(data, columns=[ColumnName.MMSI, ColumnName.TIMESTAMP,
+                             ColumnName.LATITUDE, ColumnName.LONGITUDE, "REF INDEX", "INVERSE REF"])
+    df = vaex.from_pandas(df_pd)
+
+    metadata = damast.core.MetaData(
+        columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
+                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type="datetime64[ns]"),
+                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg)])
+    adf = damast.core.AnnotatedDataFrame(df, metadata)
+
+    # Create pipeline
+    pipeline = damast.core.DataProcessingPipeline("Compute message index", tmp_path)
+
+    pipeline.add("Compute local message index",  AddLocalMessageIndex(),
+                 name_mappings={"group": ColumnName.MMSI,
+                                "sort": ColumnName.TIMESTAMP,
+                                "position": ColumnName.HISTORIC_SIZE,
+                                "reverse_position": ColumnName.HISTORIC_SIZE_REVERSE})
+    new_adf = pipeline.transform(adf)
+    assert np.allclose(new_adf["REF INDEX"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE].evaluate())
+    assert np.allclose(new_adf["INVERSE REF"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE_REVERSE].evaluate())

@@ -9,7 +9,6 @@ import datetime
 import numpy as np
 import pandas as pd
 import vaex
-from pyorbital.orbital import Orbital
 from sklearn.neighbors import BallTree
 from sklearn.preprocessing import Binarizer
 import numpy.typing as npt
@@ -18,16 +17,9 @@ from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import DataSpecification, PipelineElement
 from damast.data_handling.transformers.base import BaseTransformer
 from damast.domains.maritime.data_specification import ColumnName, FieldValue
-from damast.domains.maritime.math.spatial import (
-    angle_sat_c,
-    chord_distance,
-    distance_sat_vessel,
-    great_circle_distance
-)
 
 __all__ = [
     "AddCombinedLabel",
-    "AddDistanceClosestSatellite",
     "AddLocalMessageIndex",
     "JoinDataFrameByColumn",
     "BaseAugmenter",
@@ -85,18 +77,17 @@ class JoinDataFrameByColumn(PipelineElement):
 
         :param filename: The input file (or path)
         :param sep: Separator in csv
-        :return: A `pandas.DataFrame` where each row has a column MMSI and vessel_type
+        :return: A `vaex.DataFrame` with the data
         """
-        vessel_type_csv = Path(filename)
-        if not vessel_type_csv.exists():
-            raise RuntimeError(f"Vessel type information not accessible. File {vessel_type_csv} not found")
+        file_path = Path(filename)
+        if not file_path.exists():
+            raise RuntimeError(f"Vessel type information not accessible. File {file_path} not found")
 
-        if vessel_type_csv.suffix == ".csv":
-            vessel_types = vaex.from_csv(vessel_type_csv, sep=sep)
-        elif vessel_type_csv.suffix == ".hdf5":
-            vessel_types = vaex.open(vessel_type_csv)
-        vessel_types = pd.read_csv(vessel_type_csv, sep=sep)
-        return vessel_types
+        if file_path.suffix == ".csv":
+            dataframe = vaex.from_csv(file_path, sep=sep)
+        elif file_path.suffix == ".hdf5":
+            dataframe = vaex.open(file_path)
+        return dataframe
 
     @damast.core.input({"x": {}})
     @damast.core.output({"out": {}})
@@ -178,163 +169,6 @@ class BallTreeAugmenter():
         Last time the underlying BallTree was modified
         """
         return self._modified
-
-
-class AddDistanceClosestSatellite(BaseAugmenter):
-    """
-    Compute the distance uses the coordinate of the satellite computed by
-    the tle file for a given timestamp.
-    Create `SAT_DISTANCE` column on the data set.
-
-    :param params: Input parameter dictionary. Requires the following keys:
-
-    .. highlight:: python
-    .. code-block:: python
-
-        {"do_compute_distance_satellite": True/False,
-         "list_sat": ["sat0", "sat1", ...],
-         "tle_file": "path_to_tle_file"
-        }
-
-    The `tle_file` has the columns `SAT_LON`, `SAT_LAT`, `SAT_ALT`.
-    From these entries one can compute the chord distance `CORDE`.
-
-    :param df: Dataframe to write distances to.
-
-    :return: The augmented dataframe
-    """
-    #: The TLE filename
-    tle_filename: Path = None
-
-    #: List of satellites
-    satellites: List[str] = None
-
-    def __init__(self,
-                 satellite_tle_filename: Union[str, Path],
-                 column_name: str = ColumnName.DISTANCE_CLOSEST_SATELLITE,
-                 timestamp_name: str = ColumnName.TIMESTAMP,
-                 latitude_name: str = "latitude",
-                 longitude_name: str = "longitude"):
-        """
-
-        :param satellites: list of satellite (names), which shall be considered for this computation
-        :param satellite_tle_filename: The two-line element set file, for the satellite positions, see
-            also https://en.wikipedia.org/wiki/Two-line_element_set
-        :param column_name: Name of the resulting column representing the distance to the closest satellite
-        :param timestamp_name: Name of the column containing the timestamp data
-        """
-        # Fetch satellite data
-        self.tle_filename = Path(satellite_tle_filename)
-        self.satellites = []
-
-        # Collect the satellite names for the existing tle file
-        if self.tle_filename.exists():
-            self.satellites = AddDistanceClosestSatellite.get_satellites(filename=self.tle_filename)
-        else:
-            raise RuntimeError("Satellites not found")
-        self.column_name = column_name
-        self.timestamp_name = timestamp_name
-
-        self.longitude_name = longitude_name
-        self.latitude_name = latitude_name
-
-    @staticmethod
-    def get_satellites(filename: Union[str, Path]) -> List[str]:
-        """
-        Get the list of satellites from the TLE file
-        :param filename: The TLE file (Two-line element set) -- https://en.wikipedia.org/wiki/Two-line_element_set
-        :return: List of satellite names
-        """
-        satellites = []
-        # Collect the satellite names for the existing tle file
-        filename = Path(filename)
-        if filename.exists():
-            with open(filename, "r") as f:
-                contents = f.readlines()
-                for line in contents:
-                    if not re.match("^[0-9]", line):
-                        satellites.append((line.strip()))
-
-        return satellites
-
-    def transform(self, X):
-        X = super().transform(X)
-        first_satellite = True
-        if len(self.satellites) == 0:
-            return X
-        for sat in self.satellites:
-            sat_specific_orbital = Orbital(sat, tle_file=str(self.tle_filename))
-
-            # Compute intersection point between earth surface and a vector from earths center to the satellite
-            # results will be stored in temporary columns
-            # Compute the current satellite position (based on the given timestamp
-            X["SAT_LON"], X["SAT_LAT"], X["SAT_ALT"] = sat_specific_orbital.get_lonlatalt(X[self.timestamp_name])
-
-            # Shortest distance between satellite intersection and vessel
-            X["CHORD_DISTANCE"] = chord_distance(
-                great_circle_distance(X[self.latitude_name].values,
-                                      X[self.longitude_name].values,
-                                      X.SAT_LAT.values,
-                                      X.SAT_LON.values))
-
-            # Compute distance from satellite to vessels
-            distances_to_current_sat = distance_sat_vessel(X.SAT_ALT.values,
-                                                           X.CHORD_DISTANCE.values,
-                                                           angle_sat_c(X.CHORD_DISTANCE.values))
-            if first_satellite is True:
-                X[self.column_name] = distances_to_current_sat
-                first_satellite = False
-            else:
-                # Find closest satellite
-                X[self.column_name] = np.minimum(X[self.column_name].values, distances_to_current_sat)
-
-        # Drop temporary columns
-        X.drop(["SAT_LON", "SAT_LAT", "SAT_ALT", "CHORD_DISTANCE"], axis=1, inplace=True)
-        # Compress the new columns
-        X[self.column_name] = (X[self.column_name] * 1000).astype(np.int32)
-        return X
-
-
-class AddLocalMessageIndex(BaseAugmenter):
-    """
-    Compute the number of messages sent by the same vessel before and after the current message.
-
-    Each message will contain then an entry HISTORIC_SIZE telling how many message were sent BEFORE this one,
-    and HISTORIC_SIZE_REVERSE how many were sent AFTER this one.
-
-    The count are respectively stored in HISTORIC_SIZE and HISTORIC_SIZE_REVERSE
-    """
-
-    # Compute the historic size
-    # - group data by MMSI -> then use range list of MMSI
-    # -> returns: array([list([0,...,n_mmi0]), list([0,...,n_mmi1]), ..])
-    # df = pd.DataFrame(data={"MMSI": [10, 10, 100, 100, 1000, 1000], "A": [11, 11, 111, 111, 1111, 1111],
-    #                        "B": [12, 12, 122, 122, 1112, 11112]})
-    # historic_size = df.groupby("MMSI")["MMSI"].apply(lambda df: df.reset_index().index.to_list()).values
-    # np.concatenate(historic_size)
-    # Out[72]: array([0, 1, 0, 1, 0, 1])
-    def __init__(self,
-                 mmsi_name: str = ColumnName.MMSI.lower(),
-                 index_name: str = ColumnName.HISTORIC_SIZE,
-                 reverse_index_name: str = ColumnName.HISTORIC_SIZE_REVERSE):
-        self.mmsi_name = mmsi_name
-        self.index_name = index_name
-        self.reverse_index_name = reverse_index_name
-
-    def transform(self, df):
-        df = super().transform(df)
-
-        historic_size = df.groupby(self.mmsi_name)[self.mmsi_name]. \
-            apply(lambda df: np.array(df.reset_index().index.tolist())). \
-            values
-        df[self.index_name] = np.concatenate(historic_size)
-        # Compute the reverse historic size
-        df[self.reverse_index_name] = np.concatenate(
-            (np.expand_dims(np.array(list(map(len, historic_size))), axis=0) - historic_size).
-            reshape(historic_size.shape))
-        df[self.index_name] = df[self.index_name].astype('int32')
-        df[self.reverse_index_name] = df[self.reverse_index_name].astype('int32')
-        return df
 
 
 class AddCombinedLabel(BaseAugmenter):
@@ -447,6 +281,64 @@ class AddUndefinedValue(PipelineElement):
         df._dataframe[mapped_name] = df._dataframe[mapped_name].fillna(self._fill_value)
         df._dataframe[mapped_name] = df._dataframe[mapped_name].fillmissing(self._fill_value)
         return df
+
+
+class AddLocalMessageIndex(PipelineElement):
+    """
+    Compute the local index of an entry in a given group (sorted by a given column).
+    Also compute the reverse index, i.e. how many entries in the group are after this message
+
+    :param inplace: Copy input dataframe in transform if False
+    """
+    _inplace: bool
+
+    def __init__(self, inplace: bool = True):
+        self._inplace = inplace
+
+    @damast.core.describe("Compute the ")
+    @damast.core.input({"group": {"representation_type": int},
+                        "sort": {"representation_type": "datetime64[ns]"}})
+    @damast.core.output({"position": {"representation_type": int},
+                         "reverse_position": {"representation_type": int}})
+    def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
+        if not self._inplace:
+            dataframe = df._dataframe.copy()
+        else:
+            dataframe = df._dataframe
+
+        dataframe["INDEX"] = vaex.vrange(0, len(dataframe), dtype=int)
+
+        historic_position = np.empty(len(dataframe), dtype=int)
+        reverse_historic_position = np.empty(len(dataframe), dtype=int)
+        # Sort each group
+        groups = dataframe.groupby(by=self.get_name("group"))
+        for _, group in groups:
+            sorted_group = group.sort(self.get_name("sort"))
+            # For each group compute the local position
+            position = np.arange(0, len(sorted_group), dtype=int)
+            # Assign local position and reverse position to global arrays
+            global_indices = sorted_group["INDEX"].evaluate()
+            historic_position[global_indices] = position
+            reverse_historic_position[global_indices] = len(group)-1-position
+            del global_indices
+
+        # Assign global arrays to dataframe
+        dataframe[self.get_name("position")] = historic_position
+        dataframe[self.get_name("reverse_position")] = reverse_historic_position
+
+        # Drop global index column
+        dataframe.drop("INDEX", inplace=True)
+        del historic_position, reverse_historic_position
+        new_specs = [damast.core.DataSpecification(self.get_name("position"), representation_type=int),
+                     damast.core.DataSpecification(self.get_name("reverse_position"), representation_type=int)]
+        if self._inplace:
+            [df._metadata.columns.append(new_spec) for new_spec in new_specs]
+            return df
+        else:
+            metadata = df._metadata.columns.copy()
+            [metadata.append(new_spec) for new_spec in new_specs]
+            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
+                metadata))
 
 
 class InvertedBinariser(BaseAugmenter):
