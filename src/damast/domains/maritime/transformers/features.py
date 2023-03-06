@@ -71,18 +71,19 @@ class DeltaDistance(PipelineElement):
         shifted_y_array = np.zeros(len(dataframe))
 
         # Group data and sort it. Only shift data within the same group
-        groups = dataframe.groupby(by=self.get_name("group"), sort=self.get_name("sort"))
+        groups = dataframe.groupby(by=self.get_name("group"))
         for _, group in groups:
+            sorted_group = group.sort(self.get_name("sort"))
             # Add copy of in-column that should be shifted
-            group.add_virtual_column(shift_x, group[in_x])
-            group.add_virtual_column(shift_y, group[in_y])
-            global_indices = group["INDEX"].evaluate()
+            sorted_group.add_virtual_column(shift_x, sorted_group[in_x])
+            sorted_group.add_virtual_column(shift_y, sorted_group[in_y])
+            global_indices = sorted_group["INDEX"].evaluate()
 
             # Shift columns and assign to global output array
-            group.shift(1, shift_x, inplace=True)
-            shifted_x_array[global_indices] = group[shift_x].evaluate()
-            group.shift(1, f"{self.get_name('y')}_shifted", inplace=True)
-            shifted_y_array[global_indices] = group[shift_y].evaluate()
+            sorted_group.shift(1, shift_x, inplace=True)
+            shifted_x_array[global_indices] = sorted_group[shift_x].evaluate()
+            sorted_group.shift(1, f"{self.get_name('y')}_shifted", inplace=True)
+            shifted_y_array[global_indices] = sorted_group[shift_y].evaluate()
 
             del global_indices
 

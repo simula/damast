@@ -1,7 +1,7 @@
 from .augmenters import (
     AddMissingAISStatus,
     AddVesselType,
-    ComputeClosestAnchorage
+    ComputeClosestAnchorage,
 )
 from .features import DeltaDistance
 
