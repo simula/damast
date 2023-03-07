@@ -174,6 +174,12 @@ def lat_lon_dataframe():
     return vaex.from_pandas(pandas_df)
 
 
+@pytest.fixture()
+def lat_lon_annotated_dataframe(lat_lon_dataframe, lat_lon_metadata):
+    return AnnotatedDataFrame(dataframe=lat_lon_dataframe,
+                              metadata=lat_lon_metadata)
+
+
 def test_data_processor_input(height_dataframe, height_metadata):
     height_adf = AnnotatedDataFrame(dataframe=height_dataframe,
                                     metadata=height_metadata)
@@ -253,6 +259,9 @@ def test_access_decorator_info():
 
 
 def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp_path):
+    adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
+                             metadata=lat_lon_metadata)
+
     pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
         .add("transform-b", TransformerB()) \
@@ -261,7 +270,8 @@ def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp
     with pytest.raises(RuntimeError, match="set the correct output specs"):
         pipeline.output_specs
 
-    pipeline.prepare()
+    pipeline.prepare(df=adf)
+
     assert pipeline.output_specs is not None
 
     output_columns = [x.name for x in pipeline.output_specs]
@@ -276,18 +286,16 @@ def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp
     print(representation)
     assert representation != ""
 
-    adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
-                             metadata=lat_lon_metadata)
     pipeline.transform(df=adf)
 
 
-def test_data_processing_invalid_pipeline(tmp_path):
+def test_data_processing_invalid_pipeline(lat_lon_annotated_dataframe, tmp_path):
     pipeline = DataProcessingPipeline(name="acb", base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
         .add("transform-c", TransformerC()) \
         .add("transform-b", TransformerB())
-    with pytest.raises(RuntimeError, match="insufficient output declared"):
-        pipeline.prepare()
+    with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
+        pipeline.prepare(df=lat_lon_annotated_dataframe)
 
 
 def test_single_element_pipeline(tmp_path):
