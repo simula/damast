@@ -342,19 +342,22 @@ class DataProcessingPipeline(PipelineElement):
         return self
 
     @classmethod
-    def validate(cls, steps: List[Tuple[str, PipelineElement]]) -> Dict[str, Any]:
+    def validate(cls,
+                 steps: List[Tuple[str, PipelineElement]],
+                 metadata: MetaData) -> Dict[str, Any]:
         """
-        Validate the existing pipeline and collect the final (minimal output) data specification.
+        Validate the existing pipeline and collect the minimal input and output data specification.
 
         .. todo::
 
             Document output
 
         :param steps: processing steps
-        :return:
+        :param metadata: the input metadata for this pipeline
+        :return: the minimal output specification for this pipeline
         """
         # Keep track of the expected (minimal) specs at each step in the pipeline
-        current_specs: Optional[List[DataSpecification]] = None
+        current_specs: Optional[List[DataSpecification]] = copy.deepcopy(metadata.columns)
         for name, transformer in steps:
 
             if name is None:
@@ -367,16 +370,13 @@ class DataProcessingPipeline(PipelineElement):
             input_specs = transformer.input_specs
             output_specs = transformer.output_specs
 
-            if current_specs is None:
-                current_specs = input_specs
-            else:
-                md = MetaData(columns=current_specs, annotations={})
-                fulfillment = md.get_fulfillment(expected_specs=input_specs)
-                if not fulfillment.is_met():
-                    raise RuntimeError(f"{cls.__name__}.validate: insufficient output declared"
-                                       f" from previous step to step '{name}': {fulfillment}")
+            md = MetaData(columns=current_specs, annotations={})
+            fulfillment = md.get_fulfillment(expected_specs=input_specs)
+            if not fulfillment.is_met():
+                raise RuntimeError(f"{cls.__name__}.validate: Input requirements are not fulfilled. "
+                                   f"Current input available (at step '{name}'): {fulfillment}")
 
-                current_specs = DataSpecification.merge_lists(current_specs, input_specs)
+            current_specs = DataSpecification.merge_lists(current_specs, input_specs)
             current_specs = DataSpecification.merge_lists(current_specs, output_specs)
 
         return {"steps": steps, "output_spec": current_specs}
@@ -407,7 +407,7 @@ class DataProcessingPipeline(PipelineElement):
 
         return data
 
-    def prepare(self) -> DataProcessingPipeline:
+    def prepare(self, df: AnnotatedDataFrame) -> DataProcessingPipeline:
         """
         Prepare the pipeline by validating all step that define the pipeline.
 
@@ -415,7 +415,8 @@ class DataProcessingPipeline(PipelineElement):
 
         :returns: This instance of data processing pipeline
         """
-        validation_result = self.validate(steps=self.steps)
+        validation_result = self.validate(steps=self.steps,
+                                          metadata=df._metadata)
         self.is_ready = True
 
         self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
@@ -431,7 +432,7 @@ class DataProcessingPipeline(PipelineElement):
         :returns: The transformed dataframe
         """
         if not self.is_ready:
-            self.prepare()
+            self.prepare(df=df)
 
         steps = [t for _, t in self.steps]
         pipeline = vaex.ml.Pipeline(steps)
