@@ -106,19 +106,28 @@ class DataSpecification:
 
     class Fulfillment:
         # Would use Key here, but the concept for that is not yet ironed out in Python
-        status: Dict[Enum, Status]
+        status: Dict[Enum, Dict[str, Union[Status, str]]]
 
         def __init__(self):
             self.status = {}
 
         def is_met(self) -> bool:
             for k, v in self.status.items():
-                if v == Status.FAIL:
+                if "status" not in v:
+                    raise KeyError(f"{self.__class__.__name__}: internal error. Status misses key 'status'")
+
+                if v["status"] == Status.FAIL:
                     return False
             return True
 
         def __repr__(self):
-            status = {k.value: v.value for k, v in self.status.items()}
+            status = {}
+            for k, v in self.status.items():
+                msg = v['status'].value
+                if 'message' in v:
+                    msg += f" {v['message']}"
+                status[k.value] = msg
+
             return f"{self.__class__.__name__}[{status}]"
 
     class MissingColumn(Fulfillment):
@@ -452,24 +461,32 @@ class DataSpecification:
             if key == DataSpecification.Key.precision:
                 if self.precision is not None:
                     if data_spec.precision is None:
-                        fulfillment.status[key] = Status.FAIL
+                        fulfillment.status[key] = {'status': Status.FAIL,
+                                                   'message': f"column has no precision defined"}
                     elif self.precision < data_spec.precision:
-                        fulfillment.status[key] = Status.FAIL
+                        fulfillment.status[key] = {'status': Status.FAIL,
+                                                   'message': f"'data has insufficient precision: "
+                                                              f" required '{self.precision}',"
+                                                              f" available '#{data_spec.precision}'"}
                     else:
-                        fulfillment.status[key] = Status.OK
+                        fulfillment.status[key] = {'status': Status.OK}
             else:
                 expected_value = getattr(self, key.value)
                 if expected_value is not None:
                     spec_value = getattr(data_spec, key.name)
                     if spec_value is None:
-                        fulfillment.status[key] = Status.FAIL
+                        fulfillment.status[key] = {'status': Status.FAIL,
+                                                   'message': f"Expected '{spec_value=}' == '{expected_value=}'"
+                                                   }
                         continue
 
                     if expected_value != spec_value:
-                        fulfillment.status[key] = Status.FAIL
+                        fulfillment.status[key] = {'status': Status.FAIL,
+                                                   'message': f"Expected '{spec_value=}' == '{expected_value=}'"
+                                                   }
                         continue
 
-                    fulfillment.status[key] = Status.OK
+                    fulfillment.status[key] = {'status': Status.OK}
         return fulfillment
 
     @classmethod
@@ -517,7 +534,7 @@ class DataSpecification:
             else:
                 raise ValueError(
                     f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
-                    f" on self: '{this_value}' vs. other: '{other}'")
+                    f" on self: '{this_value}' vs. other: '{other_value}'")
         return ds
 
     @classmethod
