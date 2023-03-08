@@ -4,12 +4,14 @@ Module to collect the classes to define meta data
 from __future__ import annotations
 
 import builtins
+import inspect
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import vaex
 import yaml
+from vaex.datatype import DataType
 
 from .annotations import Annotation, History
 from .datarange import DataRange
@@ -297,7 +299,13 @@ class DataSpecification:
             data["category"] = self.category.value
 
         if self.representation_type is not None:
-            data["representation_type"] = self.representation_type.__name__
+            if inspect.isclass(self.representation_type):
+                data["representation_type"] = self.representation_type.__name__
+            elif isinstance(self.representation_type, DataType):
+                data["representation_type"] = self.representation_type.name
+            else:
+                raise TypeError(f"{self.__class__.__name__}.to_dict: failed to identify representation_type from"
+                                f" {self.representation_type}")
 
         if self.missing_value is not None:
             data["missing_value"] = self.missing_value
