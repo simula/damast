@@ -6,7 +6,7 @@ import yaml
 
 from damast.core.annotations import Annotation, Change, History
 from damast.core.datarange import CyclicMinMax, MinMax
-from damast.core.metadata import DataCategory, DataSpecification, MetaData
+from damast.core.metadata import DataCategory, DataSpecification, MetaData, Status
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -35,7 +35,7 @@ from damast.core.metadata import DataCategory, DataSpecification, MetaData
                               "lon", float, None, units.deg, 0.01,
                               CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
                               False]
-])
+                         ])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
                             missing_value, unit, precision,
@@ -81,7 +81,7 @@ def test_data_specification(name, category, is_optional,
                              ["test-data-spec", DataCategory.DYNAMIC, False,
                               "tds", float, -1, units.m, 0.01,
                               MinMax(0.0, 100.0), {0.0: "minimum", 100.0: "maximum"}]
-])
+                         ])
 def test_data_specification_read_write(name, category, is_optional,
                                        abbreviation, representation_type,
                                        missing_value, unit, precision,
@@ -117,21 +117,56 @@ def test_data_specification_read_write(name, category, is_optional,
     assert ds_loaded == ds
 
 
-@pytest.mark.parametrize(["dataspec", "other_dataspec", "are_mergable"],
+@pytest.mark.parametrize(["dataspec", "other_dataspec", "error_msg"],
                          [
                              [DataSpecification(name="a",
                                                 unit=units.m),
                               DataSpecification(name="a", category=DataCategory.DYNAMIC),
-                              True]
+                              None],
+                             [DataSpecification(name="a",
+                                                representation_type=float),
+                              DataSpecification(name="a",
+                                                category=DataCategory.DYNAMIC,
+                                                representation_type=int),
+                              "'representation_type' differs"]
                          ])
-def test_data_specification_merge(dataspec, other_dataspec, are_mergable):
-
-    if are_mergable:
+def test_data_specification_merge(dataspec, other_dataspec, error_msg):
+    if error_msg is None:
         dataspec.merge(other=other_dataspec)
         assert dataspec.name == dataspec.name
     else:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError, match=error_msg):
             dataspec.merge(other=other_dataspec)
+
+
+@pytest.mark.parametrize(["dataspec", "other_dataspec", "error_type"],
+                         [
+                             [DataSpecification(name="a",
+                                                unit=units.m),
+                              DataSpecification(name="a",
+                                                unit=units.m,
+                                                category=DataCategory.DYNAMIC),
+                              None],
+                             [DataSpecification(name="a",
+                                                unit=units.m),
+                              DataSpecification(name="a",
+                                                category=DataCategory.DYNAMIC,
+                                                unit=units.deg),
+                              'unit'],
+                             [DataSpecification(name="a",
+                                                representation_type=float),
+                              DataSpecification(name="a",
+                                                category=DataCategory.DYNAMIC,
+                                                representation_type=int),
+                              "representation_type"]
+                         ])
+def test_data_specification_fulfillment(dataspec, other_dataspec, error_type):
+    f = dataspec.get_fulfillment(other_dataspec)
+    if error_type is None:
+        assert f.is_met()
+    else:
+        assert not f.is_met()
+        assert f.status[error_type]["status"] == Status.FAIL
 
 
 def test_change():
