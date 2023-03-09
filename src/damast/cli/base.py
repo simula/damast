@@ -12,5 +12,5 @@ class BaseParser(ABC):
                             help=argparse.SUPPRESS)
 
     def execute(self, args):
-        print("Subparser: {args.active_subparser}")
+        print(f"Subparser: {args.active_subparser.__class__.__name__}")
         pass
