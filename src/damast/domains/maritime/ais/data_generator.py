@@ -122,7 +122,7 @@ class AISTestData:
         return vaex.from_pandas(df)
 
     def generate_vessel_type_data(self) -> vaex.DataFrame:
-        """Generate a `vaex.Dataframe` with data imitating vessel-type info
+        """Generate a :class:`vaex.DataFrame` with data imitating vessel-type info
 
         Returns:
             A dataframe with an `ColumnName.MMSI` column and a `ColumnName.VESSEL_TYPE` column.

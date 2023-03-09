@@ -42,6 +42,9 @@ class JoinDataFrameByColumn(PipelineElement):
     :param dataset_column: Name of column in `dataset` to
     :param col_name: Name of augmented column
     :param sep: Separator in CSV file
+
+    .. note::
+        :code:`right_on` will not be added as a new column in the transformed dataset
     """
     _right_on: str
     _dataset: pd.DataFrame
@@ -93,7 +96,9 @@ class JoinDataFrameByColumn(PipelineElement):
     @damast.core.output({"out": {}})
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
-        Join datasets
+        Join datasets by column "x".
+        Adds column "out".
+
         :returns: DataFrame with added column
         """
         if not self._inplace:
@@ -106,6 +111,10 @@ class JoinDataFrameByColumn(PipelineElement):
             left_on=self.get_name("x"),
             right_on=self._right_on,
             inplace=True)
+        # If left_on and right_on are not equal, join adds right_on as a new column, adding
+        # duplicate data
+        if self._right_on != self.get_name("x"):
+            dataframe.drop(self._right_on, inplace=True)
         dataframe.rename(self._dataset_column, self.get_name("out"))
         new_spec = DataSpecification(self.get_name("out"))
 
@@ -297,9 +306,9 @@ class AddLocalMessageIndex(PipelineElement):
 
     @damast.core.describe("Compute the ")
     @damast.core.input({"group": {"representation_type": int},
-                        "sort": {"representation_type": "datetime64[ns]"}})
-    @damast.core.output({"position": {"representation_type": int},
-                         "reverse_position": {"representation_type": int}})
+                        "sort": {}})
+    @damast.core.output({"msg_index": {"representation_type": int},
+                         "reverse_{{msg_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         if not self._inplace:
             dataframe = df._dataframe.copy()
@@ -313,6 +322,8 @@ class AddLocalMessageIndex(PipelineElement):
         # Sort each group
         groups = dataframe.groupby(by=self.get_name("group"))
         for _, group in groups:
+            if len(group) == 0:
+                continue
             sorted_group = group.sort(self.get_name("sort"))
             # For each group compute the local position
             position = np.arange(0, len(sorted_group), dtype=int)
@@ -323,14 +334,14 @@ class AddLocalMessageIndex(PipelineElement):
             del global_indices
 
         # Assign global arrays to dataframe
-        dataframe[self.get_name("position")] = historic_position
-        dataframe[self.get_name("reverse_position")] = reverse_historic_position
+        dataframe[self.get_name("msg_index")] = historic_position
+        dataframe[self.get_name("reverse_{{msg_index}}")] = reverse_historic_position
 
         # Drop global index column
         dataframe.drop("INDEX", inplace=True)
         del historic_position, reverse_historic_position
-        new_specs = [damast.core.DataSpecification(self.get_name("position"), representation_type=int),
-                     damast.core.DataSpecification(self.get_name("reverse_position"), representation_type=int)]
+        new_specs = [damast.core.DataSpecification(self.get_name("msg_index"), representation_type=int),
+                     damast.core.DataSpecification(self.get_name("reverse_{{msg_index}}"), representation_type=int)]
         if self._inplace:
             [df._metadata.columns.append(new_spec) for new_spec in new_specs]
             return df

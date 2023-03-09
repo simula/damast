@@ -35,29 +35,16 @@ def plot_lat_lon(*,
     :return: Path to the file
     """
 
-    if isinstance(df, pd.DataFrame):
-        plt.scatter(x=df[longitude_name],
-                    y=df[latitude_name],
-                    alpha=1)
-        plt.xlim(-180, 180)
-        plt.ylim(-90, 90)
-        plt.xlabel("longitude")
-        plt.ylabel("latitude")
-        filename = output_dir / f"{filename_prefix}.png"
-        plt.savefig(filename, dpi=dpi)
-        plt.close()
-
-    else:
-        plt.scatter(x=df[longitude_name].evaluate().data,
-                    y=df[latitude_name].evaluate().data,
-                    alpha=1)
-        plt.xlim(-180, 180)
-        plt.ylim(-90, 90)
-        plt.xlabel("longitude")
-        plt.ylabel("latitude")
-        filename = output_dir / f"{filename_prefix}.png"
-        plt.savefig(filename, dpi=dpi)
-        plt.close()
+    plt.scatter(x=df[longitude_name].evaluate().data,
+                y=df[latitude_name].evaluate().data,
+                alpha=1)
+    plt.xlim(-180, 180)
+    plt.ylim(-90, 90)
+    plt.xlabel("longitude")
+    plt.ylabel("latitude")
+    filename = output_dir / f"{filename_prefix}.png"
+    plt.savefig(filename, dpi=dpi)
+    plt.close()
 
     return filename
 
@@ -80,31 +67,19 @@ def plot_histograms(*,
     """
     if columns is None:
         columns = df.columns
-    if isinstance(df, pd.DataFrame):
-        # For each column plot the histogram
-        for col_name in columns:
-            if col_name not in df.columns:
-                raise KeyError(f"plot_histogram: {col_name} is not an existing column,"
-                               f" available are {','.join(df.columns_names)}")
-
-            fig_hist, ax = plt.subplots(1, 1, figsize=(10, 10))
-            df.hist(col_name, ax=ax)
-            plt.tight_layout()
-            path = output_dir / f"{filename_prefix}{col_name}.png"
-            fig_hist.savefig(path, dpi=dpi)
-            plt.close(fig_hist)
-
-    else:
-        # For each column plot the histogram
-        for col_name in columns:
-            if col_name not in df.columns_names:
-                raise KeyError(f"plot_histogram: {col_name} is not an existing column,"
-                               f" available are {','.join(df.columns_names)}")
-
-            fig_hist, ax = plt.subplots(1, 1, figsize=(10, 10))
-            df.viz.histogram(df[col_name], ax=ax)
-            plt.tight_layout()
-            path = output_dir / f"{filename_prefix}{col_name}.png"
-            fig_hist.savefig(path, dpi=dpi)
-            plt.close(fig_hist)
+    # For each column plot the histogram
+    for col_name in columns:
+        if col_name not in df.column_names:
+            raise KeyError(f"plot_histogram: {col_name} is not an existing column,"
+                           f" available are {','.join(df.column_names)}")
+        # Vaex uses the prefix "__" for hidden columns, i.e. columns that have either been removed, or 
+        # is a dependent of another column (say after converting radians to degrees)
+        if col_name.startswith("__"):
+            continue
+        fig = plt.figure()
+        df.viz.histogram(df[col_name])
+        plt.tight_layout()
+        path = output_dir / f"{filename_prefix}{col_name}.png"
+        fig.savefig(path, dpi=dpi)
+        plt.close(fig)
     return output_dir

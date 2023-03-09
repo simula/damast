@@ -43,7 +43,6 @@ data_processing:
       - 'source'
     useless:
       - 'rot'
-      - 'BaseDateTime'
     unused:
       - 'MessageType'
       - 'source'
@@ -56,12 +55,12 @@ data_processing:
       LAT:
         min: -90
         max: 90
-        type: 'float32'
+        type: 'float64'
         default: 0
       LON:
         min: -180
         max: 180
-        type: 'float32'
+        type: 'float64'
         default: 0
       SOG:
         min: 0

@@ -2,9 +2,12 @@ import logging
 import pathlib
 from typing import Tuple
 
+import numpy as np
 import pytest
 import vaex
 
+import damast.core
+from damast.core import units
 from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import (
     cleanse_and_sanitise,
@@ -41,7 +44,7 @@ def default_config(workdir):
             "constraints": {"LAT": {
                 "min": -90,
                 "max": 90,
-                "type": 'float32',
+                "type": 'float64',
                 "default": 0}
             }}
     }
@@ -100,24 +103,40 @@ def test_data_processing(default_config, workdir,
     params["inputs"]["fishing_vessel_types"] = fishing_vessel_types_data[1]
     params["inputs"]["anchorages"] = anchorages_data[1]
     params["MessageTypePosition"] = [2]
-    params["columns"]["useless"] = ["rot", "BaseDateTime", "source"]
+    params["columns"]["useless"] = ["rot", "source"]
 
     # Data processing currently expects the following columns
     columns = {
         "mmsi": ColumnName.MMSI,
         "lon": ColumnName.LONGITUDE,
         "lat": ColumnName.LATITUDE,
-        "date_time_utc": "BaseDateTime",
+        "date_time_utc": ColumnName.DATE_TIME_UTC,
         "sog": ColumnName.SPEED_OVER_GROUND,
         "cog": ColumnName.COURSE_OVER_GROUND,
         "true_heading": ColumnName.HEADING,
         "nav_status": ColumnName.STATUS,
-        "message_nr": "MessageType",
+        "message_nr": ColumnName.MESSAGE_TYPE,
     }
     for (old_name, new_name) in columns.items():
         ais_test_data.dataframe.rename(old_name, new_name)
 
     df = cleanse_and_sanitise(params=params, df=ais_test_data.dataframe)
+    df = df.extract()
+    metadata = damast.core.MetaData(
+        columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.units.deg,
+                                               representation_type=np.float64),
+                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.units.deg,
+                                               representation_type=np.float64),
+                 damast.core.DataSpecification(ColumnName.SPEED_OVER_GROUND, representation_type=float),
+                 damast.core.DataSpecification(ColumnName.COURSE_OVER_GROUND, representation_type=float),
+                 damast.core.DataSpecification(ColumnName.HEADING, representation_type=float),
+                 damast.core.DataSpecification(ColumnName.STATUS, representation_type=int),
+                 damast.core.DataSpecification("MessageType", representation_type=int),
+                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type=int),
+                 ])
+    adf = damast.core.AnnotatedDataFrame(df, metadata)
+
     process_data(params=params,
-                 df=df,
+                 df=adf,
                  workdir=workdir)

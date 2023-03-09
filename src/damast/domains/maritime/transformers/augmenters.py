@@ -44,9 +44,9 @@ class ComputeClosestAnchorage(PipelineElement):
         Compute the closest anchorage given a data-set with all closest anchorages
 
         :param dataset: Path to data-set with closest anchorages
-        :param columns: Names of columns used to define the distance to anchorage (The data should be in radians)
+        :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
         :param sep: Separator used in dataset if dataset is a csv file
-        :param inplace: If False copy dataset during transform_
+        :param inplace: If False copy dataset during transform
         """
         if isinstance(dataset, vaex.DataFrame):
             _dataset = dataset
