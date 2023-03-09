@@ -4,7 +4,7 @@ Module to define a dataframe
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Any
 
 import vaex
 from vaex import DataFrame
@@ -26,8 +26,8 @@ DAMAST_SPEC_SUFFIX: str = ".spec.yaml"
 
 def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
     """
-    Replace `Not Available` and `Not a Number` with a mask, and convert to given `dtype`.
-    This means that one later call `df[column].fill_missing(...)` to replace values
+    Replace :code:`Not Available` and :code:`Not a Number` with a mask, and convert to given :code:`dtype`.
+    This means that one later call :code:`df[column].fill_missing(...)` to replace values
 
     :param df: The dataframe to modify
     :param dtype: The datatype to convert the columns to
@@ -72,7 +72,7 @@ class AnnotatedDataFrame:
         """
         Check if annotated dataframe has associated data.
 
-        :return: False if there is an internal _dataframe set, True otherwise
+        :return: False if there is an internal :code:`_dataframe` set, True otherwise
         """
         if self._dataframe is None:
             return True
@@ -111,9 +111,11 @@ class AnnotatedDataFrame:
         """
         Save this instance in an hdf5 file.
         The resulting file can be inspected using HDF5 tools and in particular h5dump.
-        to get the HDF5 groups and their corresponding metdata (header only e.g. no data printed), use the command:
+        To get the HDF5 groups and their corresponding metdata (header only e.g. no data printed), use the command:
 
-        h5dump -H data.hdf5
+        .. code-block:: console
+
+            h5dump -H data.hdf5
 
         See: https://portal.hdfgroup.org/display/HDF5/HDF5+Command-line+Tools
 
@@ -201,7 +203,7 @@ class AnnotatedDataFrame:
 
     def __getattr__(self, item):
         """
-        Ensure that this object behaves like a `vaex.DataFrame`.
+        Ensure that this object behaves like a :class:`vaex.DataFrame`.
 
         :param item: Name of column
         :return: The column data
@@ -210,7 +212,7 @@ class AnnotatedDataFrame:
 
     def __getitem__(self, item) -> Any:
         """
-        Make dataframe subscriptable and behave like the vaex.dataframe.
+        Make dataframe subscriptable and behave like the :class:`vaex.DataFrame`.
 
         :param item: Name of the key when using [] operators
         :return: item/column from the underlying vaex.dataframe
@@ -241,7 +243,7 @@ class AnnotatedDataFrame:
         """
         df = vaex.concat([vaex.from_csv(filename, sep=";") for filename in csv_filenames])
         metadata = MetaData.load_yaml(filename=metadata_filename)
-    
+
         adf = cls(dataframe=df,
                   metadata=metadata)
 
