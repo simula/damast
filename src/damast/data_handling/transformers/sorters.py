@@ -29,10 +29,10 @@ class GenericSorter(BaseSorter):
     """
 
     #: Names of the columns (in order to which the sorting shall be done)
-    column_names: List[str] = None
+    column_names: List[str]
 
     #: Keyword argument for the sort_values function
-    sort_values_args: Dict[str, Any] = None
+    sort_values_args: Dict[str, Any]
 
     def __init__(self,
                  column_names: List[str],

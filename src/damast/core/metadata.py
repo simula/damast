@@ -470,10 +470,10 @@ class DataSpecification:
                 if self.precision is not None:
                     if data_spec.precision is None:
                         fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': f"column has no precision defined"}
+                                                   'message': "column has no precision defined"}
                     elif self.precision < data_spec.precision:
                         fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': f"'data has insufficient precision: "
+                                                   'message': "'data has insufficient precision: "
                                                               f" required '{self.precision}',"
                                                               f" available '#{data_spec.precision}'"}
                     else:

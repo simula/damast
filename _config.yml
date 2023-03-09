@@ -31,8 +31,8 @@ exclude_patterns: [".tox", ".pytest_cache", "src/damast/domains/maritime/README.
 
 sphinx:
   extra_extensions:
-  - 'sphinx.ext.autodoc'
   - 'sphinx.ext.todo'
+  - 'sphinx.ext.autodoc'
   - 'sphinx.ext.napoleon'
   - 'autoapi.extension'
   

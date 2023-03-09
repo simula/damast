@@ -137,7 +137,8 @@ class AnnotatedDataFrame:
                 h5f = h5py.File(filename, 'r+')
                 # Add annotations to main group
                 for key in dict_annotations.keys():
-                    if key in h5f[VAEX_HDF5_ROOT].attrs.keys() and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]:
+                    if (key in h5f[VAEX_HDF5_ROOT].attrs.keys() and
+                            h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]):
                         raise RuntimeError(f"{self.__class__.__name__}.save:"
                                            f" attribute '{key}' present"
                                            f" in vaex dataframe but different from user-defined")
@@ -145,7 +146,8 @@ class AnnotatedDataFrame:
                         h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
                 # Add attributes for columns
                 for attrs in list_attrs:
-                    if DataSpecification.Key.name.value in attrs.keys() and attrs[DataSpecification.Key.name.value] in list_columns:
+                    if (DataSpecification.Key.name.value in attrs.keys() and
+                            attrs[DataSpecification.Key.name.value] in list_columns):
                         group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
                         if group_name in h5f:
                             for key in attrs.keys():
@@ -177,7 +179,7 @@ class AnnotatedDataFrame:
             # Read attributes for columns
             for colname in list_columns:
                 group_name = f"/{VAEX_HDF5_COLUMNS}/{colname}"
-                if not group_name in h5f:
+                if group_name not in h5f:
                     continue
                 ds_dict = {}
                 for key in h5f[group_name].attrs.keys():

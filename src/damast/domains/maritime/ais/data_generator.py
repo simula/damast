@@ -4,7 +4,6 @@ from logging import INFO, Logger, getLogger
 from random import choice, randint, random
 from typing import Any, List
 
-import numpy as np
 import vaex
 from pyais.ais_types import AISType
 import pandas as pd
@@ -70,11 +69,10 @@ class AISTestData:
         heading_start = cog_start
 
         rot_start = 0.0
-        source = "s"
 
         trajectory_length = randint(min_size, max_size)
         trajectory = []
-        for msg_idx in range(0, trajectory_length):
+        for _ in range(0, trajectory_length):
             lat_start += random() * 0.1 - 0.05
             lon_start += random() * 0.1 - 0.05
 

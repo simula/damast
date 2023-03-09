@@ -2,8 +2,7 @@
 Module containing the functionality to explore and visualise data
 """
 from pathlib import Path
-from typing import List
-import pandas as pd
+from typing import List, Optional
 import vaex
 from matplotlib import pyplot as plt
 
@@ -53,7 +52,7 @@ def plot_histograms(*,
                     df: vaex.DataFrame,
                     output_dir: Path,
                     filename_prefix: str,
-                    columns: List[str] = None,
+                    columns: Optional[List[str]] = None,
                     dpi: int = PLOT_DPI) -> Path:
     """
     Plot histograms for the current data frame in to directory defined through get_plot_dir()
@@ -72,7 +71,7 @@ def plot_histograms(*,
         if col_name not in df.column_names:
             raise KeyError(f"plot_histogram: {col_name} is not an existing column,"
                            f" available are {','.join(df.column_names)}")
-        # Vaex uses the prefix "__" for hidden columns, i.e. columns that have either been removed, or 
+        # Vaex uses the prefix "__" for hidden columns, i.e. columns that have either been removed, or
         # is a dependent of another column (say after converting radians to degrees)
         if col_name.startswith("__"):
             continue

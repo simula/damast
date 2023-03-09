@@ -61,7 +61,7 @@ class MMSI:
 
     @property
     def mid(self) -> int:
-        return self.country_code
+        return self.country_iso_code
 
     @property
     def country_iso_code(self) -> int:
