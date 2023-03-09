@@ -40,9 +40,9 @@ dependencies = [
     "numpy",
     "vaex",
     "pyais",
-    "pydot",
-    "pyorbital",
     "scikit-learn",
+    "tensorflow",
+    "keras"
 ]
 
 [project.urls]
