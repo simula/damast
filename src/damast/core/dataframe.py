@@ -116,7 +116,6 @@ class AnnotatedDataFrame:
         h5dump -H data.hdf5
 
         See: https://portal.hdfgroup.org/display/HDF5/HDF5+Command-line+Tools
-       
 
         :param filename: Filename to use for saving
 
@@ -126,7 +125,7 @@ class AnnotatedDataFrame:
             self._metadata.save_yaml(filename=metadata_filename)
             if Path(filename).suffix == ".hdf5" or Path(filename).suffix == ".h5":
                 self.export_hdf5(filename)
-                ## Add metadata
+                # Add metadata
                 metadata = self._metadata.to_dict()
                 annotations = self._metadata.Key.annotations.value
                 columns = self._metadata.Key.columns.value
@@ -140,8 +139,8 @@ class AnnotatedDataFrame:
                         raise RuntimeError(f"{self.__class__.__name__}.save:"
                                            f" attribute '{key}' present"
                                            f" in vaex dataframe but different from user-defined")
-                    else:        
-                        h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]    
+                    else:
+                        h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
                 # Add attributes for columns
                 for attrs in list_attrs:
                     if DataSpecification.Key.name.value in attrs.keys() and attrs[DataSpecification.Key.name.value] in list_columns:
@@ -169,7 +168,7 @@ class AnnotatedDataFrame:
         list_attrs = []
         list_columns = list(df.columns)
         if Path(filename).suffix == ".hdf5" or Path(filename).suffix == ".h5":
-            ## Read metadata
+            # Read metadata
             h5f = h5py.File(filename, 'r')
             for key in h5f[VAEX_HDF5_ROOT].attrs.keys():
                 annotations[key] = Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key])
@@ -226,3 +225,24 @@ class AnnotatedDataFrame:
         :param value: Value to set the column to
         """
         self._dataframe[key] = value
+
+    @classmethod
+    def convert_csv_to_adf(cls,
+                           csv_filenames: List[Union[Path, str]],
+                           metadata_filename: Union[Path, str],
+                           output_filename: Union[Path, str]
+                           ):
+        """
+        Convert a csv file to an annotated dataframe
+
+        :param csv_filenames: The input csv file that shall be converted
+        :param metadata_filename: The metadata specification
+        :param output_filename: The output file that will be generated
+        """
+        df = vaex.concat([vaex.from_csv(filename, sep=";") for filename in csv_filenames])
+        metadata = MetaData.load_yaml(filename=metadata_filename)
+    
+        adf = cls(dataframe=df,
+                  metadata=metadata)
+
+        adf.save(filename=output_filename)

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from damast.cli.base import BaseParser
 from damast.cli.data_processing import DataProcessingParser
+from damast.cli.data_converter import DataConvertParser
 
 
 class MainParser(ArgumentParser):
@@ -33,6 +34,10 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data",
                                          parser_klass=DataProcessingParser)
+    help_desc = "Convert a dataset (set of .csv-files) to a .h5-file (containing the data) and .yml-file (containing data specification)"
+    main_parser.attach_subcommand_parser(subcommand="convert",
+                                         help=help_desc,
+                                         parser_klass=DataConvertParser)
     args = main_parser.parse_args()
     args.active_subparser.execute(args)
 
