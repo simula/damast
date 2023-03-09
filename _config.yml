@@ -1,7 +1,7 @@
 # Book settings
 # Learn more at https://jupyterbook.org/customize/config.html
 
-title: damast - documentation
+title: DAMAST - documentation
 author: Jørgen S. Dokken
 
 # Force re-execution of notebooks on each build.
@@ -23,7 +23,6 @@ repository:
 # Add GitHub buttons to your book
 # See https://jupyterbook.org/customize/config.html#add-a-link-to-your-repository
 html:
-  use_issues_button: true
   use_repository_button: true
 
 exclude_patterns: [".tox", ".pytest_cache", "src/damast/domains/maritime/README.md"]
@@ -37,6 +36,7 @@ sphinx:
   - 'autoapi.extension'
   
   config:
+    html_last_updated_fmt: "%b %d, %Y"
     todo_include_todos: True
     autoapi_dirs: ['src']    
     # Ref: https://github.com/executablebooks/sphinx-external-toc/issues/36
