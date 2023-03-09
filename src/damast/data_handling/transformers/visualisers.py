@@ -4,13 +4,12 @@ Module that contains transformer which do not modify data, but serve only data e
 from pathlib import Path
 from typing import Union
 
-from sklearn.pipeline import Pipeline
-
+from damast.core.units import units
 from damast.data_handling.exploration import (
     PLOT_DPI,
     plot_histograms,
     plot_lat_lon
-    )
+)
 
 __all__ = [
     "BaseVisualiser",
@@ -18,12 +17,11 @@ __all__ = [
     "PlotLatLon",
 ]
 
-from damast.data_handling.transformers.base import BaseTransformer
+from damast.core.dataprocessing import PipelineElement, AnnotatedDataFrame
+import damast.core
 
 
-class BaseVisualiser(BaseTransformer):
-    # Optional internal pipeline that might be used for the transformation
-    _pipeline: Pipeline = None
+class BaseVisualiser(PipelineElement):
 
     #: The output directory for generated artifacts
     output_dir: Path = None
@@ -47,13 +45,13 @@ class PlotHistograms(BaseVisualiser):
         super().__init__(output_dir=output_dir,
                          filename_prefix=filename_prefix)
 
-    def transform(self, df):
-        super().transform(df)
-
-        plot_histograms(df=df,
+    @damast.core.input({})
+    @damast.core.output({})
+    @damast.core.describe("Plot histograms of all columns in dataframe")
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        plot_histograms(df=df._dataframe,
                         output_dir=self.output_dir,
                         filename_prefix=self.filename_prefix)
-
         return df
 
 
@@ -64,11 +62,12 @@ class PlotLatLon(BaseVisualiser):
         super().__init__(output_dir=output_dir,
                          filename_prefix=filename_prefix)
 
-    def transform(self, df):
-        super().transform(df)
+    @damast.core.input({"LAT": {"unit": units.deg}, "LON": {"unit": units.deg}})
+    @damast.core.output({})
+    @damast.core.describe("Plot Latitude and longitude ")
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
 
-        plot_lat_lon(df=df,
+        plot_lat_lon(df=df._dataframe,
                      output_dir=self.output_dir,
                      filename_prefix=self.filename_prefix)
-
         return df

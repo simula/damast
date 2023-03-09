@@ -34,22 +34,23 @@ import vaex
 import yaml
 
 from damast.data_handling.exploration import plot_lat_lon
-from damast.data_handling.pipeline import Pipeline
 from damast.data_handling.transformers.augmenters import (
     AddLocalMessageIndex,
-    #    JoinDataFrameByColumn
+    JoinDataFrameByColumn
 )
+from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import ComputeClosestAnchorage
 from damast.data_handling.transformers.filters import (
     AreaFilter,
     DuplicateNeighboursFilter,
     MMSIFilter
 )
+from damast.data_handling.transformers import AddUndefinedValue
+from damast.domains.maritime.transformers import AddVesselType
+
+from damast.data_handling.transformers.visualisers import PlotLatLon, PlotHistograms
+from damast.core import DataProcessingPipeline, AnnotatedDataFrame
 from damast.data_handling.transformers.sorters import GenericSorter
-from damast.data_handling.transformers.visualisers import (
-    PlotHistograms,
-    PlotLatLon
-)
 from damast.domains.maritime.data_specification import ColumnName
 
 __all__ = ["cleanse_and_sanitise", "process_files", "process_data"]
@@ -79,6 +80,10 @@ def get_plots_dir(params: ParamsType) -> Path:
 
 def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFrame:
     """
+
+    .. todo::
+        * This should really be a Pipeline
+
     Cleanse and sanitise the dataframe by adjusting the type and performing a cleanup.
 
     :param params: The parameters used for cleaning the data, giving parameter types and ranges
@@ -130,16 +135,14 @@ def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFra
     _log.info(f"{drop_hdr} {df_2.shape[0] - df_3.shape[0]} lines have been dropped."
               " They are not of type position report")
 
-    # 4. Add "timestamp" field (and modify basedatetime type)
+    # 4. Add "timestamp" field
     def convert_to_datetime(date_string):
-        return np.datetime64(datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S"))
+        return int(datetime.datetime.strptime(
+            date_string, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H%M%S"))
 
-    def convert_to_timestamp(date):
-        return np.int64(convert_to_datetime(date))
-    df_3["timestamp"] = df_3["BaseDateTime"].apply(convert_to_timestamp)
-    df_3["BaseDateTime"] = df_3["BaseDateTime"].apply(convert_to_datetime)
+    df_3[ColumnName.TIMESTAMP] = df_3["BaseDateTime"].apply(convert_to_datetime)
     _log.info(f"{add_hdr} Column timestamps added")
-
+    df_3.drop("BaseDateTime", inplace=True)
     # 5. Drop useless columns
     useless_columns = params["columns"]["useless"]
     df_3.drop(useless_columns, inplace=True)
@@ -250,10 +253,9 @@ def process_files(params: Dict[str, Any]) -> None:
 
 
 def process_data(params: Dict[str, Any],
-                 df: vaex.DataFrame,
+                 df: AnnotatedDataFrame,
                  workdir: Path):
 
-    # region PROCESSING PIPELINE
     plots_dir = get_plots_dir(params=params)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -261,8 +263,6 @@ def process_data(params: Dict[str, Any],
     vessel_type_hdf5 = params["inputs"]["vessel_types"]
     fishing_vessel_type_hdf5 = params["inputs"]["fishing_vessel_types"]
     anchorages_hdf5 = params["inputs"]["anchorages"]
-    # https://en.wikipedia.org/wiki/Two-line_element_set
-    # tle_filename = params["inputs"]["tle_file"]
 
     # Output an overview over the existing anchorages
     anchorages_data = vaex.open(anchorages_hdf5)
@@ -271,67 +271,75 @@ def process_data(params: Dict[str, Any],
                  longitude_name="longitude",
                  output_dir=plots_dir,
                  filename_prefix="anchorages-lat-lon")
+
     # Temporary converters to csv to be compatible
     if isinstance(vessel_type_hdf5, Path):
-        vessel_type_csv = vaex.open(vessel_type_hdf5).to_pandas_df()
+        vessel_type_csv = vaex.open(vessel_type_hdf5)
     else:
-        vessel_type_csv = vessel_type_hdf5.to_pandas_df()
+        vessel_type_csv = vessel_type_hdf5
 
     if isinstance(anchorages_hdf5, Path):
-        anchorages_csv = vaex.open(anchorages_hdf5).to_pandas_df()
+        anchorages_csv = vaex.open(anchorages_hdf5)
     else:
-        anchorages_csv = anchorages_hdf5.to_pandas_df()
+        anchorages_csv = anchorages_hdf5
     if isinstance(fishing_vessel_type_hdf5, Path):
-        fishing_vessel_type_csv = vaex.open(fishing_vessel_type_hdf5).to_pandas_df()
+        fishing_vessel_type_csv = vaex.open(fishing_vessel_type_hdf5)
     else:
-        fishing_vessel_type_csv = fishing_vessel_type_hdf5.to_pandas_df()
+        fishing_vessel_type_csv = fishing_vessel_type_hdf5
 
-    df = df.to_pandas_df()
+    pipeline = DataProcessingPipeline("Compute message index", workdir)
+    pipeline.add("plot_input-lat_lon",
+                 PlotLatLon(output_dir=plots_dir,
+                            filename_prefix="lat-lon-input"),
+                 name_mappings={"LAT": ColumnName.LATITUDE,
+                                "LON": ColumnName.LONGITUDE})
+    pipeline.add("plot_input-histograms",
+                 PlotHistograms(output_dir=plots_dir,
+                                filename_prefix="histogram-input-data-"))
 
-    pipeline = Pipeline([
-        ("plot_input-histograms", PlotHistograms(output_dir=plots_dir,
-                                                 filename_prefix="histogram-input-data-")),
-        ("plot_input-lat_lon", PlotLatLon(output_dir=plots_dir,
-                                          filename_prefix="lat-lon-input")),
-        # Filtering and dropping of data
-        ("filter_areas", AreaFilter()),
-        ("filter_mmsi", MMSIFilter()),
-        ("sort_mmsi_timestamp", GenericSorter(column_names=[ColumnName.MMSI, ColumnName.TIMESTAMP])),
-        ("filter_duplicate_timestamp", DuplicateNeighboursFilter(column_names=[ColumnName.MMSI, ColumnName.TIMESTAMP])),
-        # Add and update data
+    pipeline.add("augment_vessel_type",
+                 AddVesselType(dataset=vessel_type_csv,
+                               right_on=ColumnName.MMSI,
+                               dataset_col=ColumnName.VESSEL_TYPE),
+                 name_mappings={"x": ColumnName.MMSI,
+                                "out": ColumnName.VESSEL_TYPE})
+    pipeline.add("Replace missing", AddUndefinedValue(vessel_types.Unspecified.to_id()),
+                 name_mappings={"x": ColumnName.VESSEL_TYPE})
 
-        # ("augment_vessel_type", JoinDataFrameByColumn(dataset=vessel_type_csv,
-        #                                               left_on=ColumnName.MMSI,
-        #                                               right_on=ColumnName.MMSI,
-        #                                               dataset_col=ColumnName.VESSEL_TYPE,
-        #                                               col_name=ColumnName.VESSEL_TYPE, sep=";")),
-        # ("augment_fishing_vessel_type", JoinDataFrameByColumn(dataset=fishing_vessel_type_csv,
-        #                                                       left_on=ColumnName.MMSI,
-        #                                                       right_on=ColumnName.MMSI.lower(),
-        #                                                       dataset_col=ColumnName.VESSEL_TYPE_GFW,
-        #                                                       col_name=ColumnName.FISHING_TYPE, sep=",")),
-        #("augment_distance_to_closest_anchorage", ComputeClosestAnchorage(anchorages_data=anchorages_csv, columns=[])),
+    pipeline.add("augment_fishing_vessel_type",
+                 AddVesselType(dataset=fishing_vessel_type_csv,
+                               right_on=ColumnName.MMSI.lower(),
+                               dataset_col=ColumnName.VESSEL_TYPE_GFW),
+                 name_mappings={"x": ColumnName.MMSI,
+                                "out": ColumnName.FISHING_TYPE})
+    pipeline.add("Replace missing", AddUndefinedValue(-1),
+                 name_mappings={"x": ColumnName.FISHING_TYPE})
+    pipeline.add("augment_distance_to_closest_anchorage",
+                 ComputeClosestAnchorage(dataset=anchorages_csv,
+                                         columns=["latitude", "longitude"]),
+                 name_mappings={"x": ColumnName.LATITUDE,
+                                "y": ColumnName.LONGITUDE,
+                                "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
+    pipeline.add("Compute local message index",  AddLocalMessageIndex(),
+                 name_mappings={"group": ColumnName.MMSI,
+                                "sort": ColumnName.TIMESTAMP,
+                                "msg_index": ColumnName.HISTORIC_SIZE,
+                                "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
 
-        # ("augment_local_message_index", AddLocalMessageIndex())),
-        ("plot_processed-lat_lon", PlotLatLon(output_dir=plots_dir,
-                                              filename_prefix="lat-lon-processed")),
-        ("plot_processed-histograms", PlotHistograms(output_dir=plots_dir,
-                                                     filename_prefix="histogram-processed-data-"))
-    ])
+    #     ("plot_processed-lat_lon", PlotLatLon(output_dir=plots_dir,
+    #                                           filename_prefix="lat-lon-processed")),
+    #     ("plot_processed-histograms", PlotHistograms(output_dir=plots_dir,
+    #                                                  filename_prefix="histogram-processed-data-"))
+    # ])
 
-    df = pipeline.fit_transform(df)
+    df = pipeline.transform(df)
 
     # Get the setup for storing the processed data
     processed_data_spec = get_processed_data_spec(params=params)
     output_dir = get_outputs_dir(params=params)
     h5_key = processed_data_spec["h5_key"]
-
-    pipeline.save_stats(filename=output_dir / f"{int(params['month']):02}" / "processing-stats.json")
-    data_out_path = output_dir / f"{int(params['month']):02}.h5"
-    data_out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    df.to_hdf(f"{data_out_path}", h5_key, format='table', mode="w")
-    _log.info(f"[DATA][WRITE] Write {df.shape[0]} lines inside {data_out_path}")
+    pipeline.state_write(output_dir / "pipeline.yaml")
+    df.save(filename=output_dir / f"{int(params['month']):02}.h5")
 
 
 if __name__ == "__main__":

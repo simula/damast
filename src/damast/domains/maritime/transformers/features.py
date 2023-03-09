@@ -46,7 +46,7 @@ class DeltaDistance(PipelineElement):
 
     @damast.core.describe("Compute the ")
     @damast.core.input({"group": {"representation_type": int},
-                        "sort": {"representation_type": "datetime64[ns]"},
+                        "sort": {},
                         "x": {"unit": units.deg},
                         "y": {"unit": units.deg}})
     @damast.core.output({"out": {"unit": units.km}})

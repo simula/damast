@@ -264,8 +264,8 @@ def test_message_index(tmp_path):
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
                  damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type="datetime64[ns]"),
-                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg),
-                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg)])
+                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg, representation_type=np.float64),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg, representation_type=np.float64)])
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
@@ -274,8 +274,8 @@ def test_message_index(tmp_path):
     pipeline.add("Compute local message index",  AddLocalMessageIndex(),
                  name_mappings={"group": ColumnName.MMSI,
                                 "sort": ColumnName.TIMESTAMP,
-                                "position": ColumnName.HISTORIC_SIZE,
-                                "reverse_position": ColumnName.HISTORIC_SIZE_REVERSE})
+                                "msg_index": ColumnName.HISTORIC_SIZE,
+                                "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
     new_adf = pipeline.transform(adf)
     assert np.allclose(new_adf["REF INDEX"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE].evaluate())
     assert np.allclose(new_adf["INVERSE REF"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE_REVERSE].evaluate())

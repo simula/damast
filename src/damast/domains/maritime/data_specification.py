@@ -95,6 +95,8 @@ class ColumnName:
     VESSEL_TYPE: str = "vessel_type"
     VESSEL_TYPE_GFW: str = "vessel_class_gfw"
     STATUS: str = "Status"
+    MESSAGE_TYPE: str = "MessageType"
+    DATE_TIME_UTC: str = "date_time_utc"
 
     # Computed Data
     DATA_MONTH: str = "data_month"
