@@ -12,7 +12,6 @@ import vaex
 import vaex.ml
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
-from damast.core.dataprocessing import PipelineElement
 _log: Logger = getLogger(__name__)
 _log.setLevel(DEBUG)
 

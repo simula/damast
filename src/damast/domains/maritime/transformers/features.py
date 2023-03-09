@@ -1,23 +1,19 @@
-from typing import List
-
 import numpy as np
 import vaex
 from astropy import units
 
 import damast.core
-from damast.core import AnnotatedDataFrame
+from damast.core import AnnotatedDataFrame, DataSpecification
 from damast.core.dataprocessing import PipelineElement
-from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math import great_circle_distance
-from damast.core import DataSpecification
 
 __all__ = ["DeltaDistance", ]
 
 
 class DeltaDistance(PipelineElement):
     """
-    Given a dataframe with `(latitude, longitude)` data, group messages by given column, 
-    and sort them by another column. Then compute the distance between two messages, using 
+    Given a dataframe with `(latitude, longitude)` data, group messages by given column,
+    and sort them by another column. Then compute the distance between two messages, using
     the :func:`damast.domains.maritime.math.great_circle_distance`.
 
     :param x_shift: True if one should compute the difference in latitude
@@ -25,7 +21,7 @@ class DeltaDistance(PipelineElement):
     :param inplace: True if the transformer should work on the input dataframe, else return a copy.
 
     .. note::
-        If both `x_shift` and `y_shift` is `True`, one computes the distance between two coordinates.
+        If both :code:`x_shift` and :code:`y_shift` is :code:`True`, one computes the distance between two coordinates.
     """
     _x_shift: bool
     _y_shift: bool

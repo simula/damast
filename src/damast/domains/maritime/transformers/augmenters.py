@@ -1,15 +1,13 @@
 """
 Module which collects transformers that add / augment the existing data
 """
-import re
 from pathlib import Path
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Union, Optional
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import vaex
-from pyorbital.orbital import Orbital
 from sklearn.preprocessing import Binarizer
 
 import damast.core
@@ -240,17 +238,17 @@ class InvertedBinariser(BaseAugmenter):
     This complements sklearns binariser with an 'inverted' assignment
     """
     base_column_name: str
-    threshold: float = None
+    threshold: float
 
-    column_name: str = None
+    column_name: str
 
     #:
-    _binarizer: Binarizer = None
+    _binarizer: Binarizer
 
     def __init__(self,
                  base_column_name: str,
                  threshold: float,
-                 column_name: str = None):
+                 column_name: Optional[str] = None):
 
         self.base_column_name = base_column_name
         self.threshold = threshold

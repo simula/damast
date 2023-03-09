@@ -24,9 +24,9 @@ import damast.core
 class BaseVisualiser(PipelineElement):
 
     #: The output directory for generated artifacts
-    output_dir: Path = None
-    filename_prefix: str = None
-    dpi: int = None
+    output_dir: Path
+    filename_prefix: str
+    dpi: int
 
     def __init__(self,
                  output_dir: Union[str, Path],

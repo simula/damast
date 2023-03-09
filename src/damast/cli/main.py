@@ -7,7 +7,7 @@ from damast.cli.data_converter import DataConvertParser
 
 
 class MainParser(ArgumentParser):
-    subparser: ArgumentParser = None
+    subparser: ArgumentParser
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -34,7 +34,8 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data",
                                          parser_klass=DataProcessingParser)
-    help_desc = "Convert a dataset (set of .csv-files) to a .h5-file (containing the data) and .yml-file (containing data specification)"
+    help_desc = "Convert a dataset (set of .csv-files) to a .h5-file (containing the data)" +\
+        " and .yml-file (containing data specification)"
     main_parser.attach_subcommand_parser(subcommand="convert",
                                          help=help_desc,
                                          parser_klass=DataConvertParser)

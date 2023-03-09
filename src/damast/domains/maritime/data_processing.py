@@ -1,62 +1,37 @@
 """
 Data Processing Module
 
-
-1. Read all files from `data/<month>/*.zip`.
-2. Concatenates the files into a single dataframe.
-3. Perform feature extraction
-
-  1. Filter areas (`lon_min`/`lon_max`, `lat_min`/`lat_max`).
-  2. Filter vessels by MMSI range.
-  3. Add labels: `"vessel_type"` and `"fishing_type"` (`data/fishing-vessels-v2.csv`).
-  4. Add distance to closest anchorage.
-  5. Add distance to satellite.
-  6. Add historic message size (whatever that means).
-
-7. Write data to `data/processed/<month>.h5`.
+Contains modules for adding features and filtering data
 """
 # -----------------------------------------------------------
 # (C) 2020 Pierre Bernabe, Oslo, Norway
 # email pierbernabe@simula.no
 # -----------------------------------------------------------
 
-import argparse
 import datetime
-import glob
-import time
-from logging import Formatter, StreamHandler, basicConfig, getLogger
-from pathlib import Path
-from typing import Any, Dict, List
 
-import numpy as np
-import pandas as pd
+from logging import getLogger
+from pathlib import Path
+from typing import Any, Dict
+
 import vaex
-import yaml
 
 from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.transformers.augmenters import (
     AddLocalMessageIndex,
-    JoinDataFrameByColumn
 )
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import ComputeClosestAnchorage
-from damast.data_handling.transformers.filters import (
-    AreaFilter,
-    DuplicateNeighboursFilter,
-    MMSIFilter
-)
 from damast.data_handling.transformers import AddUndefinedValue
 from damast.domains.maritime.transformers import AddVesselType
 
 from damast.data_handling.transformers.visualisers import PlotLatLon, PlotHistograms
 from damast.core import DataProcessingPipeline, AnnotatedDataFrame
-from damast.data_handling.transformers.sorters import GenericSorter
 from damast.domains.maritime.data_specification import ColumnName
 
-__all__ = ["cleanse_and_sanitise", "process_files", "process_data"]
+__all__ = ["cleanse_and_sanitise", "process_data"]
 
-_log = getLogger(__name__)
-LOG_FORMAT = '%(asctime)-5s [%(filename)s:%(lineno)d] %(message)s'
+_log = getLogger("damast")
 
 ParamsType = Dict[str, Any]
 
@@ -80,36 +55,50 @@ def get_plots_dir(params: ParamsType) -> Path:
 
 def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFrame:
     """
+    Cleanse and sanitise the dataframe by adjusting the type and performing a cleanup.
+
+    1. Keep only data from satellite, i.e. :code:`source != 'g'`
+    2. Remove row which do not have a timestamp
+    3. Keep only Message Position Messages
+
+        .. todo::
+
+            are there not distress signals part of the other messages?)
+
+    4. Create a :code:`"timestamp"` field
+    5. Remove 'useless_columns' as defined in params
+    6. Drop :code:`["columns"]["unused"]` as defined in params
+
+        .. todo::
+
+            What is the difference to :code:`useless_columns`
+    7. Multiply SOG and COG by 10 to eliminate need for comma
+
+        .. todo::
+
+            Why do we need to multiply by 10?
+    8. Replace NaN/Na with default values as defined in
+       :code:`["columns"]["constraints"][<col_name>]["default"]` in params
+    9. Set types via :code:`["columns"]["constraints"][<col_name>]["type"]` in params
+
 
     .. todo::
+
         * This should really be a Pipeline
 
-    Cleanse and sanitise the dataframe by adjusting the type and performing a cleanup.
+    .. note::
+
+        Very little computation is actually done inside this module, as we are using :module:`vaex` for
+        lazy evaluation.
+
+    .. todo::
+
+        * Consider other message types
+        * Mark rows which contain invalid (out-of-spec data)
 
     :param params: The parameters used for cleaning the data, giving parameter types and ranges
     :param df: The input data
     :returns: The cleaned and santised data
-
-    .. note::
-
-        Very little computation is actually done inside this module, as we are using `vaex` for
-        lazy evaluation.
-
-    .. todo::
-        * Consider other message types
-        * Mark rows which contain invalid (out-of-spec data)
-
-    1. Keep only data from satellite, i.e. `source != 'g'`
-    2. Remove row which do not have a timestamp
-    3. Keep only Message Position Messages (TODO: are there not distress signals part of the other messages?)
-    4. Create a "timestamp" field
-    5. Remove 'useless_columns' as defined in params
-    6. Drop `["columns"]["unused"]` as defined in params (TODO: what is the difference to useless_columns)
-    7. Multiply SOG and COG by 10 to eliminate need for comma (TODO: Why do we need to multiply by 10)
-    8. Replace NaN/Na with default values as defined in `["columns"]["constraints"][<col_name>]["default"]` in params
-    9. Set types via `["columns"]["constraints"][<col_name>]["type"]` in params
-
-    :return: The cleaned dataset
     """
 
     # All logging headers
@@ -126,7 +115,7 @@ def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFra
               f"Only {df_1.shape[0]} come from satellite(s) and are kept")
 
     # 2. Remove line where date is null
-    df_2 = df_1.dropmissing(column_names=["BaseDateTime"])
+    df_2 = df_1.dropmissing(column_names=[ColumnName.DATE_TIME_UTC])
     _log.info(f"{drop_hdr} {df_1.shape[0] - df_2.shape[0]} lines have been dropped."
               " They do not have a time stamp")
 
@@ -140,9 +129,9 @@ def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFra
         return int(datetime.datetime.strptime(
             date_string, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H%M%S"))
 
-    df_3[ColumnName.TIMESTAMP] = df_3["BaseDateTime"].apply(convert_to_datetime)
+    df_3[ColumnName.TIMESTAMP] = df_3[ColumnName.DATE_TIME_UTC].apply(convert_to_datetime)
     _log.info(f"{add_hdr} Column timestamps added")
-    df_3.drop("BaseDateTime", inplace=True)
+    df_3.drop(ColumnName.DATE_TIME_UTC, inplace=True)
     # 5. Drop useless columns
     useless_columns = params["columns"]["useless"]
     df_3.drop(useless_columns, inplace=True)
@@ -201,61 +190,21 @@ def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFra
     return df_3
 
 
-def process_files(params: Dict[str, Any]) -> None:
-    """
-    Process input data. TODO: ADD MORE INFO
-
-    :param  params: Options for processing
-
-
-    .. highlight:: python
-    .. code-block:: python
-
-        params = {"workdir": "path_to_directory_of_execution",
-                  "inputs": {"data":{"dir": "path_to_input_data"}},
-                  "month": "integer",
-                  "columns":{"brut": ["list","of","columns","to","use]}}
-
-
-    :raises KeyError: If any of the required keys are missing from the input parameters
-    :raises RuntimeError: No data-files are found in input data directory.
-    """
-    # Get the list of the file to read
-    # files: List[str] = glob.glob(f"../data/{params['month']}/*.zip")
-
-    workdir: Path
-    try:
-        workdir = Path(params["workdir"])
-    except KeyError:
-        raise KeyError('Missing "workdir" in params')
-
-    in_path = params["inputs"]["data"]["dir"]
-    month = int(params["month"])
-    data_in_path = workdir / in_path / f"{month:02}" / "*.zip"
-    files: List[str] = glob.glob(f"{data_in_path}")
-
-    if len(files) == 0:
-        raise RuntimeError(f"Found no data files to process in {data_in_path}")
-
-    # Compress and Concatenate all the files
-    df = pd.DataFrame()
-    columns = params["columns"]["brut"]
-    for file in files:
-        _log.info(f" File: {file}")
-        df = df.append(pd.read_csv(file, names=columns, sep=";", header=0, low_memory=False))
-
-    df = cleanse_and_sanitise(params=params,
-                              df=df)
-
-    process_data(params=params,
-                 df=df,
-                 workdir=workdir)
-
-
 def process_data(params: Dict[str, Any],
                  df: AnnotatedDataFrame,
                  workdir: Path):
+    """
+    Applies a specific AIS pipeline to an annotated dataframe.
+    Saves the data to an `h5` and `yaml` file.
 
+    .. todo::
+
+        * Document what input params are actually needed
+
+    :param params: Document what we need from these
+    :param df: The dataframe
+    :param workdir: Path to directory of execution
+    """
     plots_dir = get_plots_dir(params=params)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -326,73 +275,9 @@ def process_data(params: Dict[str, Any],
                                 "msg_index": ColumnName.HISTORIC_SIZE,
                                 "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
 
-    #     ("plot_processed-lat_lon", PlotLatLon(output_dir=plots_dir,
-    #                                           filename_prefix="lat-lon-processed")),
-    #     ("plot_processed-histograms", PlotHistograms(output_dir=plots_dir,
-    #                                                  filename_prefix="histogram-processed-data-"))
-    # ])
-
     df = pipeline.transform(df)
 
     # Get the setup for storing the processed data
-    processed_data_spec = get_processed_data_spec(params=params)
     output_dir = get_outputs_dir(params=params)
-    h5_key = processed_data_spec["h5_key"]
     pipeline.state_write(output_dir / "pipeline.yaml")
     df.save(filename=output_dir / f"{int(params['month']):02}.h5")
-
-
-if __name__ == "__main__":
-
-    default_params_yaml = Path(__file__).parent.parent / "params.yaml"
-
-    # Management of arguments and options
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("--workdir", default=str(Path(".").resolve()))
-    parser.add_argument("-p", "--parameters", default=str(default_params_yaml), type=str)
-    parser.add_argument("-m", "--month", dest="month", default=1, help="month to process", type=int,
-                        choices=range(1, 13))
-    parser.add_argument("-F", "--filter_area", dest="filter_area", action="store_true", default=False,
-                        help="Filter by area restricted through --lat_XXX options")
-    parser.add_argument("--filter_mmsi", dest="filter_MMSI", action="store_true", default=False,
-                        help="Filter by MMSI range as specified in parameters")
-    parser.add_argument("--lat_min", dest="lat_min", default=-90.0, help="Latitude minimal", type=float)
-    parser.add_argument("--lat_max", dest="lat_max", default=90.0, help="Latitude maximal", type=float)
-    parser.add_argument("--lon_min", dest="lon_min", default=-180.0, help="Longitude minimal", type=float)
-    parser.add_argument("--lon_max", dest="lon_max", default=180.0, help="Longitude maximal", type=float)
-    parser.add_argument("-A", "--add_distance_closest_anchorage", dest="add_distance_closest_anchorage",
-                        action="store_true", default=False,
-                        help="Add a new columns that contain the distance to the closest anchorage")
-    parser.add_argument("-S", "--add_distance_satellite", dest="add_distance_satellite",
-                        action="store_true", default=False,
-                        help="Add a new columns that contain the distance to the closest anchorage")
-    parser.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
-    parser.add_argument("--logfile", dest="logfile", type=str, default=None,
-                        help="Set file for saving log (default prints to terminal)")
-    args = parser.parse_args()
-
-    if args.logfile is None:
-        basicConfig(format=LOG_FORMAT)
-    else:
-        outfile = open(args.logfile, "w")
-        ch = StreamHandler(outfile)
-        ch.setFormatter(Formatter(LOG_FORMAT, datefmt='%H:%M:%S'))
-        _log.addHandler(ch)
-
-    _log.setLevel(args.loglevel)
-    start = time.perf_counter()
-    # Load parameters
-    params_yaml: Path = Path(args.parameters)
-    yaml_file = open(f"{params_yaml}")
-    params: ParamsType = yaml.load(yaml_file, Loader=yaml.FullLoader)["data_processing"]
-    # Set bas path
-    params["workdir"]: Path = Path(args.workdir)
-
-    options = vars(args)
-    params.update(options)
-
-    _log.info("[START]")
-    process_files(params)
-    end = time.perf_counter()
-    _log.info(f"[END] Execution Time = {end-start:.0f}s")

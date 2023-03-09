@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Union
 
 import vaex
-from vaex.ml.transformations import Transformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
@@ -25,7 +24,7 @@ adf = AnnotatedDataFrame(dataframe=df,
 # new_adf = AnnotatedDataFrame.from_file(filename="/tmp/test.hdf5")
 
 class HDF5Export(PipelineElement):
-    filename: Path = None
+    filename: Path
 
     def __init__(self, filename: Union[str, Path]):
         self.filename = Path(filename)
@@ -75,4 +74,4 @@ print(new_df._dataframe)
 
 
 # Start ML
-#ml = MLPipeline(name="train")
+# ml = MLPipeline(name="train")

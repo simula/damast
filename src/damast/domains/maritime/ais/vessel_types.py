@@ -3,7 +3,7 @@ Module to encode the class hierarchy of the global fishing watch
 """
 from __future__ import annotations
 import re
-from typing import List, Union
+from typing import List, Union, Optional
 
 
 class VesselType:
@@ -11,7 +11,7 @@ class VesselType:
     The base class for all vessel types defined by the global fishing watch.
     """
 
-    _all_types: List[VesselType] = None
+    _all_types: Optional[List[VesselType]] = None
 
     @classmethod
     def typename(cls) -> str:

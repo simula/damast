@@ -2,7 +2,6 @@
 Module which collects transformers that add / augment the existing data
 """
 import logging
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Union
 import datetime
@@ -138,7 +137,7 @@ class BallTreeAugmenter():
     and one can retrieve any meta-data added to the class after construction.
 
     :param x: The points to use in the BallTree
-    :param metric: The metric to use in the BallTree, for available metrics see: 
+    :param metric: The metric to use in the BallTree, for available metrics see:
         https://docs.scipy.org/doc/scipy/reference/spatial.distance.html
     """
 
