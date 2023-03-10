@@ -1,9 +1,11 @@
 # damast: Creation of reproducible data processing pipelines
 
+Documentation at: https://simula-srl.gitlab.io/damast
+
 ## Installation
 
 # Developer install
-    pip install -e .[test]
+    python3 -m pip install -e .[test]
 
 A docker container to install and run the project is in preparation.
 
