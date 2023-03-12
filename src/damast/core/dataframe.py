@@ -151,7 +151,10 @@ class AnnotatedDataFrame:
                         group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
                         if group_name in h5f:
                             for key in attrs.keys():
-                                h5f[group_name].attrs[key] = attrs[key]
+                                if isinstance(attrs[key], dict):
+                                    h5f[group_name].attrs[key] = str(attrs[key])
+                                else:
+                                    h5f[group_name].attrs[key] = attrs[key]
                 h5f.close()
             else:
                 self.export(filename)
