@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import functools
 import inspect
+import pickle
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -35,6 +36,9 @@ DECORATED_DESCRIPTION = '_damast_description'
 DECORATED_ARTIFACT_SPECS = '_damast_artifact_specs'
 DECORATED_INPUT_SPECS = '_damast_input_specs'
 DECORATED_OUTPUT_SPECS = '_damast_output_specs'
+
+DAMAST_PIPELINE_SUFFIX: str = ".damast.ppl"
+VAEX_STATE_SUFFIX: str = ".vaex-state.json"
 
 
 def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
@@ -288,6 +292,7 @@ class DataProcessingPipeline(PipelineElement):
     :raises AttributeError: If transformer is missing input or output decoration
     :raises RuntimeError: If the sequence of transformers does not satisfy the sequential requirements
     """
+
     #: Name of the processing pipeline
     name: str
 
@@ -407,6 +412,65 @@ class DataProcessingPipeline(PipelineElement):
 
         return data
 
+    def save(self, dir: Union[str, Path]) -> Path:
+        """
+        Save the processing pipeline
+        :param dir: directory where to save this pipeline
+        """
+        filename = dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+        return filename
+
+    def save_state(self,
+                   df: AnnotatedDataFrame,
+                   dir: Union[str, Path]) -> Path:
+        """
+        Save the processing pipeline
+        :param dir: directory where to save this pipeline
+        """
+        filename = dir / f"{self.name}{VAEX_STATE_SUFFIX}"
+        df._dataframe.state_write(file=filename)
+        return filename
+
+    @classmethod
+    def load(cls, dir: Union[str, Path], name: str = "*") -> DataProcessingPipeline:
+        basename = f"{name}{DAMAST_PIPELINE_SUFFIX}"
+        dir = Path(dir)
+
+        files = [x for x in dir.glob(basename)]
+        if len(files) == 1:
+            filename = files[0]
+        elif len(files) == 0:
+            raise FileNotFoundError(f"{cls.__name__}.load: could not find '{basename}' in {dir}")
+        else:
+            raise RuntimeError(f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
+                               f" {','.join([x.name for x in files])}")
+
+        with open(filename, "rb") as f:
+            pipeline: DataProcessingPipeline = pickle.load(f, fix_imports=True)
+        return pipeline
+
+    @classmethod
+    def load_state(cls,
+                   df: AnnotatedDataFrame,
+                   dir: Union[str, Path],
+                   name: str = "*") -> Path:
+        basename = f"{name}{VAEX_STATE_SUFFIX}"
+        dir = Path(dir)
+
+        files = [x for x in dir.glob(basename)]
+        if len(files) == 1:
+            filename = files[0]
+        elif len(files) == 0:
+            raise FileNotFoundError(f"{cls.__name__}.load: could not find '{basename}' in {dir}")
+        else:
+            raise RuntimeError(f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
+                               f" {','.join([x.name for x in files])}")
+
+        df._dataframe.state_load(file=filename)
+        return df
+
     def prepare(self, df: AnnotatedDataFrame) -> DataProcessingPipeline:
         """
         Prepare the pipeline by validating all step that define the pipeline.
@@ -431,6 +495,11 @@ class DataProcessingPipeline(PipelineElement):
         :param df: The input dataframe
         :returns: The transformed dataframe
         """
+        if not isinstance(df, AnnotatedDataFrame):
+            raise TypeError(f"{self.__class__.__name__}.transform"
+                            f" expected an annotated dataframe for processing, "
+                            f"got {type(df)}")
+
         if not self.is_ready:
             self.prepare(df=df)
 
