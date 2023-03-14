@@ -184,7 +184,11 @@ class MinMax(DataRange):
         :param value: data value
         :return: `True` if value is in the set range, `False` otherwise
         """
-        return self.min <= value <= self.max
+        # To make masked/missing values work
+        if value is None:
+            return False
+        else:
+            return self.min <= value <= self.max
 
     @classmethod
     def from_data(cls,

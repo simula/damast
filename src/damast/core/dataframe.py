@@ -43,6 +43,11 @@ def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
 class AnnotatedDataFrame:
     """
     A dataframe that is associated with metadata.
+
+    :param dataframe: The vaex dataframe holding the data
+    :param metadata: The metadata for the dataframe
+    :param force_range: If True replace values outside of valid range (specified in :attr:`metadata`)
+        with missing value. Else throw error.
     """
 
     #: Metadata associated with the dataframe
@@ -53,7 +58,8 @@ class AnnotatedDataFrame:
 
     def __init__(self,
                  dataframe: DataFrame,
-                 metadata: MetaData):
+                 metadata: MetaData,
+                 force_range: bool = False):
         if not isinstance(dataframe, DataFrame):
             raise ValueError(f"{self.__class__.__name__}.__init__: dataframe must be"
                              f" of type 'DataFrame', but was '{type(dataframe)}")
@@ -66,7 +72,7 @@ class AnnotatedDataFrame:
         self._metadata = metadata
 
         # Ensure conformity of the metadata with the dataframe
-        self._metadata.apply(df=self._dataframe)
+        self._metadata.apply(df=self._dataframe, force_range=force_range)
 
     def is_empty(self) -> bool:
         """
