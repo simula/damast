@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import vaex
 import yaml
+import ast
 from vaex.datatype import DataType
 
 from .annotations import Annotation, History
@@ -399,6 +400,8 @@ class DataSpecification:
             if isinstance(value_range, DataRange):
                 spec.value_range = value_range
             else:
+                if isinstance(value_range, str):
+                    value_range =  ast.literal_eval(value_range)
                 spec.value_range = DataRange.from_dict(value_range, dtype=spec.representation_type)
 
             if cls.Key.value_meanings.value in data:
