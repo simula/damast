@@ -1,3 +1,14 @@
 from damast import cli, core, data_handling, domains
 
-__all__ = ["domains", "core", "cli", "data_handling"]
+from damast.core import describe, artifacts, input, output
+
+__all__ = [
+    "artifacts",
+    "cli",
+    "core",
+    "data_handling",
+    "describe",
+    "domains",
+    "input",
+    "output",
+]

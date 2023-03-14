@@ -379,3 +379,38 @@ def test_decorator_renaming(tmp_path):
 
     assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+
+
+def test_toplevel_decorators(tmp_path):
+    data = [["10000000", 0]]
+    column_names = ["mmsi", "status"]
+
+    column_specs = [
+        DataSpecification(name="mmsi"),
+        DataSpecification(name="status", unit=units.deg)
+    ]
+
+    df_pd = pd.DataFrame(data, columns=column_names)
+    df = vaex.from_pandas(df_pd)
+    adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
+
+    class TransformX(PipelineElement):
+
+        @damast.describe("Generic transform of x")
+        @damast.input({"x": {"unit": units.deg}})
+        @damast.output({"{{x}}_suffix": {"unit": units.deg}})
+        @damast.artifacts({"file": "test.damast"})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
+
+            filename = self.parent_pipeline.base_dir / "test.damast"
+            with open(filename, "w") as f:
+                f.write("test")
+            return df
+
+    p = DataProcessingPipeline(name="toplevel-test",
+                               base_dir=tmp_path) \
+        .add(name="status-transform",
+             transformer=TransformX(),
+             name_mappings={"x": "status"})
+    p.transform(df=adf)
