@@ -378,7 +378,6 @@ class SequenceIterator:
                 chunk = []
                 target_chunk = []
 
-                print(start_idx)
 
                 # Iterate through the windowed sequences until the index is exhausted
                 start_idx += 1
@@ -401,7 +400,6 @@ class SequenceIterator:
 
                 X = np.array(chunk)
 
-                print(f"RETURN: {start_idx}")
                 if target is not None:
                     y = np.array(target_chunk, copy=False)
                     yield (X, y)
