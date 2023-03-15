@@ -34,16 +34,20 @@ class GroupSequenceAccessor:
     :code:`(<batch_size>, <sequence_length>, <number-of-targets>)`.
 
     Per default the dataset is assumed to be sorted, e.g., typically in time-based order.
-    One can name however use 'sort_columns', to require sorting so that a sequence becomes a valid timeline.
+    One can name however use ``sort_columns``, to require sorting so that a sequence becomes a valid timeline.
     From the overall group-based sequence a random subsequence of given length is sampled.
 
-    :param df: the dataframe from which the data (train, test, ...) shall be taken - this can be the combine dataframe
-        for train, test, validate since the generator allows to limit the group ids from which will be selected
+    :param df: The dataframe from which the data (train, test, ...) shall be extracted.
+
+        .. note::
+            This can be the combined dataframe for train, test, validate since the generator allows to limit the group 
+            ids from which will be selected
+
     :param group_column: the name of the column that identifies the group
-    :param sort_columns: Names of the columns that shall be used for sorting - if None, no sorting will be done
+    :param sort_columns: Names of the columns that shall be used for sorting - if not set, no sorting will be done
     :param timeout_in_s: Searching for a sequence of a given length might fail, since the dataset might not contain data
-        of the given length. After timeout (in seconds) elapsed a RuntimeError will be thrown
-    :raise RuntimeError: forward search might not find sufficient messages to create a sequence with the exact length.
+        of the given length.
+    :raise RuntimeError: Forward search might not find sufficient messages to create a sequence with the exact length.
     """
     DEFAULT_TIMEOUT_IN_S: float = 30.0
 
@@ -62,21 +66,20 @@ class GroupSequenceAccessor:
 
     def split_random(self, ratios: List[float]) -> List[List[Any]]:
         """
-        Split at random
+        Create ``N=len(ratios)`` groups of the dataframe, with given ratios, return the corresponding groups.
 
-        .. todo::
-
-            Document what this function does
+        The groups are based on :attr:`GroupSequenceAccessor.group_column`.
 
         :param ratios: List of relative partition sizes (will be normalized, so that all elements sum to 1
         :return: Following the ratios, returns lists of randomly sampled values from the id/group column
         """
+        scaled_ratios = np.asarray(ratios) / sum(ratios)
+
         groups = self.groups.copy()
         random.shuffle(groups)
         number_of_groups = len(groups)
-
-        partition_sizes = [int(x * number_of_groups / sum(ratios)) for x in ratios]
-
+        partition_sizes = np.asarray(np.round(number_of_groups*scaled_ratios), dtype=int)
+        assert (len(groups) == sum(partition_sizes))
         from_idx = 0
         partitions = []
         for ps in partition_sizes:
