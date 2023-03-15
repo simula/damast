@@ -4,6 +4,10 @@ columns:
   abbreviation: height
   category: static
   unit: m
+  value_range:
+    MinMax:
+      min: 0
+      max: 40
 annotations:
   license: MIT License
   comment: test dataframe

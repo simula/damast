@@ -6,7 +6,12 @@ import yaml
 
 from damast.core.annotations import Annotation, Change, History
 from damast.core.datarange import CyclicMinMax, MinMax
-from damast.core.metadata import DataCategory, DataSpecification, MetaData, Status
+from damast.core.metadata import (
+    DataCategory,
+    DataSpecification,
+    MetaData,
+    Status
+    )
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -35,7 +40,7 @@ from damast.core.metadata import DataCategory, DataSpecification, MetaData, Stat
                               "lon", float, None, units.deg, 0.01,
                               CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
                               False]
-                         ])
+])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
                             missing_value, unit, precision,
@@ -81,7 +86,7 @@ def test_data_specification(name, category, is_optional,
                              ["test-data-spec", DataCategory.DYNAMIC, False,
                               "tds", float, -1, units.m, 0.01,
                               MinMax(0.0, 100.0), {0.0: "minimum", 100.0: "maximum"}]
-                         ])
+])
 def test_data_specification_read_write(name, category, is_optional,
                                        abbreviation, representation_type,
                                        missing_value, unit, precision,
@@ -129,7 +134,7 @@ def test_data_specification_read_write(name, category, is_optional,
                                                 category=DataCategory.DYNAMIC,
                                                 representation_type=int),
                               "'representation_type' differs"]
-                         ])
+])
 def test_data_specification_merge(dataspec, other_dataspec, error_msg):
     if error_msg is None:
         dataspec.merge(other=other_dataspec)
@@ -159,7 +164,7 @@ def test_data_specification_merge(dataspec, other_dataspec, error_msg):
                                                 category=DataCategory.DYNAMIC,
                                                 representation_type=int),
                               "representation_type"]
-                         ])
+])
 def test_data_specification_fulfillment(dataspec, other_dataspec, error_type):
     f = dataspec.get_fulfillment(other_dataspec)
     if error_type is None:

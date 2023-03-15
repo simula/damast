@@ -48,8 +48,8 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     :param args: positional arguments
     :param kwargs: keyword arguments
     :return: The annotated data frame
-    :raise KeyError: if a positional argument does not exist and keyword 'df' is missing
-    raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
+    :raise KeyError: if a positional argument does not exist and keyword :code:`df` is missing
+    :raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
     """
     _df: AnnotatedDataFrame
     if len(args) >= 2 and isinstance(args[1], AnnotatedDataFrame):

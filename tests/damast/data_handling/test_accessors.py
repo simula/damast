@@ -42,3 +42,23 @@ def test_group_sequence_accessor(dataframe):
                 assert len(ids_in_group) == 1
             if epoch < 0:
                 break
+
+
+@pytest.mark.parametrize("ratios", [[1.4, 0.2, 0.1, 0.3], [0.7, 0.1766, 1.1234], ])
+def test_group_split_random(dataframe, ratios):
+    gsa = GroupSequenceAccessor(df=dataframe,
+                                group_column="id")
+    groups = gsa.split_random(ratios=ratios)
+
+    real_ratios = np.array(ratios)
+    real_ratios /= 2
+
+    num_total_groups = len(dataframe["id"].unique())
+    num_groups = [np.round(ratio*num_total_groups).astype(int) for ratio in real_ratios]
+    for group, num in zip(groups, num_groups):
+        assert (len(group) == num)
+
+    for i, group_A in enumerate(groups):
+        for j, group_B in enumerate(groups):
+            if i != j:
+                assert np.isin(group_A, group_B, invert=True).all()

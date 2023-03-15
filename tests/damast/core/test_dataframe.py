@@ -1,3 +1,4 @@
+import numpy as np
 from pathlib import Path
 
 import astropy.units as units
@@ -16,7 +17,9 @@ from damast.core.metadata import DataCategory, DataSpecification, MetaData
 def metadata():
     column_spec = DataSpecification(name="height",
                                     category=DataCategory.STATIC,
-                                    unit=units.m)
+                                    unit=units.m,
+                                    abbreviation="height", 
+                                    value_range=MinMax(min=0, max=40))
 
     license = Annotation(name=Annotation.Key.License, value="MIT License")
     comment = Annotation(name=Annotation.Key.Comment, value="test dataframe")
@@ -88,7 +91,7 @@ def test_annotated_dataframe_import_hdf5():
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m)
+        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m, value_range=MinMax(min=0, max=40))
 
 
 def test_annotated_dataframe_import_csv():
@@ -104,7 +107,7 @@ def test_annotated_dataframe_import_csv():
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m)
+        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m, value_range=MinMax(min=0, max=40))
 
 
 def test_01_dataframe_composition():
@@ -139,3 +142,20 @@ def test_01_dataframe_composition():
 
     with pytest.raises(ValueError, match="lies outside of range"):
         AnnotatedDataFrame(dataframe=df, metadata=md)
+
+
+def test_force_range():
+    mmsi = np.array([0, -1, 2, 3, 8, 12, 52, 40, 18], dtype=np.int64)
+    mask = np.full_like(mmsi, False, dtype=bool)
+    mask[2] = True
+    data = np.ma.masked_array(mmsi, mask)
+    invalid = np.flatnonzero(np.logical_or(np.logical_or(mmsi < 0, mmsi > 40), data.mask))
+
+    column_a = DataSpecification(name="mmsi", is_optional=False, representation_type=np.int64, missing_value=True,
+                                 value_range=MinMax(min=0, max=40))
+    df = vaex.from_arrays(mmsi=data)
+    metadata = MetaData([column_a])
+    adf = AnnotatedDataFrame(df, metadata=metadata, force_range=True)
+    masked_mmsis = adf["mmsi"].evaluate()
+    assert np.allclose(masked_mmsis, mmsi)
+    assert np.isin(np.flatnonzero(masked_mmsis.mask), invalid).all()

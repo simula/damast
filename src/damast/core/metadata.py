@@ -2,15 +2,16 @@
 Module to collect the classes to define meta data
 """
 from __future__ import annotations
-
+import warnings
 import builtins
 import inspect
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-
+import numpy as np
 import vaex
 import yaml
+import ast
 from vaex.datatype import DataType
 
 from .annotations import Annotation, History
@@ -399,6 +400,8 @@ class DataSpecification:
             if isinstance(value_range, DataRange):
                 spec.value_range = value_range
             else:
+                if isinstance(value_range, str):
+                    value_range =  ast.literal_eval(value_range)
                 spec.value_range = DataRange.from_dict(value_range, dtype=spec.representation_type)
 
             if cls.Key.value_meanings.value in data:
@@ -429,7 +432,8 @@ class DataSpecification:
 
     def apply(self,
               df: vaex.DataFrame,
-              column_name: str):
+              column_name: str,
+              force_range: bool):
         # Check if representation type is the same and apply known metadata
         if self.representation_type is not None:
             if df[column_name].dtype != self.representation_type:
@@ -445,13 +449,21 @@ class DataSpecification:
 
         if self.value_range:
             min_value, max_value = df.minmax(column_name)
+            if force_range:
+                warnings.warn(f"Replacing values in {column_name} that are out of range.")
+                mask=~df[column_name].apply(
+                    self.value_range.is_in_range)
+                df[column_name]=np.ma.masked_array(df[column_name].evaluate(),
+                                                     mask.evaluate(),
+                                                     dtype = self.representation_type)
 
-            if not self.value_range.is_in_range(min_value):
-                raise ValueError(f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
-                                 f" lies outside of range {self.value_range}")
-            if not self.value_range.is_in_range(max_value):
-                raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
-                                 f" lies outside of range {self.value_range}")
+            else:
+                if not self.value_range.is_in_range(min_value):
+                    raise ValueError(f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
+                                     f" lies outside of range {self.value_range}")
+                if not self.value_range.is_in_range(max_value):
+                    raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
+                                     f" lies outside of range {self.value_range}")
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
@@ -713,12 +725,21 @@ class MetaData:
             # the dictionary has been constructed
             yaml.dump(self.to_dict(), f, sort_keys=False)
 
-    def apply(self, df: vaex.DataFrame):
+    def apply(self, df: vaex.DataFrame, force_range: bool = False):
+        """Check that each column in the :func:`vaex.DataFrame` fulfills the
+        data-specifications.
+
+        :param df: The dataframe
+        :param force_range: If a column has a range specification, map data within range.
+
+        Raises:
+            ValueError: If data-frame is missing a column in the Data-specification
+        """
         assert isinstance(df, vaex.DataFrame)
 
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
-                column_spec.apply(df=df, column_name=column_spec.name)
+                column_spec.apply(df=df, column_name=column_spec.name, force_range=force_range)
             else:
                 raise ValueError(f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
                                  f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}")
