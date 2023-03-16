@@ -165,7 +165,11 @@ class GroupSequenceAccessor:
                        chunk_size: int, shuffle: bool, infinite: bool,
                        ):
             """
-            A generator function to yield the next sequence:
+            A generator function to yield the next sequence.
+
+            If `targets` is not supplied, the generator has unlabeled data.
+            Otherwise, the generator will provide labels for forecasting, i.e.
+            taking samples from the group (after sequence length).
 
             :param features: List of feature name
             :param target: List of targets
@@ -177,9 +181,13 @@ class GroupSequenceAccessor:
             :param infinite: Run the generator infinitely, i.e. requires functions that use this generator to define
                 a stopping criteria, e.g., steps_in_epoch
             """
-            if target is not None:
+            use_target = target is not None
+            if use_target:
                 target = vaex.utils._ensure_list(target)
                 target = vaex.utils._ensure_strings_from_expressions(target)
+            else:
+                # If no target, we are not forecasting
+                sequence_forecast = 0
 
             if groups is None:
                 groups = self.groups
@@ -226,8 +234,9 @@ class GroupSequenceAccessor:
 
                     sequence_window = sequence[start_idx:start_idx + sequence_length]
                     chunk.append(sequence_window[features].to_numpy())
-
-                    if target is not None:
+                    # Target is a list of output "labels" in the ML sense
+                    if use_target:
+                        # Target is taken from the message "after" those in the window.
                         target_start_idx = start_idx + sequence_length
                         target_end_idx = target_start_idx + sequence_forecast
 
@@ -239,7 +248,7 @@ class GroupSequenceAccessor:
                         target_chunk.append(target_window.to_numpy())
 
                 X = np.array(chunk)
-                if target is not None:
+                if use_target:
                     y = np.array(target_chunk, copy=False)
                     yield (X, y)
                 else:
@@ -255,159 +264,164 @@ class GroupSequenceAccessor:
 
 class SequenceIterator:
     """
-    A generator that allows iterate over the windows of a length-limited sequence of a particular group.
+    A generator that allows iterate over the windows of a length-limited sequence.
 
     The resulting dataset (X) will have a shape of:
-        (<batch_size>, <sequence_length>, <number-of-features>).
+        (<sequence_length>, <number-of-features>).
 
     The resulting targets (y) if requires will lead to a label dataset of shape
-        (<batch_size>, <sequence_length>, <number-of-targets>)
+        (<sequence_length>, <number-of-targets>)
 
     Per default the dataset is assumed to be sorted, e.g., typically in time-based order.
-    One can name however use 'sort_columns', to require sorting so that a sequence becomes a valid timeline.
-    From the overall group-based sequence a random subsequence of given length is sampled.
+    One can name however use :attr:`"sort_columns"`, to require sorting so that a sequence becomes a valid timeline.
 
-    :param df: the dataframe from which the data (train, test, ...) shall be taken - this can be the combine dataframe
-               for train, test, validate since the generator allows to limit the group ids from which will be selected
-    :param group_column: the name of the column that identifies the group
+    :param df: The dataframe from which the data (train, test, ...) shall be extracted.
     :param sort_columns: Names of the columns that shall be used for sorting - if None, no sorting will be done
-    :param timeout_in_s: Searching for a sequence of a given length might fail, since the dataset might not contain data
-                    of the given length. After timeout (in seconds) elapsed a RuntimeError will be thrown
     :raise RuntimeError: forward search might not find sufficient messages to create a sequence with the exact length.
     """
-    DEFAULT_TIMEOUT_IN_S: float = 30.0
+
+    df: Union[DataFrame, pd.DataFrame]
 
     def __init__(self,
                  df: Union[DataFrame, pd.DataFrame],
-                 sort_columns: str = None,
-                 timeout_in_s: int = DEFAULT_TIMEOUT_IN_S):
-        self.df = df
-
-        self.sort_columns = sort_columns
-        self.timeout_in_s = timeout_in_s
+                 sort_columns: List[str] = None):
+        self.df = df.sort(by=sort_columns)
 
     def to_keras_generator(self, features,
                            target=None,
-                           sequence_length=50,
-                           sequence_forecast=1,
-                           verbose=True) -> keras.utils.Sequence:
+                           sequence_length: int = 50,
+                           sequence_forecast: int = 1) -> keras.utils.Sequence:
         """
         Create a batch generator suitable as a Keras datasource.
 
         By default, the generator is infinite, i.e. it loops continuously over the data.
-        Thus, you need to specify the "steps_per_epoch" arg when fitting a Keras model,
-        the "validation_steps" when using it for validation, and "steps" when
-         calling the "predict" method of a keras model.
+        Thus, you need to specify the :attr:`"steps_per_epoch"` arg when fitting a Keras model,
+        the :attr:`"validation_steps"` when using it for validation, and :attr:`"steps"` when
+        calling the :attr:`"predict"` method of a keras model.
 
         :param features: A list of features.
         :param target: The dependent or target column or a list of columns, if any.
-        :param sequence_length: Required length of the to-be-generated sequence
+        :param sequence_length: Length of input sequence
         :param sequence_forecast: If target is given, this is the length of a forecasted sequence -
-                                  for a sequence-to-sequence generator
-        :param verbose: If True, show an info on the recommended "steps_per_epoch"
-                        based on the total number of samples and "batch_size".
+            for a sequence-to-sequence generator
 
         Example:
 
-        .. highlight:: python
-        .. code-block:: python
+            .. highlight:: python
+            .. code-block:: python
 
-            from damast.data_handling.accessors import GroupSequenceAccessor
-            import tensorflow.keras as K
+                from damast.data_handling.accessors import GroupSequenceAccessor
+                import tensorflow.keras as K
 
-            df = ...
-            features = ['lat', 'lon']
-            target = ['nav_status']
+                df = ...
+                features = ['lat', 'lon']
+                target = ['nav_status']
 
-            it = GroupSequenceIterator(df=df, sort_columns=["timestamp"])
-            # Create a training generator
-            it = it.to_keras_generator(features=features, target=target, sequence_length=50, sequence_forecast=1)
+                it = SequenceIterator(df=df, sort_columns=["timestamp"])
+                # Create a training generator
+                it = it.to_keras_generator(features=features, target=target, sequence_length=50, sequence_forecast=1)
 
-            # Build a recurrent neural network model to deal with the sequence, e.g.,
-            # to forecast the next sequence element
-            nn_model = K.Sequential()
-            nn_model.add(K.layers.SimpleRNN(2, return_sequences=True, input_shape=[50, 2])
-            nn_model.add(K.layers.SimpleRNN(2, return_sequences=True))
-            nn_model.add(K.layers.SimpleRNN(2))
-            nn_model.compile(optimizer='sgd', loss='mse')
+                # Build a recurrent neural network model to deal with the sequence, e.g.,
+                # to forecast the next sequence element
+                nn_model = K.Sequential()
+                nn_model.add(K.layers.SimpleRNN(2, return_sequences=True, input_shape=[50, 2])
+                nn_model.add(K.layers.SimpleRNN(2, return_sequences=True))
+                nn_model.add(K.layers.SimpleRNN(2))
+                nn_model.compile(optimizer='sgd', loss='mse')
 
-            nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
+                nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
         """
+        # Sanity checks before creating generator
+        # Check that all features have the same data-type
+        datatypes = self.df[features].dtypes
+        for dtype in datatypes:
+            if dtype != datatypes[0]:
+                raise ValueError(f"{self.__class__.__name__}: Features {features} do not have a consistent (single) datatype," +
+                                 f" got {datatypes.to_list()}")
 
-        def _generator(features: List[str], target: Optional[List[str]],
-                       sequence_length: int, sequence_forecast: int,
-                       ):
+        use_target = target is not None
+        if use_target:
+            datatypes = self.df[target].dtypes
+            for dtype in datatypes:
+                if dtype != datatypes[0]:
+                    raise ValueError(f"{self.__class__.__name__}: Targets {target} do not have a consistent (single) datatype," +
+                                     f" got {datatypes.to_list()}")
+
+        if sequence_forecast < 0:
+            raise ValueError("Sequence forecast cannot be negative")
+
+        if use_target:
+            target = vaex.utils._ensure_list(target)
+            target = vaex.utils._ensure_strings_from_expressions(target)
+            if sequence_forecast == 0:
+                raise ValueError(f"{self.__class__.__name__}: Cannot do extract targets with no sequence forecast")
+        else:
+            if sequence_forecast > 0:
+                raise ValueError(f"{self.__class__.__name__}: Cannot do sequence forecast with no targets")
+
+        # Since we will need the timeline later - we further deal with pandas DataFrame
+        # directly - thus, we do not use a copy of the vaex DataFrame
+        try:
+            sequence = self.df
+        except AttributeError:
+            raise AttributeError(f"{self.__class__.__name__}: Dataframe cannot be {None}")
+
+        if not isinstance(sequence, pd.DataFrame):
+            sequence = sequence.to_pandas_df()
+
+        len_sequence = len(sequence)  # Equivalent to sequence.shape[0]
+        if len_sequence < (sequence_length + sequence_forecast):
+            raise RuntimeError(f"{self.__class__.__name__}: Sequence Length plus forecast range ({sequence_length + sequence_forecast}) larger than" +
+                               f" dataframe of size ({len_sequence})")
+
+        def _generator(sequence: pandas.DataFrame,
+                       features: List[str],
+                       target: Optional[List[str]],
+                       sequence_length: int,
+                       sequence_forecast: int):
             """
-            A generator function to yield the next sequence:
+            A generator function to yield the next sequence.
 
+            If ``sequence_forecast>=1`` then this generator returns a tuple ``(X, y)`` where
+            `X` is a dataframe of shape `(sequence_length, len(features)`, 
+            `y` is a dataframe of shape `(sequence_forecast, len(target)`
+            selected randomly from 
+
+            :param sequence: The time-series
             :param features: List of feature name
-            :param target: List of targets
+            :param target: List of targets (labels)
             :param sequence_length: Required length of a sequence
             :param sequence_forecast: Length of the target sequence
             :param chunk_size: Number of sequences in a chunk (aka batch)
             :param shuffle: Whether the data (rows) in a sequence should be shuffled
             :param infinite: Run the generator infinitely, i.e. requires functions that use this generator to define
                              a stopping criteria, e.g., steps_in_epoch
+
             """
+            max_start_idx = len_sequence - (sequence_length + sequence_forecast) + 1
+            use_target = target is not None
+            # (Num_batches=1, Length of Sequences, Number of features)
+            X = np.empty((sequence_length, len(features)), dtype=sequence.dtypes[features[0]])
             if target is not None:
-                target = vaex.utils._ensure_list(target)
-                target = vaex.utils._ensure_strings_from_expressions(target)
+                y = np.empty((sequence_forecast, len(target)), dtype=sequence.dtypes[target[0]])
 
-            sample_count = 0
-            sample_length = 0
+            # Iterate through the windowed sequences until the index is exhausted
+            for start_idx in range(max_start_idx):
 
-            # Since we will need the timeline later - we further deal with pandas DataFrame
-            # directly - thus, we do not use a copy of the vaex DataFrame
-            sequence = self.df
-            if not isinstance(sequence, pd.DataFrame):
-                sequence = sequence.to_pandas_df()
+                # Extract features
+                X[:, :] = sequence[start_idx:start_idx + sequence_length][features].to_numpy()
 
-            # If sort columns are set, then ensure that the sorting is done
-            if self.sort_columns is not None:
-                sequence.sort_values(by=self.sort_columns, inplace=True, ignore_index=True)
-
-            len_sequence = sequence.shape[0]
-            sample_length += len_sequence
-
-            if sequence is None or len_sequence < (sequence_length + sequence_forecast):
-                raise RuntimeError("GroupTimelineAccessor: could not identify a sufficiently long sequence"
-                                   f"within given timeout of {self.timeout_in_s}:"
-                                   f" mean length was {sample_length / sample_count}")
-
-            start_idx = 0
-            max_start_idx = len(sequence) - (sequence_length + sequence_forecast)
-
-            while True:
-                chunk = []
-                target_chunk = []
-
-
-                # Iterate through the windowed sequences until the index is exhausted
-                start_idx += 1
-                if start_idx >= max_start_idx:
-                    break
-
-                sequence_window = sequence[start_idx:start_idx + sequence_length]
-                chunk.append(sequence_window[features].to_numpy())
-
-                if target is not None:
+                if use_target:
                     target_start_idx = start_idx + sequence_length
                     target_end_idx = target_start_idx + sequence_forecast
+                    # Extract targets
+                    y[:, :] = sequence[target_start_idx:target_end_idx][target].to_numpy()
 
-                    target_window = sequence[target_start_idx:target_end_idx][target]
-                    if sequence_forecast == 1:
-                        target_window = target_window.iloc[0]
-
-                    # target it the last step in the timeline, so the last
-                    target_chunk.append(target_window.to_numpy())
-
-                X = np.array(chunk)
-
-                if target is not None:
-                    y = np.array(target_chunk, copy=False)
+                if use_target:
                     yield (X, y)
                 else:
                     yield (X,)
 
-        return _generator(features=features, target=target,
-                          sequence_length=sequence_length, sequence_forecast=sequence_forecast)
+        return _generator(sequence=sequence, features=features, target=target,
+                          sequence_length=sequence_length, sequence_forecast=sequence_forecast,
+                          )
