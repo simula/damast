@@ -16,9 +16,9 @@ class DataConvertParser(BaseParser):
         super().__init__(parser=parser)
 
         parser.description = "damast convert - data conversion subcommand called"
-        parser.add_argument("-c", "--csv-input", action="append", help="The csv input file(s)")
-        parser.add_argument("-m", "--metadata-input", help="The metadata input file")
-        parser.add_argument("-o", "--output", help="The output (*.hdf5) file")
+        parser.add_argument("-c", "--csv-input", action="append", help="The csv input file(s)", required=True)
+        parser.add_argument("-m", "--metadata-input", help="The metadata input file", required=True)
+        parser.add_argument("-o", "--output", help="The output (*.hdf5) file", required=True)
 
     def execute(self, args):
         super().execute(args)
