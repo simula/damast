@@ -6,6 +6,7 @@ from typing import List, Callable, Dict
 import datetime as dt
 
 import pandas as pd
+import numpy as np
 import vaex
 
 from damast.data_handling.accessors import SequenceIterator
@@ -80,7 +81,9 @@ class Worker:
                     break
 
                 X, y = data
-                predicted_sequence = current_model.predict(X,
+                # Since the model requires 'batches' to be fed, provide one batch, which one step
+                input_data = X[np.newaxis, :, :]
+                predicted_sequence = current_model.predict(input_data,
                                                            steps=1,
                                                            verbose=0)
 
@@ -146,7 +149,8 @@ class Worker:
             _log.info(f"{self.__class__.__name__}({job.id}): loading data")
             start = dt.datetime.utcnow()
             df = vaex.open(job.data_filename).to_pandas_df()
-            _log.info(f"{self.__class__.__name__}({job.id}): loading data [done after {(dt.datetime.utcnow() - start).total_seconds()} seconds]")
+            _log.info(
+                f"{self.__class__.__name__}({job.id}): loading data [done after {(dt.datetime.utcnow() - start).total_seconds()} seconds]")
 
             self.predict(job_id=job.id,
                          model_name=job.model_name,
