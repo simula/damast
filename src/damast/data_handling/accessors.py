@@ -319,7 +319,16 @@ class SequenceIterator:
     def __init__(self,
                  df: Union[DataFrame, pd.DataFrame],
                  sort_columns: List[str] = None):
-        self.df = df.sort(by=sort_columns)
+        if sort_columns is not None:
+            if isinstance(df, DataFrame):
+                self.df = df.sort(by=sort_columns)
+            elif isinstance(df, pd.DataFrame):
+                self.df = df.sort_values(by=sort_columns)
+            else:
+                raise RuntimeError(f"{self.__class__.__name__}.__init__: df must be"
+                                   f"either vaex.DataFrame or pandas.DataFrame")
+        else:
+            self.df = df
 
     def to_keras_generator(self, features,
                            target=None,
