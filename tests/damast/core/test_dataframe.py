@@ -96,14 +96,14 @@ def test_annotated_dataframe_import_hdf5():
 
 def test_annotated_dataframe_import_csv():
     """
-    Simple test of the annotated dataframe import for HDF5
+    Simple test of the annotated dataframe import for csv
     """
     data_path = Path(__file__).parent.parent / "data"
-    hdf5_path = data_path / "test_dataframe.csv"
+    csv_path = data_path / "test_dataframe.csv"
 
-    adf = AnnotatedDataFrame.from_file(hdf5_path)
+    adf = AnnotatedDataFrame.from_file(csv_path)
     assert adf.column_names == ["height", "letter"]
-    assert adf._dataframe.to_pandas_df().equals(vaex.open(hdf5_path).to_pandas_df())
+    assert adf._dataframe.to_pandas_df().equals(vaex.open(csv_path).to_pandas_df())
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
