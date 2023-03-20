@@ -42,7 +42,7 @@ class GroupSequenceAccessor:
     :param df: The dataframe from which the data (train, test, ...) shall be extracted.
 
         .. note::
-            This can be the combined dataframe for train, test, validate since the generator allows to limit the group 
+            This can be the combined dataframe for train, test, validate since the generator allows to limit the group
             ids from which will be selected
 
     :param group_column: the name of the column that identifies the group
@@ -55,14 +55,17 @@ class GroupSequenceAccessor:
     def __init__(self,
                  df: DataFrame,
                  group_column: str,
-                 sort_columns: str = None,
+                 sort_columns: List[str] = None,
                  timeout_in_s: int = DEFAULT_TIMEOUT_IN_S):
         self.df = df
 
         self.group_column = group_column
         self.groups = df.unique(getattr(df, group_column))
-
-        self.sort_columns = sort_columns
+        if sort_columns is not None:
+            sc = vaex.utils._ensure_list(sort_columns)
+            self.sort_columns = vaex.utils._ensure_strings_from_expressions(sc)
+        else:
+            self.sort_columns = sort_columns
         self.timeout_in_s = timeout_in_s
 
     def split_random(self, ratios: List[float]) -> List[List[Any]]:
@@ -94,7 +97,7 @@ class GroupSequenceAccessor:
                            target: List[str] = None,
                            groups: List[str] = None,
                            sequence_length: int = 50,
-                           sequence_forecast: int = 1,
+                           sequence_forecast: int = 0,
                            batch_size: int = 1024,
                            shuffle: bool = False,
                            infinite: bool = False,
@@ -150,13 +153,42 @@ class GroupSequenceAccessor:
 
                 nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
         """
-
         if verbose:
             current_level = logger.getEffectiveLevel()
             logger.setLevel(logging.INFO)
             steps_per_epoch = np.ceil(len(self.df) / batch_size)
             logger.info(f'Recommended {steps_per_epoch=}')
             logger.setLevel(current_level)
+
+        # Sanity checks before creating generator
+        # Check that all features have the same data-type
+        datatypes = self.df[features].dtypes
+        for dtype in datatypes:
+            if dtype != datatypes[0]:
+                raise ValueError(f"{self.__class__.__name__}: Features {features} do not have a consistent (single) datatype," +
+                                 f" got {datatypes.to_list()}")
+
+        use_target = target is not None
+        if use_target:
+            datatypes = self.df[target].dtypes
+            for dtype in datatypes:
+                if dtype != datatypes[0]:
+                    raise ValueError(f"{self.__class__.__name__}: Targets {target} do not have a consistent (single) datatype," +
+                                     f" got {datatypes.to_list()}")
+
+        if use_target:
+            target = vaex.utils._ensure_list(target)
+            target = vaex.utils._ensure_strings_from_expressions(target)
+            if sequence_forecast < 0:
+                raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
+            if sequence_forecast == 0:
+                raise ValueError(f"{self.__class__.__name__}: Cannot do extract targets with no sequence forecast")
+        else:
+            if sequence_forecast > 0:
+                raise ValueError(f"{self.__class__.__name__}: Cannot do sequence forecast with no targets")
+
+        if self.sort_columns is not None and shuffle:
+            raise RuntimeError(f"{self.__class__.__name__}: Cannot sort and shuffle sequence at the same time")
 
         def _generator(features: List[str], target: Optional[List[str]],
                        groups: List[Any],
@@ -220,16 +252,14 @@ class GroupSequenceAccessor:
                             sequence = sequence.sample(frac=1)
 
                         len_sequence = sequence.shape[0]
-
                         if len_sequence >= (sequence_length + sequence_forecast):
                             break
 
                         sample_count += 1
                         sample_length += len_sequence
-
                     if sequence is None or len_sequence < (sequence_length + sequence_forecast):
-                        raise RuntimeError("GroupTimelineAccessor: could not identify a sufficiently long sequence"
-                                           f"within given timeout of {self.timeout_in_s}:"
+                        raise RuntimeError(f"{self.__class__.__name__}: could not identify a sufficiently long sequence"
+                                           f" within given timeout of {self.timeout_in_s}:"
                                            f" mean length was {sample_length / sample_count}")
 
                     max_start_idx = len(sequence) - (sequence_length + sequence_forecast)
@@ -259,7 +289,6 @@ class GroupSequenceAccessor:
                     yield (X, y)
                 else:
                     yield (X,)
-
                 if not infinite:
                     break
 
@@ -336,6 +365,7 @@ class SequenceIterator:
 
                 nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
         """
+
         # Sanity checks before creating generator
         # Check that all features have the same data-type
         datatypes = self.df[features].dtypes
@@ -353,7 +383,7 @@ class SequenceIterator:
                                      f" got {datatypes.to_list()}")
 
         if sequence_forecast < 0:
-            raise ValueError("Sequence forecast cannot be negative")
+            raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
 
         if use_target:
             target = vaex.utils._ensure_list(target)
@@ -364,19 +394,16 @@ class SequenceIterator:
             if sequence_forecast > 0:
                 raise ValueError(f"{self.__class__.__name__}: Cannot do sequence forecast with no targets")
 
+        sequence = self.df
+
         # Since we will need the timeline later - we further deal with pandas DataFrame
         # directly - thus, we do not use a copy of the vaex DataFrame
-        try:
-            sequence = self.df
-        except AttributeError:
-            raise AttributeError(f"{self.__class__.__name__}: Dataframe cannot be {None}")
-
         if not isinstance(sequence, pd.DataFrame):
             sequence = sequence.to_pandas_df()
 
         len_sequence = len(sequence)  # Equivalent to sequence.shape[0]
         if len_sequence < (sequence_length + sequence_forecast):
-            raise RuntimeError(f"{self.__class__.__name__}: Sequence Length plus forecast range ({sequence_length + sequence_forecast}) larger than" +
+            raise RuntimeError(f"{self.__class__.__name__}: 'Sequence length' plus 'forecast length' ({sequence_length + sequence_forecast}) larger than" +
                                f" dataframe of size ({len_sequence})")
 
         def _generator(sequence: pandas.DataFrame,
@@ -388,9 +415,9 @@ class SequenceIterator:
             A generator function to yield the next sequence.
 
             If ``sequence_forecast>=1`` then this generator returns a tuple ``(X, y)`` where
-            `X` is a dataframe of shape `(sequence_length, len(features)`, 
+            `X` is a dataframe of shape `(sequence_length, len(features)`,
             `y` is a dataframe of shape `(sequence_forecast, len(target)`
-            selected randomly from 
+            selected randomly from
 
             :param sequence: The time-series
             :param features: List of feature name
