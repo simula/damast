@@ -163,18 +163,13 @@ class ResponseCollector:
                     # then extract the data
                     # exit when encountering 'BYE'
                     msg = self.sock.recvmsg(4)
-                    # Get the length field
-                    data = msg[0].decode()
-                    if type(data) == str and data == ControlCommand.BYE.value:
-                        stop = True
-                    else:
-                        msg_size = int.from_bytes(bytes=msg[0], byteorder="little")
-                        received_bytes = self.sock.recvmsg(msg_size)[0]
-                        if len(received_bytes) == 0:
-                            raise ConnectionAbortedError(f"{self.__class__.__name__}.read_responses:"
+                    msg_size = int.from_bytes(bytes=msg[0], byteorder="little")
+                    received_bytes = self.sock.recvmsg(msg_size)[0]
+                    if len(received_bytes) == 0:
+                        raise ConnectionAbortedError(f"{self.__class__.__name__}.read_responses:"
                                                          f" connection was reset")
 
-                        self.responses.append(Job.Response.decode(bytes=received_bytes))
+                    self.responses.append(Job.Response.decode(bytes=received_bytes))
             except Exception:
                 self.status = self.Status.ABORTED
                 raise

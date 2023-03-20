@@ -1,7 +1,6 @@
 import select
 import socket
-import threading
-from logging import getLogger, Logger, basicConfig, INFO
+from logging import getLogger, Logger, basicConfig, INFO, DEBUG
 from pathlib import Path
 from typing import List, Callable, Dict
 import datetime as dt
@@ -76,7 +75,6 @@ class Worker:
                     if type(data) == str and data == ControlCommand.STOP.value:
                         break
 
-
                 data = next(gen_predict)
                 if data is None:
                     break
@@ -141,7 +139,7 @@ class Worker:
             encoded_response = response.encode()
             msg_size = len(encoded_response)
 
-            _log.debug(f"{self.__class__.__name__}({job.id}): sendmsg: {msg_size}")
+            _log.debug(f"{self.__class__.__name__}({job.id}): sendmsg: size: {msg_size}, response: {response}")
             connection.sendmsg([msg_size.to_bytes(4, 'little'), encoded_response])
 
         try:
