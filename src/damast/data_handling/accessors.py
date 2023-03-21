@@ -213,7 +213,7 @@ class GroupSequenceAccessor:
                 a stopping criteria, e.g., steps_in_epoch
             """
             # Gather all columns in one list
-            all_columns = features
+            all_columns = features.copy()
             if self.sort_columns is not None:
                 all_columns += self.sort_columns
             use_target = target is not None
