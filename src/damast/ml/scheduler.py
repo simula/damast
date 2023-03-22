@@ -3,12 +3,18 @@ from __future__ import annotations
 import json
 import select
 import socket
+import sys
 from enum import Enum
 from pathlib import Path
 from threading import Thread, Lock
-from typing import List, Any, Dict, Callable, Tuple
+from time import sleep
+from typing import List, Any, Dict, Tuple, Callable
+
+from logging import getLogger, Logger, DEBUG, INFO
 
 PREDICT_FILE_SOCKET = "/tmp/.damast-ais-showcase"
+_log: Logger = getLogger(__name__)
+_log.setLevel(INFO)
 
 
 class Job:
@@ -30,9 +36,44 @@ class Job:
     #: The path to the vaex-readable file containing the sequences to run the prediction on
     data_filename: Path
 
+    class Status(str, Enum):
+        NOT_STARTED = "NOT STARTED"
+        RUNNING = "RUNNING"
+        STOPPED = "STOPPED"
+        FINISHED = "FINISHED"
+
+        FAILED = "FAILED"
+
+    @classmethod
+    def wait_for_status(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
+                        match_status: Job.Status = None,
+                        timeout_in_s: int = 10):
+        for i in range(0, timeout_in_s):
+            collected_responses, current_status = status_collector()
+            if match_status == current_status:
+                return collected_responses
+
+            sleep(1)
+
+        raise TimeoutError(f"{cls.__name__}: no status: {match_status} encountered within {timeout_in_s} seconds")
+
+    @classmethod
+    def wait_for_responses(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
+                           predicate_responses: Callable[[List[Job.Response]], bool],
+                           timeout_in_s: int = 10):
+        for i in range(0, timeout_in_s):
+            collected_responses, _ = status_collector()
+            if predicate_responses(collected_responses):
+                return collected_responses
+
+            sleep(1)
+
+        raise TimeoutError(f"{cls.__name__}: no responses encountered that matched the condition")
+
     class Response:
         """
-        Response to a job, when it has finished
+        A Response class which should be return when a job has finished.
+
         :param id: Identifier for the job that this response belong to
         :param timepoint: Related timepoint or index value for this sequence
         :param loss: The computed loss when comparing prediction with actual input
@@ -79,6 +120,9 @@ class Job:
             values = json.loads(bytes.decode())
             return cls(**values)
 
+        def __eq__(self, other):
+            return self.__dict__ == other.__dict__
+
     def __init__(self,
                  id: int,
                  experiment_dir: str,
@@ -95,6 +139,9 @@ class Job:
         self.sequence_length = sequence_length
         self.data_filename = data_filename
 
+        # try to encode for validation purposes
+        self.encode()
+
     def encode(self):
         return json.dumps(self.__dict__).encode()
 
@@ -102,6 +149,9 @@ class Job:
     def decode(cls, bytes):
         values = json.loads(bytes.decode())
         return cls(**values)
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 class ControlCommand(str, Enum):
@@ -117,13 +167,7 @@ class ResponseCollector:
 
     responses: List[Job.Response]
     lock: Lock
-    status: Status
-
-    class Status(str, Enum):
-        NOT_STARTED = "NOT STARTED"
-        RUNNING = "RUNNING"
-        FINISHED = "FINISHED"
-        ABORTED = "ABORTED"
+    status: Job.Status
 
     def __init__(self,
                  job_id: int,
@@ -132,10 +176,10 @@ class ResponseCollector:
         self.sock = sock
         self.thread = None
 
-        self.status = self.Status.NOT_STARTED
+        self.status = Job.Status.NOT_STARTED
         self.responses = []
 
-    def get_status(self) -> Tuple[List[Job.Response], Status]:
+    def get_status(self) -> Tuple[List[Job.Response], Job.Status]:
         return self.responses, self.status
 
     def start(self):
@@ -155,26 +199,37 @@ class ResponseCollector:
 
         stop = False
         while not stop:
-            self.status = self.Status.RUNNING
+            self.status = Job.Status.RUNNING
             try:
                 ready = select.select([self.sock], [], [], 0.01)
                 if ready[0]:
                     # Get the length field first,
                     # then extract the data
-                    # exit when encountering 'BYE'
                     msg = self.sock.recvmsg(4)
+
+                    # Exit when encountering 'BYE' message
+                    if msg[0] == ControlCommand.BYE.value.encode():
+                        stop = True
+                        break
+
                     msg_size = int.from_bytes(bytes=msg[0], byteorder="little")
                     received_bytes = self.sock.recvmsg(msg_size)[0]
                     if len(received_bytes) == 0:
                         raise ConnectionAbortedError(f"{self.__class__.__name__}.read_responses:"
-                                                         f" connection was reset")
+                                                     f" connection was reset")
 
-                    self.responses.append(Job.Response.decode(bytes=received_bytes))
-            except Exception:
-                self.status = self.Status.ABORTED
+                    job_response = Job.Response.decode(bytes=received_bytes)
+                    self.responses.append(job_response)
+            except Exception as e:
+                self.status = Job.Status.FAILED
+                _log.warning(f"{self.__class__.__name__}.read_responses: processing failed. Job Id {self.job_id}"
+                             f" -- {e}")
                 raise
 
-        self.status = self.Status.FINISHED
+        if stop:
+            self.status = Job.Status.STOPPED
+        else:
+            self.status = Job.Status.FINISHED
 
 
 class JobScheduler:
@@ -240,7 +295,7 @@ class JobScheduler:
         # start collection thread at the same time
         self._collect(job.id)
 
-    def get_status(self, job_id) -> Tuple[List[Job.Response], ResponseCollector.Status]:
+    def get_status(self, job_id) -> Tuple[List[Job.Response], Job.Status]:
         """
         Get the current status of the job.
 
@@ -248,7 +303,7 @@ class JobScheduler:
         :return: List of response and status description of the collector
         """
         if job_id not in self._collectors:
-            return [], ResponseCollector.Status.NOT_STARTED
+            raise KeyError(f"{self.__class__.__name__}.get_status: no started job with id '{job_id}' found.")
 
         collector = self._collectors[job_id]
         return collector.get_status()

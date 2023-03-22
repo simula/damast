@@ -1,6 +1,6 @@
 import select
 import socket
-from logging import getLogger, Logger, basicConfig, INFO, DEBUG
+from logging import getLogger, Logger, basicConfig, INFO
 from pathlib import Path
 from typing import List, Callable, Dict
 import datetime as dt
@@ -126,6 +126,7 @@ class Worker:
                 msg = connection.recvmsg(2064)
                 job = Job.decode(msg[0])
 
+                _log.info(f"{self.__class__.__name__}: creating thread for {job}")
                 t = Thread(target=self.execute, args=(connection, client_address, job, self.stop_event))
                 t.name = f"{self.__class__.__name__}({job.id}"
                 self.threads[job.id] = t
@@ -162,8 +163,15 @@ class Worker:
                          connection=connection,
                          stop_event=stop_event,
                          update_callback=update)
+
+            connection.sendmsg([ControlCommand.BYE.value.encode()])
         except BrokenPipeError as e:
             raise ConnectionError(f"{self.__class__.__name__}.run_prediction:"
                                   f" failed to communicate the results due to a connection error - {e}")
         finally:
             connection.close()
+
+
+if __name__ == "__main__":
+    w = Worker()
+    w.listen_and_accept()
