@@ -97,7 +97,6 @@ class Annotation:
 
         raise RuntimeError("Annotation: failed to identify item")
 
-    # region Key Validation Functions
     def validate_license(self) -> None:
         """
         Validation function for the license

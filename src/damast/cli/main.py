@@ -7,7 +7,6 @@ from damast.cli.data_converter import DataConvertParser
 
 
 class MainParser(ArgumentParser):
-    subparser: ArgumentParser
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
