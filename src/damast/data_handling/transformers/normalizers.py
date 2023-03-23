@@ -2,20 +2,13 @@ from typing import List
 
 import numpy as np
 import numpy.typing as npt
-import pandas
-import pandas as pd
 from numba import njit
-from sklearn.base import ClassNamePrefixFeaturesOutMixin, OneToOneFeatureMixin, BaseEstimator, TransformerMixin
-
-from damast.data_handling.transformers.base import BaseTransformer
 
 __all__ = [
-    "CyclicDenormalizer",
-    "CyclicNormalizer",
-    "LogNormalizer",
-    "MinMaxNormalizer",
-    "Normalizer",
-    "normalize"
+
+    "normalize",
+    "cyclic_normalisation",
+    "cyclic_denormalisation"
 ]
 
 
@@ -42,138 +35,40 @@ def normalize(
     return (b - a) * (x - x_min) / (x_max - x_min) + a
 
 
-class Normalizer(OneToOneFeatureMixin, BaseTransformer):
-    pass
+
+def cyclic_normalisation(x: npt.NDArray[np.float64],
+                         x_min: float,
+                         x_max: float) -> npt.NDArray[np.float64]:
+    """ Returns the data cycli-normalised between 0 and 1 """
+    return np.array(
+        [
+            np.sin(2 * np.pi * normalize(x, x_min, x_max, 0, 1)),
+            np.cos(2 * np.pi * normalize(x, x_min, x_max, 0, 1))
+        ]
+    )
 
 
-class MinMaxNormalizer(Normalizer):
-    """
-    Normalize data in range `[X_min, X_max]` to output range `[y_min, y_max]`.
-    """
+def cyclic_denormalisation(x_sin: npt.NDArray[np.float64],
+                           x_cos: npt.NDArray[np.float64],
+                           min: float,
+                           max: float) -> npt.NDArray[np.float64]:
+    """ Returns the data cycli-denormalised"""
+    # Flatten the input
+    original_shape = x_sin.shape
+    x_sin = x_sin.flatten()
+    x_cos = x_cos.flatten()
 
-    X_min: float
-    X_max: float
-    y_min: float
-    y_max: float
+    # Limit the min and max
+    x_sin = np.clip(x_sin, -1, 1)
+    x_cos = np.clip(x_cos, -1, 1)
 
-    def __init__(self,
-                 X_min: float, X_max: float,
-                 y_min: float, y_max: float):
-        self.X_min = X_min
-        self.X_max = X_max
-        self.y_min = y_min
-        self.y_max = y_max
+    # Convert input between 0, 2PI -> -PI, PI
+    x_sin = np.sin(np.arcsin(x_sin) - np.pi)
+    x_cos = np.cos(np.arccos(x_cos) - np.pi)
 
-        assert self.X_min < self.X_max
-        super().__init__()
+    # Denormalization
+    x_hat_normed = np.where(x_sin > 0, np.arccos(x_cos), - np.arccos(x_cos))
+    hat = normalize(normalize(x_hat_normed, -np.pi, np.pi, 0, 1), 0, 1, min, max)
 
-    def transform(self, X):
-        if isinstance(X, pandas.DataFrame):
-            X_np = X.to_numpy()
-        else:
-            X_np = X
-        assert self.X_min <= np.min(X_np)
-        assert np.max(X_np) <= self.X_max
-        output = normalize(X_np, self.X_min, self.X_max, self.y_min, self.y_max)
-        return output
-
-
-class CyclicNormalizer(BaseEstimator, TransformerMixin, ClassNamePrefixFeaturesOutMixin):
-    """
-    Normalize data `X` in range `[X_min, X_max]` to cyclic coordinates
-
-    ..math::
-
-        X_n = normalize(X, X_min, X_max, 0, 1)
-        y = (\\sin(2 \\pi X_n), \\cos(2 \\pi X_n))
-
-
-    :param X_min: Minimal input value
-    :param X_max: Maximum input value
-    """
-
-    X_min: float
-    X_max: float
-
-    def __init__(self, X_min: float, X_max: float):
-        self.X_min = X_min
-        self.X_max = X_max
-        self.y_min = 0
-        self.y_max = 1
-
-    def fit(self, X, y=None):
-        self._n_features_out = 2
-        return self
-
-    def transform(self, X):
-        X_norm = normalize(X.to_numpy(), self.X_min, self.X_max, self.y_min, self.y_max)
-        X_sin = np.sin(2 * np.pi * X_norm)
-        X_cos = np.cos(2 * np.pi * X_norm)
-        return np.hstack([X_sin, X_cos])
-
-
-class CyclicDenormalizer(BaseEstimator, TransformerMixin, ClassNamePrefixFeaturesOutMixin):
-    """
-    Transform cyclic data (X_sin, X_cos) to non-cyclic data between `[y_min, y_max]`.
-    """
-
-    y_min: float
-    y_max: float
-
-    def __init__(self, y_min: float, y_max: float):
-        self.y_min = y_min
-        self.y_max = y_max
-
-        self._n_features_out = 1
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        """Apply cyclic denormalizer
-
-        :param X: The data with columns (X_sin, X_cos)
-        :returns: The transformed data into range `[y_min, y_max]`.
-        """
-        if isinstance(X, pandas.DataFrame):
-            X_np = X.to_numpy()
-        else:
-            X_np = X
-        # Split input
-        X_sin = X_np[:, 0]
-        X_cos = X_np[:, 1]
-        # Check validity of input
-        assert -1 <= np.min(X_sin) and np.max(X_sin) <= 1
-        assert -1 <= np.min(X_cos) and np.max(X_cos) <= 1
-
-        # Convert input from [0, 2pi]  to -pi, pi
-        X_sin_shft = np.sin(np.arcsin(X_sin) - np.pi)
-        X_cos_shft = np.cos(np.arccos(X_cos) - np.pi)
-        X_hat_normed = np.where(
-            X_sin_shft > 0, np.arccos(X_cos_shft), -np.arccos(X_cos_shft)
-        )
-        data = normalize(
-            normalize(X_hat_normed, -np.pi, np.pi, 0, 1), 0, 1, self.y_min, self.y_max
-        )
-        return data.reshape(-1, 1)
-
-
-class LogNormalizer(Normalizer):
-    #: Column that should be normalised
-    column_names: List[str] = None
-
-    def __init__(self,
-                 column_names: List[str]):
-        super().__init__()
-
-        self.column_names = column_names
-
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = super().transform(df)
-
-        # When condition holds, then yield x, otherwise y
-        tf_df = df[self.column_names]
-        conditioned_df = np.log1p(np.abs(tf_df))
-        df[self.column_names] = conditioned_df.where(cond=tf_df >= 0.0,
-                                                     other=np.negative(np.log1p(np.abs(tf_df))))
-        return df
+    # Reshape the output as the input
+    return hat.reshape(original_shape)

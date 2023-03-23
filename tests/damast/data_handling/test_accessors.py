@@ -6,7 +6,7 @@ import vaex
 from damast.data_handling.accessors import (
     GroupSequenceAccessor,
     SequenceIterator
-    )
+)
 
 
 @pytest.fixture()

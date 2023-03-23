@@ -1,5 +1,4 @@
 import glob
-import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
@@ -11,8 +10,6 @@ import vaex
 from vaex import DataFrame
 import tensorflow as tf
 
-# https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams
-from tensorboard.plugins.hparams import api as hp
 
 __all__ = [
     "BaseModel"
