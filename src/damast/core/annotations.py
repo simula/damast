@@ -115,7 +115,6 @@ class Annotation:
         if self.value is None or self.value == '':
             raise ValueError("Comment cannot be empty")
 
-
 # endregion
 
 
