@@ -10,7 +10,7 @@ from vaex.dataframe import astropy
 from damast.core.annotations import Annotation
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.datarange import MinMax
-from damast.core.metadata import DataCategory, DataSpecification, MetaData
+from damast.core.metadata import DataCategory, DataSpecification, MetaData, ValidationMode
 
 
 @pytest.fixture()
@@ -155,7 +155,7 @@ def test_force_range():
                                  value_range=MinMax(min=0, max=40))
     df = vaex.from_arrays(mmsi=data)
     metadata = MetaData([column_a])
-    adf = AnnotatedDataFrame(df, metadata=metadata, force_range=True)
+    adf = AnnotatedDataFrame(df, metadata=metadata, validation_mode=ValidationMode.UPDATE_DATA)
     masked_mmsis = adf["mmsi"].evaluate()
     assert np.allclose(masked_mmsis, mmsi)
     assert np.isin(np.flatnonzero(masked_mmsis.mask), invalid).all()
