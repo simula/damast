@@ -12,12 +12,12 @@ columns:
     MinMax:
       min: 200000000
       max: 700000000
-- name: imo_nr
-  description: International Maritime Organisation number
-  abbreviation: imo_nr
-  category: static
-  is_optional: false
-  representation_type: int
+# - name: imo_nr
+#   description: International Maritime Organisation number
+#   abbreviation: imo_nr
+#   category: static
+#   is_optional: false
+#   representation_type: int
 - name: length
   abbreviation: length
   category: static

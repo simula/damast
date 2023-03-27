@@ -7,7 +7,6 @@ from astropy import units
 
 import damast.core
 from damast.data_handling.transformers.augmenters import AddLocalMessageIndex
-from damast.data_handling.transformers.features import Feature
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math import great_circle_distance
@@ -103,10 +102,10 @@ def test_delta_column(tmp_path):
                                 "sort": ColumnName.TIMESTAMP,
                                 "x": ColumnName.LATITUDE,
                                 "y": ColumnName.LONGITUDE,
-                                "out": Feature.DELTA_DISTANCE.value})
+                                "out": ColumnName.DELTA_DISTANCE})
     new_adf = pipeline.transform(adf)
 
-    assert Feature.DELTA_DISTANCE in new_adf._dataframe.column_names
+    assert ColumnName.DELTA_DISTANCE in new_adf._dataframe.column_names
     pd_sorted = df_pd.sort_values(ColumnName.TIMESTAMP)
     df_grouped = pd_sorted.groupby(by=ColumnName.MMSI)
 
@@ -114,7 +113,7 @@ def test_delta_column(tmp_path):
     for mmsi, global_indices in df_grouped.groups.items():
         vg_unsorted = vaex_groups.get_group(mmsi)
         vg = vg_unsorted.sort(ColumnName.TIMESTAMP)
-        distances = vg[Feature.DELTA_DISTANCE.value].evaluate()
+        distances = vg[ColumnName.DELTA_DISTANCE].evaluate()
         lat = np.ma.masked_invalid(df_pd["LAT"][global_indices].shift(1).array)
         lat_prev = np.ma.masked_invalid(df_pd["LAT"][global_indices].array)
         lon = np.ma.masked_invalid(df_pd["LON"][global_indices].shift(1).array)

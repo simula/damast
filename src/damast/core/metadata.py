@@ -15,7 +15,7 @@ import ast
 from vaex.datatype import DataType
 
 from .annotations import Annotation, History
-from .datarange import DataRange
+from .datarange import DataRange, MinMax, DataElement
 from .formatting import DEFAULT_INDENT
 from .units import Unit, unit_registry, units
 
@@ -72,6 +72,15 @@ class ArtifactSpecification:
                 if len(files) == 0:
                     raise RuntimeError(f"{self.__class__.__name__}.validate: no artifact matching "
                                        f" {path_pattern} found in '{base_dir}'")
+
+
+class ValidationMode(str, Enum):
+    #: Metadata cannot be changed
+    READONLY = "READONLY"
+    #: Data should be updated to comply with the metadata
+    UPDATE_DATA = "UPDATE_DATA"
+    #: Metadata should be updated to comply with the data
+    UPDATE_METADATA = "UPDATE_METADATA"
 
 
 class DataSpecification:
@@ -276,7 +285,10 @@ class DataSpecification:
         """
         exceptions: List[Any] = []
         try:
-            dtype = getattr(builtins, type_name)
+            if type_name.lower() in ["string", "str"]:
+                dtype = str
+            else:
+                dtype = getattr(builtins, type_name)
             return dtype
         except AttributeError as e:
             exceptions.append(e)
@@ -371,9 +383,9 @@ class DataSpecification:
         if cls.Key.representation_type.value in data:
             spec.representation_type = cls.resolve_representation_type(data[cls.Key.representation_type.value])
             if cls.Key.missing_value.value in data:
-                spec.missing_value = spec.representation_type(data[cls.Key.missing_value.value])
+                spec.missing_value = DataElement.create(data[cls.Key.missing_value.value], spec.representation_type)
             if cls.Key.precision.value in data:
-                spec.precision = spec.representation_type(data[cls.Key.precision.value])
+                spec.precision = DataElement.create(data[cls.Key.precision.value], spec.representation_type)
         else:
             # Missing representation type, missing value and precision will not be loaded
             pass
@@ -401,7 +413,7 @@ class DataSpecification:
                 spec.value_range = value_range
             else:
                 if isinstance(value_range, str):
-                    value_range =  ast.literal_eval(value_range)
+                    value_range = ast.literal_eval(value_range)
                 spec.value_range = DataRange.from_dict(value_range, dtype=spec.representation_type)
 
             if cls.Key.value_meanings.value in data:
@@ -433,37 +445,82 @@ class DataSpecification:
     def apply(self,
               df: vaex.DataFrame,
               column_name: str,
-              force_range: bool):
+              validation_mode: ValidationMode):
+        """
+        Apply the metadata object to the dataframe
+        :param df: Dataframe that should be associated with the metadata
+        :param column_name: name of the column that need to be validated/checked
+        :param validation_mode: Mode which shall apply to updating either data or metadata,
+            when encountering inconsistencies
+        """
         # Check if representation type is the same and apply known metadata
-        if self.representation_type is not None:
-            if df[column_name].dtype != self.representation_type:
-                raise ValueError(f"{self.__class__.__name__}.apply: column '{column_name}':"
-                                 f" expected representation type: {self.representation_type},"
-                                 f" but got '{df[column_name].dtype}'")
+        if validation_mode == ValidationMode.READONLY:
+            if self.representation_type is not None:
+                if df[column_name].dtype != self.representation_type:
+                    raise ValueError(f"{self.__class__.__name__}.apply: column '{column_name}':"
+                                     f" expected representation type: {self.representation_type},"
+                                     f" but got '{df[column_name].dtype}'")
 
-        if self.unit is not None:
-            if column_name not in df.units:
-                df.units[column_name] = self.unit
-            else:
-                assert df.units[column_name] == self.unit
+            if self.unit is not None:
+                if column_name not in df.units:
+                    df.units[column_name] = self.unit
+                else:
+                    assert df.units[column_name] == self.unit
 
-        if self.value_range:
-            min_value, max_value = df.minmax(column_name)
-            if force_range:
-                warnings.warn(f"Replacing values in {column_name} that are out of range.")
-                mask=~df[column_name].apply(
-                    self.value_range.is_in_range)
-                df[column_name]=np.ma.masked_array(df[column_name].evaluate(),
-                                                     mask.evaluate(),
-                                                     dtype = self.representation_type)
-
-            else:
+            if self.value_range:
+                min_value, max_value = df.minmax(column_name)
                 if not self.value_range.is_in_range(min_value):
                     raise ValueError(f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
                                      f" lies outside of range {self.value_range}")
                 if not self.value_range.is_in_range(max_value):
                     raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
                                      f" lies outside of range {self.value_range}")
+            return
+
+        if validation_mode == ValidationMode.UPDATE_DATA:
+            if self.representation_type is not None:
+                if df[column_name].dtype != self.representation_type:
+                    warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}':"
+                                  f" expected representation type: {self.representation_type},"
+                                  f" but got '{df[column_name].dtype}'")
+                    df[column_name].dtype = self.representation_type
+
+                if self.unit is not None:
+                    if column_name not in df.units:
+                        df.units[column_name] = self.unit
+                    else:
+                        if df.units[column_name] != self.unit:
+                            warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}:"
+                                          f" expected unit type: {self.unit},"
+                                          f" but got '{df.units[column_name]}'")
+                            df[column_name].dtype = self.unit
+
+                if self.value_range:
+                    warnings.warn(f"Replacing values in {column_name} that are out of range.")
+                    mask = ~df[column_name].apply(self.value_range.is_in_range)
+                    df[column_name] = np.ma.masked_array(df[column_name].evaluate(),
+                                                         mask.evaluate(),
+                                                         dtype=self.representation_type)
+                return
+
+        if validation_mode == ValidationMode.UPDATE_METADATA:
+            self.representation_type = df[column_name].dtype
+
+            if column_name in df.units:
+                self.unit = df.units[column_name]
+
+            try:
+                min_value, max_value = df.minmax(column_name)
+                if self.value_range:
+                    if isinstance(self.value_range, MinMax):
+                        self.value_range.merge(MinMax(min_value, max_value))
+                else:
+                    warnings.warn(f"Setting MinMax range ({min_value}, {max_value}) for {column_name}")
+                    self.value_range = MinMax(min_value, max_value)
+            except ValueError:
+                # Type might not be numeric
+                pass
+            return
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
@@ -674,6 +731,22 @@ class MetaData:
 
         return data
 
+    def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
+        hspace = ' ' * indent
+        repr = [hspace + "Annotations:"]
+        for name, annotation in self.annotations.items():
+            repr.append(hspace + default_indent + f"{name}: {annotation.value}")
+
+        for spec in self.columns:
+            spec_dict = spec.to_dict()
+            repr.append(hspace + default_indent + f"{spec_dict['name']}:")
+            for field_name, value in spec_dict.items():
+                if field_name == "name":
+                    continue
+                repr.append(hspace + default_indent + default_indent + f"{field_name}: {value}")
+
+        return '\n'.join(repr)
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> MetaData:
         for key in [cls.Key.annotations.value, cls.Key.columns.value]:
@@ -725,21 +798,21 @@ class MetaData:
             # the dictionary has been constructed
             yaml.dump(self.to_dict(), f, sort_keys=False)
 
-    def apply(self, df: vaex.DataFrame, force_range: bool = False):
+    def apply(self, df: vaex.DataFrame, validation_mode: ValidationMode = ValidationMode.READONLY):
         """Check that each column in the :func:`vaex.DataFrame` fulfills the
         data-specifications.
 
         :param df: The dataframe
-        :param force_range: If a column has a range specification, map data within range.
+        :param validation_mode: If a column does not comply to the spec, force the spec, e.g.,
+            for a given range specification, map data within range.
 
-        Raises:
-            ValueError: If data-frame is missing a column in the Data-specification
+        :raises: ValueError: If data-frame is missing a column in the Data-specification
         """
         assert isinstance(df, vaex.DataFrame)
 
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
-                column_spec.apply(df=df, column_name=column_spec.name, force_range=force_range)
+                column_spec.apply(df=df, column_name=column_spec.name, validation_mode=validation_mode)
             else:
                 raise ValueError(f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
                                  f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}")

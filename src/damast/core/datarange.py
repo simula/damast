@@ -1,14 +1,31 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
-import damast.core.datarange
+import vaex
 
 __all__ = [
     "CyclicMinMax",
+    "DataElement",
     "DataRange",
     "ListOfValues",
     "MinMax"
 ]
+
+
+class DataElement:
+    """
+    Wrapper class to create an instance of an object given by a dtype
+    """
+
+    @classmethod
+    def create(cls, value, dtype):
+        if isinstance(dtype, vaex.datatype.DataType):
+            df = vaex.from_arrays(x=[value])
+            value = df.x.astype(dtype).evaluate()
+            return value[0]
+
+        return dtype(value)
 
 
 class DataRange(ABC):
@@ -17,6 +34,7 @@ class DataRange(ABC):
 
     This class should be subclassed to implement a custom data range
     """
+
     @abstractmethod
     def is_in_range(self, value) -> bool:
         """
@@ -71,6 +89,7 @@ class DataRange(ABC):
         assert len(data.keys()) == 1
         klass, values = data.popitem()
         try:
+            import damast.core.datarange
             datarange_subclass = getattr(damast.core.datarange, klass)
             return datarange_subclass.from_data(data=values, dtype=dtype)
         except AttributeError:
@@ -212,7 +231,8 @@ class MinMax(DataRange):
                 raise KeyError(f"{cls.__name__}.from_data: missing '{required_key}'")
 
         if dtype is not None:
-            return cls(min=dtype(data["min"]), max=dtype(data["max"]))
+            return cls(min=DataElement.create(data["min"], dtype),
+                       max=DataElement.create(data["max"], dtype))
 
         return cls(min=data["min"], max=data["max"])
 
@@ -241,6 +261,15 @@ class MinMax(DataRange):
         :return: Representation for this instance
         """
         return f"{self.__class__.__name__}[{self.min}, {self.max}]"
+
+    def merge(self, other: MinMax):
+        """
+        Extend the range based on another range definition.
+
+        :param other: MinMax object to extend the bound of the current one
+        """
+        self.min = min(self.min, other.min)
+        self.max = max(self.max, other.max)
 
     def to_dict(self) -> Dict[str, Dict[str, Any]]:
         """

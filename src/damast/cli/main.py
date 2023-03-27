@@ -4,10 +4,10 @@ from pathlib import Path
 from damast.cli.base import BaseParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.data_converter import DataConvertParser
+from damast.cli.data_inspect import DataInspectParser
 
 
 class MainParser(ArgumentParser):
-    subparser: ArgumentParser
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -39,6 +39,9 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="convert",
                                          help=help_desc,
                                          parser_klass=DataConvertParser)
+    main_parser.attach_subcommand_parser(subcommand="inspect",
+                                         help=help_desc,
+                                         parser_klass=DataInspectParser)
     args = main_parser.parse_args()
     args.active_subparser.execute(args)
 

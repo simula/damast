@@ -6,7 +6,7 @@ import vaex
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
-from damast.core.datarange import CyclicMinMax
+from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import MetaData
 from damast.core.units import units
 
@@ -45,10 +45,10 @@ class LatLonTransformer(PipelineElement):
         "lon": {"unit": units.deg, "value_range": CyclicMinMax(-180.0, 180.0)}
     })
     @damast.core.output({
-        "lat_x": {"unit": units.deg},
-        "lat_y": {"unit": units.deg},
-        "lon_x": {"unit": units.deg},
-        "lon_y": {"unit": units.deg}
+        "lat_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lat_y": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_y": {"value_range": MinMax(-1.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         lat_cyclic_transformer = vaex.ml.CycleTransformer(features=["lat"], n=180.0)
@@ -65,13 +65,12 @@ base_dir.mkdir(parents=True, exist_ok=True)
 
 pipeline = DataProcessingPipeline(name="ais_preparation",
                                   base_dir=base_dir) \
-    .add("geolocation", LatLonTransformer()) \
+    .add("geo_cycle_transform", LatLonTransformer()) \
     .add("export-hdf5", HDF5Export("ais-processed.hdf5"))
 
 new_df = pipeline.transform(adf)
 print(pipeline.to_str(indent_level=2))
 print(new_df._dataframe)
-
 
 # Start ML
 # ml = MLPipeline(name="train")

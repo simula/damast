@@ -109,7 +109,7 @@ class ColumnName:
     COMBINATION: str = "combination"
     HISTORIC_SIZE: str = "HISTORIC_SIZE"
     HISTORIC_SIZE_REVERSE: str = "HISTORIC_SIZE_REVERSE"
-
+    DELTA_DISTANCE: str = "DeltaDistance"
     LAST_POSITION: str = "last_position"
 
 

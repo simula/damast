@@ -2,29 +2,23 @@
 Module which collects transformers that add / augment the existing data
 """
 from pathlib import Path
-from typing import Callable, Dict, List, Union, Optional
+from typing import Callable, List, Union
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import vaex
-from sklearn.preprocessing import Binarizer
 
 import damast.core
 import damast.data_handling.transformers.augmenters as augmenters
 from damast.core.dataprocessing import PipelineElement
-from damast.data_handling.transformers.augmenters import (
-    BallTreeAugmenter,
-    BaseAugmenter
-)
+from damast.data_handling.transformers.augmenters import BallTreeAugmenter
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
 )
-from damast.domains.maritime.data_specification import ColumnName, FieldValue
 from damast.domains.maritime.math.spatial import EARTH_RADIUS
 
 __all__ = [
-    "AddCombinedLabel",
     "AddMissingAISStatus",
     "ComputeClosestAnchorage"
 ]
@@ -148,123 +142,3 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
     @damast.core.output({"out": {}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         return super().transform(df)
-
-
-class AddCombinedLabel(BaseAugmenter):
-    """
-    Create a single label from two existing ones
-    """
-    #: List of columns that shall be combined
-    column_names: List[str] = None
-
-    # Mapping of id
-    _label_mapping: Dict[str, List[str]] = None
-
-    def __init__(self,
-                 column_names: List[str],
-                 column_permitted_values: Dict[str, List[str]],
-                 combination_name: str = ColumnName.COMBINATION) -> None:
-        number_of_columns = len(column_names)
-        if number_of_columns != 2:
-            raise ValueError("AddCombinedLabel: currently only the combination of exactly two columns is supported")
-
-        self.column_names = column_names
-        self.combination_name = combination_name
-        self.permitted_values = column_permitted_values
-
-    @property
-    def label_mapping(self) -> Dict[str, Dict[str, str]]:
-        if self._label_mapping is None:
-            self._label_mapping = self.compute_label_mapping()
-        return self._label_mapping
-
-    def compute_label_mapping(self) -> Dict[str, Dict[str, str]]:
-        """
-        Compute the custom 2D label to id mapping.
-
-        :return:
-        """
-        col_a, col_b = self.column_names
-        """
-        Create a dictionary containing the number and the name of all the combination of status and fishing type.
-        """
-        col_a_value_count = len(self.permitted_values[col_a].keys())
-
-        combination_mapping: Dict[str, List[str]] = {}
-        for a_index, (a_key, a_value) in enumerate(self.permitted_values[col_a].items()):
-            for b_index, (b_key, b_value) in enumerate(self.permitted_values[col_b].items()):
-                id = b_index * col_a_value_count + a_index
-                combination_mapping[str(id)] = [a_value, b_value]
-        return combination_mapping
-
-    def transform(self, df):
-        """
-        Combine two existing labels to create a new one
-
-        .. highlight:: python
-        .. code-block:: python
-
-            AddCombinedLabel(column_names=[col.FISHING_TYPE, col.STATUS],
-                                column_permitted_values={col.FISHING_TYPE: {...},col.STATUS: { ... }) },
-                                combination_name="combination")
-
-        :param df: Input dataframe
-        :return: Output dataframe
-        """
-        df = super().transform(df)
-
-        conditions: List[List[bool]]
-        choices: List[int]
-
-        # Currently only the combination of two columns is supported
-        column_a, column_b = self.column_names
-        column_a_permitted_values = self.permitted_values[column_a]
-        column_b_permitted_values = self.permitted_values[column_b]
-
-        conditions, choices = zip(
-            *[(((df[column_a] == v2) & (df[column_b] == v1)), i1 * len(column_a_permitted_values) + i2)
-              for i1, (k1, v1) in enumerate(column_b_permitted_values.items())
-              for i2, (k2, v2) in enumerate(column_a_permitted_values.items())
-              ])
-
-        df[self.combination_name] = np.select(conditions, choices, default=FieldValue.UNDEFINED)
-        return df
-
-
-class InvertedBinariser(BaseAugmenter):
-    """
-    Set all values below(!) a threshold to 1, and above the threshold to 0
-
-    This complements sklearns binariser with an 'inverted' assignment
-    """
-    base_column_name: str
-    threshold: float
-
-    column_name: str
-
-    #:
-    _binarizer: Binarizer
-
-    def __init__(self,
-                 base_column_name: str,
-                 threshold: float,
-                 column_name: Optional[str] = None):
-
-        self.base_column_name = base_column_name
-        self.threshold = threshold
-
-        self._binarizer = Binarizer(threshold=threshold)
-
-        if column_name is None:
-            self.column_name = f"{base_column_name}_TRUE"
-        else:
-            self.column_name = column_name
-
-    def transform(self, df) -> pd.DataFrame:
-        df = super().transform(df)
-        self._binarizer.fit(df)
-
-        df[self.column_name] = self._binarizer.transform(df)
-        # Invert the boolean and convert back to int
-        df[self.column_name] = (-(df[self.column_name].astype(bool))).astype(int)
-        return df
