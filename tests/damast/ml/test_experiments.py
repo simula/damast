@@ -84,4 +84,7 @@ def test_validate_experiment_dir(tmp_path):
 
 
 def test_validate_from_directory(experiment_dir):
-    Experiment.from_directory(experiment_dir)
+    models = Experiment.from_directory(experiment_dir)
+
+    assert "ModelA" in models
+    assert "ModelB" in models
