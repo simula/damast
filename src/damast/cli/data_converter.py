@@ -20,13 +20,22 @@ class DataConvertParser(BaseParser):
 
         parser.description = "damast convert - data conversion subcommand called"
         parser.add_argument("-c", "--csv-input",
-                            action="append", help="The csv input file(s); enclosed in quotes accepts * as wildcard "
-                                                  "for directories of filenames")
-        parser.add_argument("-m", "--metadata-input", help="The metadata input file")
-        parser.add_argument("-o", "--output", help="The output (*.hdf5) file")
+                            action="append",
+                            help="The csv input file(s); enclosed in quotes accepts * as wildcard "
+                                 "for directories of filenames",
+                            required=True)
+        parser.add_argument("-m", "--metadata-input",
+                            help="The metadata input file",
+                            required=True
+                            )
+        parser.add_argument("-o", "--output",
+                            help="The output (*.hdf5) file",
+                            required=True
+                            )
         parser.add_argument("--validation-mode",
                             default="readonly",
-                            help="Define the validation mode: readonly, update_data, update_metadata")
+                            choices=[x.value.lower() for x in ValidationMode],
+                            help="Define the validation mode")
 
     def execute(self, args):
         super().execute(args)
