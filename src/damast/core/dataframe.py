@@ -84,6 +84,19 @@ class AnnotatedDataFrame:
         self.validate_metadata(validation_mode=validation_mode)
 
     @property
+    def dataframe(self) -> vaex.DataFrame:
+        """
+        Allows to access the underlying dataframe directly.
+
+        .. note::
+            AnnotatedDataFrame behaves like a vaex.DataFrame, so typically you will not need to access the
+            dataframe through this property.
+
+        :return: The underlying dataframe
+        """
+        return self._dataframe
+
+    @property
     def metadata(self):
         return self._metadata
 
