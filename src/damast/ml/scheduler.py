@@ -282,6 +282,8 @@ class JobScheduler:
             soc.connect(PREDICT_FILE_SOCKET)
         except ConnectionRefusedError:
             raise RuntimeError(f"{self.__class__.__name__}.start: no worker available")
+        except FileNotFoundError:
+            raise RuntimeError(f"{self.__class__.__name__}.start: no worker started")
         soc.setblocking(0)
 
         job.id = self._job_id
