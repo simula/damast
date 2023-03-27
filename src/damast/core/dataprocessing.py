@@ -479,6 +479,17 @@ class DataProcessingPipeline(PipelineElement):
 
         :returns: This instance of data processing pipeline
         """
+
+        # At this stage, ensure that the dataframe conforms to the metadata
+        try:
+            df.validate_metadata()
+        except ValueError as e:
+            raise RuntimeError(f"{self.__class__.__name__}.prepare: specification of the provided AnnotatedDataFrame"
+                               f" does not match its data. If you modified the frame after construction ensure"
+                               f" consistency between 'data' and 'metadata' by using "
+                               f" AnnotatedDataFrame.validate_metadata()"
+                               f" -- {e}")
+
         validation_result = self.validate(steps=self.steps,
                                           metadata=df._metadata)
         self.is_ready = True

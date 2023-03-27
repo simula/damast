@@ -258,10 +258,7 @@ def test_access_decorator_info():
            DataSpecification.from_requirements(requirements=output_specs)
 
 
-def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp_path):
-    adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
-                             metadata=lat_lon_metadata)
-
+def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, height_metadata, tmp_path):
     pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
         .add("transform-b", TransformerB()) \
@@ -269,6 +266,15 @@ def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, tmp
 
     with pytest.raises(RuntimeError, match="set the correct output specs"):
         pipeline.output_specs
+
+    with pytest.raises(RuntimeError, match="ensure consistency"):
+        invalid_adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
+                                       metadata=lat_lon_metadata)
+        invalid_adf._metadata = height_metadata
+        pipeline.prepare(df=invalid_adf)
+
+    adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
+                             metadata=lat_lon_metadata)
 
     pipeline.prepare(df=adf)
 

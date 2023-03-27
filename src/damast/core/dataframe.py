@@ -55,7 +55,7 @@ class AnnotatedDataFrame:
     :param dataframe: The vaex dataframe holding the data
     :param metadata: The metadata for the dataframe
     :param validation_mode: If UPDATE_DATA replace values outside of valid range (specified in :attr:`metadata`)
-        with missing value. If UPDATA_METADATA will update the metadata according to the encountered values ELSE
+        with missing value. If UPDATA_METADATA update the metadata according to the encountered values ELSE
         READONLY will throw when encountering inconsistencies
     """
 
@@ -81,11 +81,21 @@ class AnnotatedDataFrame:
         self._metadata = metadata
 
         # Ensure conformity of the metadata with the dataframe
-        self._metadata.apply(df=self._dataframe, validation_mode=validation_mode)
+        self.validate_metadata(validation_mode=validation_mode)
 
     @property
     def metadata(self):
         return self._metadata
+
+    def validate_metadata(self, validation_mode: ValidationMode = ValidationMode.READONLY) -> None:
+        """
+        Validate this annotated dataframe and ensure that data and spec match.
+
+        :param validation_mode: Select the validation mode that should be used
+        :raise RuntimeError: Dependending on the validation mode an exception will be raise to ensure the data spec
+               conformance
+        """
+        self._metadata.apply(df=self._dataframe, validation_mode=validation_mode)
 
     def is_empty(self) -> bool:
         """
