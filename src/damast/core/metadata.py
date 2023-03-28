@@ -647,6 +647,12 @@ class DataSpecification:
 class MetaData:
     """
     The representation for metadata associated which can be associated with a single dataset.
+
+    :param columns: (Ordered) list of column specifications
+    :param annotations:  List of annotations for this dataframe.
+
+    ..note::
+        Each annotation is assumed to have a unique :attr:`Annotation.name`.
     """
 
     class Key(str, Enum):
@@ -681,26 +687,30 @@ class MetaData:
     #: Specification of columns in the
     columns: List[DataSpecification]
 
+    # We store the annotations as a dictionary for easy lookup.
+    # even if it means duplicating the name of the annotation as a key
     #: Dictionary containing all annotations
-    annotations: Dict[str, Annotation]
+    _annotations: Dict[str, Annotation]
 
     def __init__(self,
                  columns: List[DataSpecification],
-                 annotations: Optional[Dict[str, Annotation]] = None):
-        """
-        Initialise MetaData
+                 annotations: Optional[List[Annotation]] = None):
 
-        :param columns: (Ordered) list of column specifications
-        :param annotations:  Annotation for this dataframe
-        """
         assert isinstance(columns, list)
         self.columns = columns
-
         if annotations is None:
-            self.annotations = {}
+            self._annotations = {}
         else:
-            assert isinstance(annotations, dict)
-            self.annotations = annotations
+            assert isinstance(annotations, list)
+            unique_annotations = set([annotation.name for annotation in annotations])
+            if len(unique_annotations) != len(annotations):
+                raise ValueError(f"{self.__class__.__name__}: Set of annotations in metadata has duplicate names " +
+                                 f"got {[an.to_dict() for an in annotations]}")
+            self._annotations = {an.name: an for an in annotations}
+
+    @property
+    def annotations(self):
+        return self._annotations
 
     def __eq__(self, other) -> bool:
         if self.__class__ != other.__class__:
@@ -721,7 +731,7 @@ class MetaData:
             data[self.Key.columns.value].append(ds.to_dict())
 
         data[self.Key.annotations.value] = {}
-        for key, annotation in self.annotations.items():
+        for _, annotation in self.annotations.items():
             a_dict = annotation.to_dict()
             annotation_key = list(a_dict.keys())[0]
             if annotation_key in data[self.Key.annotations.value]:
@@ -762,17 +772,16 @@ class MetaData:
                 raise RuntimeError(f"{cls.__name__}.from_dict: could not"
                                    f" process column specification: {data_spec_dict} -- {e}")
 
-        annotations = {}
+        annotations = []
         for annotation_key, annotation_value in data[cls.Key.annotations.value].items():
             annotation = None
             if annotation_key == Annotation.Key.History.value:
                 annotation = History.from_dict(data={annotation_key: annotation_value})
             else:
                 annotation = Annotation.from_dict(data={annotation_key: annotation_value})
-            annotations[annotation_key] = annotation
+            annotations.append(annotation)
 
-        metadata = cls(columns=data_specs,
-                       annotations=annotations)
+        metadata = cls(columns=data_specs, annotations=annotations)
         return metadata
 
     @classmethod

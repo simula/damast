@@ -375,7 +375,7 @@ class DataProcessingPipeline(PipelineElement):
             input_specs = transformer.input_specs
             output_specs = transformer.output_specs
 
-            md = MetaData(columns=current_specs, annotations={})
+            md = MetaData(columns=current_specs, annotations=[])
             fulfillment = md.get_fulfillment(expected_specs=input_specs)
             if not fulfillment.is_met():
                 raise RuntimeError(f"{cls.__name__}.validate: Input requirements are not fulfilled. "
