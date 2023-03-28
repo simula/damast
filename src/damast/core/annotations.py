@@ -20,7 +20,7 @@ class Annotation:
     """
     Create an annotation
 
-    :param name: Name / Type of the annotation
+    :param name: Name / Type of the annotation (see also :class:`Key`)
     :param value: Value of the annotation
     """
 
@@ -59,10 +59,14 @@ class Annotation:
 
     def __eq__(self, other) -> bool:
         """
-        Override equality operator to consider equality based on properties only.
+        Check if two annotations are the same.
+
+        The two objects are considered equal if the other object is a :class:`Annotation`
+        is the same for both objects, and the  :py:attr:`name` and :py:attr:`value` of
+        the annotation is the same.
 
         :param other: Other object
-        :return: True if objects are consider same, otherwise False
+        :return: ``True`` if objects are consider same, otherwise ``False``
         """
         if self.__class__ != other.__class__:
             return False
@@ -75,13 +79,16 @@ class Annotation:
 
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self):
         """
         Create a dictionary to represent this object, e.g., to serialise the object.
 
         :return: dictionary
         """
-        return {self.name: self.value}
+        return dict(self)
+
+    def __iter__(self):
+        yield self.name, self.value
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Annotation:
@@ -115,12 +122,14 @@ class Annotation:
         if self.value is None or self.value == '':
             raise ValueError("Comment cannot be empty")
 
-# endregion
-
 
 class Change:
     """
     Representation of a change of data and metadata by transformation pipelines
+
+    :param title: A concise description of the change
+    :param description: A detailed description of the change
+    :param timestamp: A timestamp for when the change was mede
     """
     TIMESTAMP_FORMAT: ClassVar[str] = "%Y-%m-%d %H:%M:%S"
 
@@ -157,11 +166,12 @@ class Change:
         return True
 
     def to_dict(self):
-        return {
-            "title": self.title,
-            "timestamp": self.timestamp.strftime(self.TIMESTAMP_FORMAT),
-            "description": self.description
-        }
+        return dict(self)
+
+    def __iter__(self):
+        yield "title", self.title
+        yield "timestamp", self.timestamp.strftime(self.TIMESTAMP_FORMAT)
+        yield "description", self.description
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
@@ -198,10 +208,10 @@ class History(Annotation):
         self.changes.append(change)
 
     def to_dict(self) -> Dict[str, Any]:
-        changes = []
-        for c in self.changes:
-            changes.append(c.to_dict())
-        return {Annotation.Key.History.value: changes}
+        return dict(self)
+
+    def __iter__(self):
+        yield Annotation.Key.History.value, [dict(c) for c in self.changes]
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
