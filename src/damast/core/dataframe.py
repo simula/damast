@@ -219,14 +219,14 @@ class AnnotatedDataFrame:
         """
         df = vaex.open(filename)
         metadata = None
-        annotations = {}
+        annotations = []
         list_attrs = []
         list_columns = list(df.columns)
         if Path(filename).suffix in [".hdf5", ".h5"]:
             # Read metadata
             h5f = h5py.File(filename, 'r')
             for key in h5f[VAEX_HDF5_ROOT].attrs.keys():
-                annotations[key] = Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key])
+                annotations.append(Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key]))
 
             # Read attributes for columns
             for colname in list_columns:

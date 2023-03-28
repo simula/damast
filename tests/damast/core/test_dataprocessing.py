@@ -252,10 +252,10 @@ def test_access_decorator_info():
             return df
 
     assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_INPUT_SPECS) == \
-           DataSpecification.from_requirements(requirements=input_specs)
+        DataSpecification.from_requirements(requirements=input_specs)
 
     assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_OUTPUT_SPECS) == \
-           DataSpecification.from_requirements(requirements=output_specs)
+        DataSpecification.from_requirements(requirements=output_specs)
 
 
 def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, height_metadata, tmp_path):
@@ -269,7 +269,7 @@ def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, hei
 
     with pytest.raises(RuntimeError, match="ensure consistency"):
         invalid_adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
-                                       metadata=lat_lon_metadata)
+                                         metadata=lat_lon_metadata)
         invalid_adf._metadata = height_metadata
         pipeline.prepare(df=invalid_adf)
 

@@ -18,15 +18,12 @@ def metadata():
     column_spec = DataSpecification(name="height",
                                     category=DataCategory.STATIC,
                                     unit=units.m,
-                                    abbreviation="height", 
+                                    abbreviation="height",
                                     value_range=MinMax(min=0, max=40))
 
     license = Annotation(name=Annotation.Key.License, value="MIT License")
     comment = Annotation(name=Annotation.Key.Comment, value="test dataframe")
-    annotations = {
-        Annotation.Key.License.value: license,
-        Annotation.Key.Comment.value: comment
-    }
+    annotations = [license, comment]
 
     metadata = MetaData(columns=[column_spec], annotations=annotations)
     return metadata

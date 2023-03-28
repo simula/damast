@@ -11,7 +11,7 @@ from damast.core.metadata import (
     DataSpecification,
     MetaData,
     Status
-    )
+)
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -205,10 +205,7 @@ def test_metadata_read_write(tmp_path):
 
     annotation_history.add_change(annotation_change)
 
-    annotations = {
-        Annotation.Key.History.value: annotation_history,
-        Annotation.Key.Comment.value: annotation_comment
-    }
+    annotations = [annotation_history, annotation_comment]
 
     md = MetaData(columns=columns,
                   annotations=annotations)
@@ -219,3 +216,17 @@ def test_metadata_read_write(tmp_path):
 
     loaded_md = MetaData.load_yaml(filename=metadata_yaml)
     assert md == loaded_md
+
+
+def test_unique_annotations():
+
+    annotation = Annotation("Test123", 55)
+    annotation2 = Annotation(Annotation.Key.Comment, "This is a comment")
+    annotation3 = Annotation(Annotation.Key.Comment, "This is another comment")
+
+    ants = [annotation2, annotation, annotation3]
+    column_spec = DataSpecification(name="height")
+    with pytest.raises(ValueError, 
+                       match="Set of annotations in metadata has duplicate names") as _:
+        MetaData([column_spec], annotations=ants)
+    
