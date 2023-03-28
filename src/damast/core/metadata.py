@@ -486,23 +486,23 @@ class DataSpecification:
                                   f" but got '{df[column_name].dtype}'")
                     df[column_name].dtype = self.representation_type
 
-                if self.unit is not None:
-                    if column_name not in df.units:
-                        df.units[column_name] = self.unit
-                    else:
-                        if df.units[column_name] != self.unit:
-                            warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}:"
-                                          f" expected unit type: {self.unit},"
-                                          f" but got '{df.units[column_name]}'")
-                            df[column_name].dtype = self.unit
+            if self.unit is not None:
+                if column_name not in df.units:
+                    df.units[column_name] = self.unit
+                else:
+                    if df.units[column_name] != self.unit:
+                        warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}:"
+                                      f" expected unit type: {self.unit},"
+                                      f" but got '{df.units[column_name]}'")
+                        df[column_name].dtype = self.unit
 
-                if self.value_range:
-                    warnings.warn(f"Replacing values in {column_name} that are out of range.")
-                    mask = ~df[column_name].apply(self.value_range.is_in_range)
-                    df[column_name] = np.ma.masked_array(df[column_name].evaluate(),
-                                                         mask.evaluate(),
-                                                         dtype=self.representation_type)
-                return
+            if self.value_range:
+                warnings.warn(f"Replacing values in {column_name} that are out of range.")
+                mask = ~df[column_name].apply(self.value_range.is_in_range)
+                df[column_name] = np.ma.masked_array(df[column_name].evaluate(),
+                                                     mask.evaluate(),
+                                                     dtype=self.representation_type)
+            return
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
             self.representation_type = df[column_name].dtype

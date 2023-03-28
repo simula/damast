@@ -1,7 +1,9 @@
 import datetime
 
 import astropy.units as units
+import numpy as np
 import pytest
+import vaex
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
@@ -10,7 +12,8 @@ from damast.core.metadata import (
     DataCategory,
     DataSpecification,
     MetaData,
-    Status
+    Status,
+    ValidationMode
 )
 
 
@@ -226,7 +229,27 @@ def test_unique_annotations():
 
     ants = [annotation2, annotation, annotation3]
     column_spec = DataSpecification(name="height")
-    with pytest.raises(ValueError, 
+    with pytest.raises(ValueError,
                        match="Set of annotations in metadata has duplicate names") as _:
         MetaData([column_spec], annotations=ants)
-    
+
+
+def test_apply_update():
+
+    x_spec = DataSpecification(name="x",
+                                    category=DataCategory.STATIC,
+                                    value_range=MinMax(0, 3))
+    y_spec = DataSpecification(name="y",
+                                    category=DataCategory.DYNAMIC,
+                                    value_range=MinMax(8, 15))
+
+    metadata = MetaData([x_spec, y_spec])
+
+    df = vaex.from_arrays(x=np.arange(6), y=np.arange(6)+2)
+    valid_x = (df["x"].evaluate() <= 3) & (df["x"].evaluate() >= 0)
+    valid_y = (df["y"].evaluate() >= 8) & (df["y"].evaluate() <= 15)
+
+    metadata.apply(df, ValidationMode.UPDATE_DATA)
+
+    assert np.allclose(valid_x, ~df["x"].evaluate().mask)
+    assert np.allclose(valid_y, ~df["y"].evaluate().mask)
