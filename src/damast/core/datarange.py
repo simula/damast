@@ -69,7 +69,15 @@ class DataRange(ABC):
 
         :raise NotImplementedError: If method has not been implemented by a subclass
         """
-        raise NotImplementedError(f"{self.__class__.__name__}.to_dict not implemented")
+        return dict(self)
+
+    def __iter__(self):
+        """
+        Convert object to dictionary to allow plain type serialisation.
+
+        :raise NotImplementedError: If method has not been implemented by a subclass
+        """
+        raise NotImplementedError(f"{self.__class__.__name__}.__iter__ not implemented")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], dtype: Any = None) -> DataRange:
@@ -166,7 +174,10 @@ class ListOfValues:
 
         :return: dictionary
         """
-        return {self.__class__.__name__: self.values}
+        return dict(self)
+
+    def __iter__(self):
+        yield self.__class__.__name__, self.values
 
 
 class MinMax(DataRange):
@@ -277,7 +288,10 @@ class MinMax(DataRange):
 
         :return: dictionary
         """
-        return {self.__class__.__name__: {"min": self.min, "max": self.max}}
+        return dict(self)
+
+    def __iter__(self):
+        yield self.__class__.__name__, {"min": self.min, "max": self.max}
 
 
 class CyclicMinMax(MinMax):

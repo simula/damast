@@ -147,7 +147,7 @@ class AnnotatedDataFrame:
                                        f" required output '{column_name}' is not"
                                        f" present in the result dataframe")
                 else:
-                    self._metadata.columns.append(DataSpecification.from_dict(data=expected_data_spec.to_dict()))
+                    self._metadata.columns.append(DataSpecification.from_dict(data=dict(expected_data_spec)))
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
         """
@@ -176,7 +176,7 @@ class AnnotatedDataFrame:
             self.export_hdf5(filename)
 
             # Add metadata
-            metadata = self._metadata.to_dict()
+            metadata = dict(self._metadata)
             annotations = self._metadata.Key.annotations.value
             columns = self._metadata.Key.columns.value
             list_attrs = metadata[columns]
@@ -328,7 +328,7 @@ class AnnotatedDataFrame:
             adf = cls(dataframe=df,
                       metadata=metadata)
 
-            _log.info(f"Metadata: {metadata.to_dict()}")
+            _log.info(f"Metadata: {dict(metadata)}")
             _log.info(f"Saving dataframe into {output_filename}")
 
             adf.save(filename=output_filename)

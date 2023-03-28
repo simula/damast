@@ -310,41 +310,42 @@ class DataSpecification:
 
         :return: dictionary
         """
-        data: Dict[str, Any] = {}
-        data["name"] = self.name
+        return dict(self)
+
+    def __iter__(self):
+        yield "name", self.name
         if self.is_optional is not None:
-            data["is_optional"] = self.is_optional
+            yield "is_optional", self.is_optional
+
         if self.abbreviation is not None:
-            data["abbreviation"] = self.abbreviation
+            yield "abbreviation", self.abbreviation
 
         if self.category is not None:
-            data["category"] = self.category.value
+            yield "category", self.category.value
 
         if self.representation_type is not None:
             if inspect.isclass(self.representation_type):
-                data["representation_type"] = self.representation_type.__name__
+                yield "representation_type", self.representation_type.__name__
             elif isinstance(self.representation_type, DataType):
-                data["representation_type"] = self.representation_type.name
+                yield "representation_type", self.representation_type.name
             else:
-                raise TypeError(f"{self.__class__.__name__}.to_dict: failed to identify representation_type from"
+                raise TypeError(f"{self.__class__.__name__}.__iter__ failed to identify representation_type from"
                                 f" {self.representation_type}")
 
         if self.missing_value is not None:
-            data["missing_value"] = self.missing_value
+            yield "missing_value", self.missing_value
 
         if self.unit is not None:
-            data["unit"] = self.unit.to_string()
+            yield "unit", self.unit.to_string()
 
         if self.precision is not None:
-            data["precision"] = self.precision
+            yield "precision", self.precision
 
         if self.value_range is not None:
-            data["value_range"] = self.value_range.to_dict()
+            yield "value_range", dict(self.value_range)
 
         if self.value_meanings is not None:
-            data["value_meanings"] = self.value_meanings
-
-        return data
+            yield "value_meanings", self.value_meanings
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> DataSpecification:
@@ -705,7 +706,7 @@ class MetaData:
             unique_annotations = set([annotation.name for annotation in annotations])
             if len(unique_annotations) != len(annotations):
                 raise ValueError(f"{self.__class__.__name__}: Set of annotations in metadata has duplicate names " +
-                                 f"got {[an.to_dict() for an in annotations]}")
+                                 f"got {[dict(an) for an in annotations]}")
             self._annotations = {an.name: an for an in annotations}
 
     @property
@@ -725,21 +726,16 @@ class MetaData:
         return True
 
     def to_dict(self) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
-        data[self.Key.columns.value] = []
-        for ds in self.columns:
-            data[self.Key.columns.value].append(ds.to_dict())
+        return dict(self)
 
-        data[self.Key.annotations.value] = {}
-        for _, annotation in self.annotations.items():
-            a_dict = annotation.to_dict()
-            annotation_key = list(a_dict.keys())[0]
-            if annotation_key in data[self.Key.annotations.value]:
-                raise KeyError(f"{self.__class__.__name__}.to_dict: '{annotation_key}' is already present")
-            else:
-                data[self.Key.annotations.value][annotation_key] = a_dict[annotation_key]
-
-        return data
+    def __iter__(self):
+        columns = [dict(ds) for ds in self.columns]
+        yield self.Key.columns.value, columns
+        annotations = {}
+        for key, value in self.annotations.items():
+            assert key == value.name
+            annotations[key] = dict(value)[key]
+        yield "annotations", annotations
 
     def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
         hspace = ' ' * indent
@@ -748,7 +744,7 @@ class MetaData:
             repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
         for spec in self.columns:
-            spec_dict = spec.to_dict()
+            spec_dict = dict(spec)
             repr.append(hspace + default_indent + f"{spec_dict['name']}:")
             for field_name, value in spec_dict.items():
                 if field_name == "name":

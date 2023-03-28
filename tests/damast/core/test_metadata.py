@@ -102,7 +102,7 @@ def test_data_specification_read_write(name, category, is_optional,
                            value_range=value_range,
                            value_meanings=value_meanings)
 
-    ds_dict = ds.to_dict()
+    ds_dict = dict(ds)
     ds_yaml = tmp_path / "test_data_specification_read_write-ds.yaml"
     ds_yaml = "/tmp/test_data_specification_read_write-ds.yaml"
 
