@@ -12,8 +12,9 @@ import datetime
 
 from logging import getLogger
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
+import numpy as np
 import vaex
 
 from damast.data_handling.exploration import plot_lat_lon
@@ -22,10 +23,18 @@ from damast.data_handling.transformers.augmenters import (
 )
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import ComputeClosestAnchorage
-from damast.data_handling.transformers import AddUndefinedValue
+from damast.data_handling.transformers import (
+    AddUndefinedValue, 
+    RemoveValueRows, 
+    FilterWithin, 
+    DropMissing, 
+    AddTimestamp,
+    MultiplyValue,
+    ChangeTypeColumn
+)
 from damast.domains.maritime.transformers import AddVesselType
 
-from damast.data_handling.transformers.visualisers import PlotLatLon, PlotHistograms
+from damast.data_handling.transformers.visualisers import PlotLatLon
 from damast.core import DataProcessingPipeline, AnnotatedDataFrame
 from damast.domains.maritime.data_specification import ColumnName
 
@@ -36,182 +45,89 @@ _log = getLogger("damast")
 ParamsType = Dict[str, Any]
 
 
-def get_processed_data_spec(params: ParamsType) -> Dict[str, Any]:
-    processed_data_spec = params["outputs"]["processed"]
-    return processed_data_spec
+def get_outputs_dir(workdir: Union[str, Path]) -> Path:
+    return workdir / f"processed_data"
 
 
-def get_outputs_dir(params: ParamsType) -> Path:
-    workdir = Path(params["workdir"])
-    processed_data_spec = get_processed_data_spec(params=params)
-    return workdir / processed_data_spec["dir"]
+def get_plots_dir(workdir: Union[str, Path]) -> Path:
+    return workdir / f"plots"
 
 
-def get_plots_dir(params: ParamsType) -> Path:
-    outputs_dir = get_outputs_dir(params)
-    plots_dir = outputs_dir / f"{int(params['month']):02}"
-    return plots_dir
-
-
-def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFrame:
+def cleanse_and_sanitise(df: AnnotatedDataFrame,
+                         useless_columns: list,
+                         message_type_position: list,
+                         columns_default_values: dict,
+                         columns_compress_types: dict,
+                         workdir: Union[str, Path]) -> AnnotatedDataFrame:
     """
     Cleanse and sanitise the dataframe by adjusting the type and performing a cleanup.
 
     1. Keep only data from satellite, i.e. :code:`source != 'g'`
     2. Remove row which do not have a timestamp
-    3. Keep only Message Position Messages
+    3. Keep only Message Position Messages e.g. Message type = 2
+    4. Create a :code:`"timestamp"` field from date time UTC
+    5. Multiply SOG and COG by 10 to eliminate need for comma
+    6. Replace NaN/Na with default values as defined in  :code:`"columns_default_values"` 
+    7. Create new columns with new types using :code:`columns_compress_types`.
+       The new column is name from the original column name with "_newtype" as a suffix.
 
-        .. todo::
-
-            are there not distress signals part of the other messages?)
-
-    4. Create a :code:`"timestamp"` field
-    5. Remove 'useless_columns' as defined in params
-    6. Drop :code:`["columns"]["unused"]` as defined in params
-
-        .. todo::
-
-            What is the difference to :code:`useless_columns`
-    7. Multiply SOG and COG by 10 to eliminate need for comma
-
-        .. todo::
-
-            Why do we need to multiply by 10?
-    8. Replace NaN/Na with default values as defined in
-       :code:`["columns"]["constraints"][<col_name>]["default"]` in params
-    9. Set types via :code:`["columns"]["constraints"][<col_name>]["type"]` in params
-
-
-    .. todo::
-
-        * This should really be a Pipeline
-
-    .. note::
-
-        Very little computation is actually done inside this module, as we are using :py:mod:`vaex` for
-        lazy evaluation.
-
-    .. todo::
-
-        * Consider other message types
-        * Mark rows which contain invalid (out-of-spec data)
-
-    :param params: The parameters used for cleaning the data, giving parameter types and ranges
-    :param df: The input data
+    :param df: The input annotated dataframe
+    :param useless_columns: The list of column names to remove from the original annotated dataframe 
+    :param message_type_position: index (as a list) where the message type position can be found
+    :param columns_constraints: The list of column names and associated constraints
     :returns: The cleaned and santised data
     """
+    
+    pipeline = DataProcessingPipeline("Cleanse and sanitise data", workdir)
+ 
+    pipeline.add("Remove rows with ground as source", RemoveValueRows("g"),
+                 name_mappings={"x": ColumnName.MESSAGE_TYPE})
+    pipeline.add("Remove rows with null dates", DropMissing(),
+                 name_mappings={"x": ColumnName.DATE_TIME_UTC})
+    pipeline.add("Filter rows within message types", FilterWithin(message_type_position),
+                 name_mappings={"x": ColumnName.MESSAGE_TYPE})
+    pipeline.add("Add Timestamp column to each row", AddTimestamp(),
+                 name_mappings={"from": ColumnName.DATE_TIME_UTC, "to": ColumnName.TIMESTAMP})
 
-    # All logging headers
-    header = "[COMPRESSION][{action}]"
-    drop_hdr = header.format(action='DROP')
-    add_hdr = header.format(action="ADD")
-    fill_hdr = header.format(action="FILLNA")
-    type_hdr = header.format(action="TYPE")
+    pipeline.add("Multiply col with a float value", MultiplyValue(10.),
+                 name_mappings={"x": ColumnName.SPEED_OVER_GROUND})
+    
+    pipeline.add("Multiply col with a float value", MultiplyValue(10.),
+                 name_mappings={"x": ColumnName.COURSE_OVER_GROUND})
 
-    # 1. Keep only satellite data
-    df_1 = df[df.source == "g"]
+    for column in columns_default_values:
+        default_value = columns_default_values[column]
+        pipeline.add("Set default values", AddUndefinedValue(default_value),
+                 name_mappings={"x": column})
 
-    _log.info(f"{drop_hdr} The files contain {df.shape[0]} messages in total."
-              f"Only {df_1.shape[0]} come from satellite(s) and are kept")
+    for column in columns_compress_types:
+        new_type = columns_compress_types[column]
+        pipeline.add("Set default values", ChangeTypeColumn(new_type),
+                 name_mappings={"x": column, "y": f"{column}_{new_type}"})
 
-    # 2. Remove line where date is null
-    df_2 = df_1.dropmissing(column_names=[ColumnName.DATE_TIME_UTC])
-    _log.info(f"{drop_hdr} {df_1.shape[0] - df_2.shape[0]} lines have been dropped."
-              " They do not have a time stamp")
+    df = pipeline.transform(df)
 
-    # 3. Keep only the position message
-    df_3 = df_2[df_2.MessageType.isin(params["MessageTypePosition"])]
-    _log.info(f"{drop_hdr} {df_2.shape[0] - df_3.shape[0]} lines have been dropped."
-              " They are not of type position report")
-
-    # 4. Add "timestamp" field
-    def convert_to_datetime(date_string):
-        return int(datetime.datetime.strptime(
-            date_string, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H%M%S"))
-
-    df_3[ColumnName.TIMESTAMP] = df_3[ColumnName.DATE_TIME_UTC].apply(convert_to_datetime)
-    _log.info(f"{add_hdr} Column timestamps added")
-    df_3.drop(ColumnName.DATE_TIME_UTC, inplace=True)
-    # 5. Drop useless columns
-    useless_columns = params["columns"]["useless"]
-    df_3.drop(useless_columns, inplace=True)
-    _log.info(f"{drop_hdr} These columns have been removed: " + ', '.join(
-        useless_columns))
-
-    # 6. Drop unused columns
-    # TODO: what is the difference to useless_columns (?)
-    unused_columns = params["columns"]["unused"]
-    df_3.drop(unused_columns, inplace=True)
-    _log.info(f"{drop_hdr} These columns have been removed: " + ', '.join(unused_columns))
-
-    # 7. multiply columns in order to remove comma
-    # FIXME: Unclear why SOG and COG was multiplied by 10
-    df_3["SOG"] *= 10
-    df_3["COG"] *= 10
-
-    # 8. Fill empty value for then reduce the size thanks to the type
-    columns_constraints = params["columns"]["constraints"]
-    for column in columns_constraints:
-        constraints = columns_constraints[column]
-
-        if column not in df_3.column_names:
-            continue
-        if df_3[column].countnan() > 0:
-            if "default" in constraints.keys():
-                default_value = constraints["default"]
-                df_3[column].fillnan(default_value)
-                df_3[column].fillna(default_value)
-
-                _log.debug(f"{fill_hdr} The NaN values for {column} have been filled" +
-                           f" with {default_value} based on settings in params.yaml")
-            else:
-                _log.debug(f"{fill_hdr} {column} has NaN values,"
-                           f" but not default value is specified in params.yaml")
-        else:
-            _log.debug(f"{fill_hdr} No NaN values in {column} - nothing to do")
-
-    # 9. Reduction maximum des types
-    _log.info(f"{type_hdr} Updating columns type for: {columns_constraints.keys()}")
-
-    column_types = {}
-    for column in columns_constraints:
-        constraints = columns_constraints[column]
-        if column not in df_3.column_names:
-            continue
-        else:
-            if "type" in constraints.keys():
-                df_3[column] = df_3[column].astype(constraints["type"])
-                column_types[column] = constraints["type"]
-            else:
-                raise KeyError(f"Missing type information in params.yaml for column '{column}'")
-
-    _log.info(f"{type_hdr} The type of the columns have been modified"
-              f" to {column_types} as defined in params.yaml")
-    return df_3
+    return df
 
 
-def process_data(params: Dict[str, Any],
-                 df: AnnotatedDataFrame,
-                 workdir: Path):
+def process_data(df: AnnotatedDataFrame,
+                 workdir: Union[str, Path],
+                 vessel_type_hdf5: Union[str, Path],
+                 fishing_vessel_type_hdf5: Union[str, Path],
+                 anchorages_hdf5: Union[str, Path]) -> AnnotatedDataFrame:
     """
     Applies a specific AIS pipeline to an annotated dataframe.
     Saves the data to an `h5` and `yaml` file.
 
-    .. todo::
-
-        * Document what input params are actually needed
-
-    :param params: Document what we need from these
     :param df: The dataframe
     :param workdir: Path to directory of execution
+    :param vessel_type_hdf5: Path to HDF5 file containing vessel types
+    :param fishing_vessel_type_hdf5: Path to HDF5 file containing fishing vessel types
+    :param anchorages_hdf5: Path to HDF5 file containing anchorages' coordinates
+    :returns:  The processed dataframe, the file containing the pipeline state and HDF5 file contianing the saved dataframe.
     """
-    plots_dir = get_plots_dir(params=params)
+    plots_dir = get_plots_dir(workdir=workdir)
     plots_dir.mkdir(parents=True, exist_ok=True)
-
-    # Data Feature extraction and augmentation
-    vessel_type_hdf5 = params["inputs"]["vessel_types"]
-    fishing_vessel_type_hdf5 = params["inputs"]["fishing_vessel_types"]
-    anchorages_hdf5 = params["inputs"]["anchorages"]
 
     # Output an overview over the existing anchorages
     anchorages_data = vaex.open(anchorages_hdf5)
@@ -242,9 +158,6 @@ def process_data(params: Dict[str, Any],
                             filename_prefix="lat-lon-input"),
                  name_mappings={"LAT": ColumnName.LATITUDE,
                                 "LON": ColumnName.LONGITUDE})
-    pipeline.add("plot_input-histograms",
-                 PlotHistograms(output_dir=plots_dir,
-                                filename_prefix="histogram-input-data-"))
 
     pipeline.add("augment_vessel_type",
                  AddVesselType(dataset=vessel_type_csv,
@@ -278,6 +191,9 @@ def process_data(params: Dict[str, Any],
     df = pipeline.transform(df)
 
     # Get the setup for storing the processed data
-    output_dir = get_outputs_dir(params=params)
-    pipeline.state_write(output_dir / "pipeline.yaml")
-    df.save(filename=output_dir / f"{int(params['month']):02}.h5")
+    output_dir = get_outputs_dir(workdir=workdir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pipeline.state_write(output_dir / "process_data_pipeline.yaml")
+    df.save(filename=output_dir / "process_data.h5")
+
+    return df

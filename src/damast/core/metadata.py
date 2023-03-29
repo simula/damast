@@ -108,6 +108,15 @@ class ValidationMode(str, Enum):
     """Metadata should be updated to comply with the data"""
 
 
+class ValidationMode(str, Enum):
+    #: Metadata cannot be changed
+    READONLY = "READONLY"
+    #: Data should be updated to comply with the metadata
+    UPDATE_DATA = "UPDATE_DATA"
+    #: Metadata should be updated to comply with the data
+    UPDATE_METADATA = "UPDATE_METADATA"
+
+
 class DataSpecification:
     """
     Specification of a single column and/or dimension in a :class:`damast.core.dataframe.DataFrame`.
@@ -882,6 +891,22 @@ class MetaData:
                 )
 
         return "\n".join(repr)
+
+    def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
+        hspace = ' ' * indent
+        repr = [hspace + "Annotations:"]
+        for name, annotation in self.annotations.items():
+            repr.append(hspace + default_indent + f"{name}: {annotation.value}")
+
+        for spec in self.columns:
+            spec_dict = spec.to_dict()
+            repr.append(hspace + default_indent + f"{spec_dict['name']}:")
+            for field_name, value in spec_dict.items():
+                if field_name == "name":
+                    continue
+                repr.append(hspace + default_indent + default_indent + f"{field_name}: {value}")
+
+        return '\n'.join(repr)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> MetaData:
