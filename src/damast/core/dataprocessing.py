@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import copy
 import functools
+import importlib
 import inspect
-import pickle
 import re
+import tempfile
+
+import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -320,6 +323,35 @@ class PipelineElement(Transformer):
 
         return specs
 
+    @classmethod
+    def create_new(cls,
+                   module_name: str,
+                   class_name: str,
+                   name_mappings: Dict[str, Any] = {}):
+        if module_name is None:
+            raise ValueError(f"{cls.__name__}.create_new: missing 'module_name'")
+
+        if class_name is None:
+            raise KeyError(f"{cls.__name__}.create_new: missing 'class_name'")
+
+        p_module = importlib.import_module(module_name)
+        if hasattr(p_module, class_name):
+            klass = getattr(p_module, class_name)
+        else:
+            raise ImportError(f"{cls.__name__}.create_new: could not load '{class_name}' from '{p_module}'")
+
+        instance = klass()
+        instance._name_mappings = name_mappings
+        return instance
+
+    def __iter__(self):
+        yield "module_name", f"{self.__class__.__module__}"
+        yield "class_name", f"{self.__class__.__qualname__}"
+        yield "name_mappings", self.name_mappings
+
+    def __eq__(self, other):
+        return dict(self) == dict(other)
+
 
 class DataProcessingPipeline(PipelineElement):
     """
@@ -347,15 +379,33 @@ class DataProcessingPipeline(PipelineElement):
     #: Check if the pipeline is ready to be run
     is_ready: bool
     # The processing steps that define this pipeline
-    steps: List[Tuple[str, Transformer]]
+    steps: List[Tuple[str, PipelineElement]]
 
-    def __init__(self, name: str, base_dir: Union[str, Path]):
+    def __init__(self,
+                 name: str,
+                 base_dir: Union[str, Path] = None,
+                 steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = None
+                 ):
         self.name = name
+        if base_dir is None:
+            base_dir = tempfile.gettempdir()
+
         self.base_dir = Path(base_dir)
 
         self._output_specs = None
-
-        self.steps = []
+        if steps is None or len(steps) == 0:
+            self.steps = []
+        else:
+            name, instance = steps[0]
+            if isinstance(instance, PipelineElement):
+                self.steps = steps
+            elif isinstance(instance, dict):
+                self.steps = []
+                for step in steps:
+                    self.steps.append([step[0], PipelineElement.create_new(**step[1])])
+            else:
+                raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate PipelineElement"
+                                 f" from {type(steps[1])}")
         self.is_ready = False
 
     @property
@@ -473,11 +523,18 @@ class DataProcessingPipeline(PipelineElement):
         :param dir: directory where to save this pipeline
         """
         filename = dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
-        with open(filename, "wb") as f:
-            pickle.dump(self, f)
+        with open(filename, "w") as f:
+            yaml.dump(dict(self), f)
         return filename
 
-    def save_state(self, df: AnnotatedDataFrame, dir: Union[str, Path]) -> Path:
+    def __iter__(self):
+        yield "name", self.name
+        yield "base_dir", str(self.base_dir)
+        yield "steps", [[step_name, dict(pipeline_element)] for step_name, pipeline_element in self.steps]
+
+    def save_state(self,
+                   df: AnnotatedDataFrame,
+                   dir: Union[str, Path]) -> Path:
         """
         Save the processing pipeline
 
@@ -488,17 +545,20 @@ class DataProcessingPipeline(PipelineElement):
         return filename
 
     @classmethod
-    def load(cls, dir: Union[str, Path], name: str = "*") -> DataProcessingPipeline:
+    def load(cls, path: Union[str, Path], name: str = "*") -> DataProcessingPipeline:
         """
         Load a :class:`DataProcessingPipeline` from file (without suffix :attr:`DAMAST_PIPELINE_SUFFIX`)
 
-        :param dir: Directory containing pipeline(s).
+        :param path: Directory containing pipeline(s) (with fiven suffix) or pipeline filename
         :name: Name of file(s) without suffix. Can be a Regex expression
         """
         basename = f"{name}{DAMAST_PIPELINE_SUFFIX}"
-        dir = Path(dir)
+        path = Path(path)
+        if path.is_dir():
+            files = [x for x in path.glob(basename)]
+        elif path.is_file():
+            files = [path]
 
-        files = [x for x in dir.glob(basename)]
         if len(files) == 1:
             filename = files[0]
         elif len(files) == 0:
@@ -511,9 +571,10 @@ class DataProcessingPipeline(PipelineElement):
                 f" {','.join([x.name for x in files])}"
             )
 
-        with open(filename, "rb") as f:
-            pipeline: DataProcessingPipeline = pickle.load(f, fix_imports=True)
-        return pipeline
+        with open(filename, "r") as f:
+            data = yaml.load(f, Loader=yaml.SafeLoader)
+
+        return cls(data_dict=data)
 
     @classmethod
     def load_state(

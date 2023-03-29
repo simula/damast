@@ -308,6 +308,14 @@ class AnnotatedDataFrame:
         """
         self._dataframe[key] = value
 
+    def __len__(self) -> int:
+        """
+        Get the length of the (underlying) dataframe.
+
+        :return: Length of the dataframe
+        """
+        return len(self._dataframe)
+
     @classmethod
     def convert_csv_to_adf(
         cls,

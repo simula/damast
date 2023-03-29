@@ -1,10 +1,271 @@
+from __future__ import annotations
+
+import importlib
 import os
+import datetime
+import yaml
+import random
+import tempfile
+from logging import getLogger, Logger, basicConfig, INFO
 from pathlib import Path
-from typing import Union, Dict
+from typing import Union, Dict, List, Any, Sequence, NamedTuple
+
+import keras
+import numpy as np
+import vaex
+
+from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataprocessing import DataProcessingPipeline
+from damast.data_handling.accessors import GroupSequenceAccessor
+from damast.ml.models.base import ModelInstanceDescription, BaseModel
+
+basicConfig()
+_log: Logger = getLogger(__name__)
+
+__all__ = [
+    "Experiment",
+    "ForecastTask",
+    "LearningTask",
+    "ModelInstanceDescription"
+]
+
+
+class LearningTask:
+    """
+    Description of a trainable Learning Task.
+
+    This class can associate a processing pipeline with a set of model to train and evaluation.
+
+    :param pipeline: The processing / feature extraction pipeline
+    :param features: The features that this machine-learning model requires as input
+    :param targets: The output features aka targets that this machine-learning model provides
+    :param models: The actual model instances, i.e. model + parameters, that this learning
+           task shall comprise
+    """
+    pipeline: DataProcessingPipeline
+    features: List[str]
+    targets: List[str]
+
+    models: List[ModelInstanceDescription]
+
+    def __init__(self,
+                 pipeline: Union[Dict[str, Any], DataProcessingPipeline],
+                 features: List[str],
+                 models: List[Union[Dict[str, Any], ModelInstanceDescription]],
+                 targets: List[str] = None,
+                 ):
+        if isinstance(pipeline, DataProcessingPipeline):
+            self.pipeline = pipeline
+        elif isinstance(pipeline, dict):
+            self.pipeline = DataProcessingPipeline(**pipeline)
+        else:
+            raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate DataProcessingPipeline"
+                             f" from {type(pipeline)}")
+
+        self.features = features
+        if targets is None:
+            self.targets = self.features
+        else:
+            self.targets = targets
+
+        self.models = []
+        for m in models:
+            if isinstance(m, ModelInstanceDescription):
+                self.models.append(m)
+            elif isinstance(m, dict):
+                self.models.append(ModelInstanceDescription.from_dict(data=m))
+            else:
+                raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate ModelInstanceDescription"
+                                 f" from {type(m)}")
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]):
+        if "module_name" not in data:
+            raise KeyError(f"{cls.__name__}.create: missing 'module_name'")
+
+        if "class_name" not in data:
+            raise KeyError(f"{cls.__name__}.create: missing 'class_name'")
+
+        module_name = data["module_name"]
+        class_name = data["class_name"]
+
+        m_module = importlib.import_module(module_name)
+        if hasattr(m_module, class_name):
+            del data["module_name"]
+            del data["class_name"]
+
+            klass = getattr(m_module, class_name)
+            return klass(**data)
+
+        raise ValueError(f"{cls.__name__}.from_dict: could not find '{class_name}' in '{module_name}'")
+
+    def __iter__(self):
+        yield "module_name", self.__class__.__module__
+        yield "class_name", self.__class__.__qualname__
+
+        yield "pipeline", dict(self.pipeline)
+        yield "features", self.features
+        yield "targets", self.targets
+        yield "models", [dict(x) for x in self.models]
+
+    def __eq__(self, other) -> bool:
+        if type(self) != type(other):
+            return False
+
+        for attr in ["pipeline", "features", "targets", "models"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+
+
+class ForecastTask(LearningTask):
+    sequence_length: int
+    forecast_length: int
+    group_column: str
+
+    def __init__(self,
+                 pipeline: Union[Dict[str, Any], DataProcessingPipeline],
+                 group_column: str,
+                 features: List[str],
+                 sequence_length: int,
+                 forecast_length: int,
+                 models: List[Dict[str, Any], ModelInstanceDescription],
+                 targets: List[str] = None,
+                 ):
+        super().__init__(pipeline=pipeline,
+                         features=features,
+                         models=models,
+                         targets=targets)
+
+        self.group_column = group_column
+        self.sequence_length = sequence_length
+        self.forecast_length = forecast_length
+
+    def __eq__(self, other):
+        if type(self) != type(other):
+            return False
+
+        for attr in ["pipeline", "features", "targets", "models", "group_column", "sequence_length", "forecast_length"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+
+        return True
+
+    def __iter__(self):
+        for x in super().__iter__():
+            yield x
+
+        yield "group_column", self.group_column
+        yield "sequence_length", self.sequence_length
+        yield "forecast_length", self.forecast_length
 
 
 class Experiment:
     MARKER_FILE: str = ".damast_experiment"
+    TIMESTAMP_FORMAT: str = "%Y%m%d-%H%M%S"
+
+    learning_task: LearningTask
+
+    input_data: Path
+    output_directory: Path
+    label: str
+
+    _training_parameters: TrainingParameters
+    _batch_size: int
+    _split_data_ratios: List[float]
+
+    _timestamp: datetime.datetime
+
+    _trained_models: List[BaseModel]
+
+    class TrainingParameters(NamedTuple):
+        epochs: int = 10
+        steps_per_epoch: int = 10
+        validation_steps: int = 12
+        learning_rate: float = 0.1
+        loss_function: str = "mse"
+
+    def __init__(self,
+                 learning_task: Union[Dict[str, Any], LearningTask],
+                 input_data: Union[str, Path],
+                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
+                 output_directory: Union[str, Path] = tempfile.gettempdir(),
+                 batch_size: int = 2,
+                 split_data_ratios: List[float] = [1.6, 0.2, 0.2],
+                 label: str = "damast-ml-experiment",
+                 timestamp: Union[str, datetime.datetime] = datetime.datetime.utcnow()
+                 ):
+        """
+        The ratios of how to split (test, training, validation) data from the input dataset
+
+        :param learning_task_description: A description of the machine-learning model setup
+        :param batch_size: The batch-size
+        :param min_group_length: Minimal length of group to be considered for ML
+        :forecast_length: Number of rows in label (output)
+        :param output_directory: Path to direct output to
+        """
+        if isinstance(learning_task, LearningTask):
+            self.learning_task = learning_task
+        elif isinstance(learning_task, dict):
+            self.learning_task = LearningTask.from_dict(data=learning_task)
+        else:
+            raise ValueError(f"{self.__class__.__name__}.__init__: learning_task must be either"
+                             f"dict or LearningTask object")
+
+        self.input_data = Path(input_data)
+        self.output_directory = output_directory
+        self.label = label
+
+        if isinstance(training_parameters, Experiment.TrainingParameters):
+            self._training_parameters = training_parameters
+        elif isinstance(training_parameters, dict):
+            self._training_parameters = Experiment.TrainingParameters(**training_parameters)
+        else:
+            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either"
+                             f"dict or TrainingParameters object")
+
+        self._batch_size = batch_size
+        self._split_data_ratios = split_data_ratios
+        if isinstance(timestamp, str):
+            timestamp = datetime.datetime.strptime(timestamp, Experiment.TIMESTAMP_FORMAT)
+        self._timestamp = timestamp
+
+        self._trained_models = []
+
+    @classmethod
+    def from_file(cls,
+                  filename: Union[str, Path]) -> Experiment:
+        if not Path(filename).exists():
+            raise FileNotFoundError(f"{cls.__name__}.from_file: the given experiment description file"
+                                    f" does not exist: '{filename}'")
+
+        with open(filename, "r") as f:
+            data = yaml.load(f, Loader=yaml.SafeLoader)
+            return cls(**data)
+
+    def save(self,
+             filename: Union[str, Path]):
+        """
+        Save the experiment as yaml.
+
+        :param filename: Name of the file
+        """
+        with open(filename, "w") as f:
+            yaml.dump(dict(self), f)
+
+    @classmethod
+    def create_experiment_directory(cls,
+                                    base_dir: Union[str, Path],
+                                    label: str) -> Path:
+        """Create an experiment directory inside the output directory.
+
+        The created directory is prefixed with a time-stamp indicating when it was created.
+
+        """
+        prefix = datetime.datetime.utcnow().strftime(cls.TIMESTAMP_FORMAT)
+        experiment_dir = base_dir / f"{prefix}-{label}"
+        experiment_dir.mkdir(exist_ok=False, parents=True)
+        return experiment_dir
 
     @classmethod
     def validate_experiment_dir(cls, dir: Union[str, Path]) -> Path:
@@ -68,3 +329,228 @@ class Experiment:
 
         with open(path / cls.MARKER_FILE, "a") as f:
             pass
+
+    @classmethod
+    def compute_train_test_validate_groups(cls,
+                                           adf: AnnotatedDataFrame,
+                                           group: str,
+                                           ratios: List[float]) -> List[List[Any]]:
+        """
+        Given a :class:`damast.AnnotatedDataFrame` and a column name, split the dataframe into groups
+        based on the column name. The size of each group is determined by the ratio.
+
+        ..note::
+            This function does not modify anything in the incoming dataframe.
+
+        :param adf: The available data in the input data frame
+        :param group: In case this deals with timeseries / sequence data, the group will relate to multiple rows
+        :param ratios: Ratio between the train, test and validate dataset
+        """
+
+        normalized_rates = np.asarray([rate / sum(ratios) for rate in ratios])
+        groups = adf.dataframe[group].unique().copy()
+        random.shuffle(groups)
+        partition_sizes = np.asarray(
+            np.round(len(groups) * normalized_rates), dtype=int)
+        delta = len(groups) - sum(partition_sizes)
+        assert delta <= 1, f"|# of groups {len(groups)} - # of partitions {sum(partition_sizes)}| <= 1"
+        if delta == 1:
+            rand_idx = random.randint(0, len(partition_sizes) - 1)
+            partition_sizes[rand_idx] += 1
+        assert len(groups) == sum(partition_sizes)
+
+        from_idx = 0
+        partitions = []
+        for ps in partition_sizes:
+            to_idx = min(from_idx + ps, len(groups))
+            partitions.append(groups[from_idx:to_idx])
+            from_idx = to_idx
+        return partitions
+
+    def compute_features(self,
+                         adf: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Compute features for an experiment by running the designated pipeline on input dataframe.
+
+        .. note::
+            Stores the transformed data in the experiment directory.
+
+        :param adf: The input dataframe
+        """
+        adf_with_features = self.learning_task.pipeline.transform(adf)
+
+        self.learning_task.pipeline.save(dir=self.output_directory)
+        self.learning_task.pipeline.save_state(
+            df=adf_with_features,
+            dir=self.output_directory)
+        return adf_with_features
+
+    def create_generator(self,
+                         adf: AnnotatedDataFrame,
+                         group: str,
+                         group_ids: List[Any]) -> Sequence:
+        """
+        Create a generator applicable for :module:`keras` from the input data.
+
+        ..note::
+            This function is called whenever you want to train your models, i.e
+            :func:`Experiment.train`
+
+        :param adf: The input dataframe
+        :param group: Group to extract sequences from
+        :param group_ids: Groups used in the generator
+        :returns: A triplet of (train, test, validation) generators of the input features
+        """
+
+        sta = GroupSequenceAccessor(df=adf,
+                                    group_column=group)
+        if isinstance(self.learning_task, ForecastTask):
+            return sta.to_keras_generator(features=self.learning_task.features,
+                                          target=self.learning_task.features,
+                                          sequence_length=self.learning_task.sequence_length,
+                                          sequence_forecast=self.learning_task.forecast_length,
+                                          groups=group_ids,
+                                          batch_size=self._batch_size,
+                                          infinite=True)
+        else:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.create_generator: Sorry, but there is currently no support "
+                f"implemented for {self.learning_task.__class__.__name__}")
+
+    def train(self,
+              base_model: BaseModel,
+              train_generator: Sequence,
+              validate_generator: Sequence,
+              output_dir: Path,
+              epochs: int = 2,
+              steps_per_epoch: int = 10,
+              validation_steps: int = 12,
+              learning_rate: float = 0.1,
+              loss_function: str = "mse") -> Path:
+        """
+        Train a set of machine-learning models on given input data.
+
+        :param base_model: The model that should be trained
+        :param train_generator: Generator providing data from training set
+        :param validate_generator: Generator providing data from validation set
+        :param output_dir: Directory where the model training log, etc. should go
+        :param epochs: Number of epochs
+        :param steps_per_epoch: Steps per epoch
+        :param validation_steps: Number of validation steps
+        :param learning_rate: The learning rate for the Stochastic Gradient descent algorithm
+        :param loss_function: The loss function
+        """
+
+        # NOTE: This should probably be an individual step, as we could re-use an existing model to continue training
+        if isinstance(self.learning_task, ForecastTask):
+            model = base_model.model(output_dir=output_dir,
+                                     features=self.learning_task.features,
+                                     targets=self.learning_task.targets,
+                                     timeline_length=self.learning_task.sequence_length
+                                     )
+        else:
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.create_generator: Sorry, but there is currently no support "
+                f"implemented for {self.learning_task.__class__.__name__}")
+
+        model.build(loss_function=loss_function,
+                    optimizer=keras.optimizers.SGD(learning_rate=learning_rate))
+        # Train model
+        model.train(training_data=train_generator,
+                    validation_data=validate_generator,
+                    epochs=epochs,
+                    steps_per_epoch=steps_per_epoch,
+                    validation_steps=validation_steps)
+        model.save()
+        return model
+
+    def evaluate(self,
+                 test_generator: Sequence,
+                 steps: int = 1) -> vaex.DataFrame:
+
+        return Experiment.evaluate_models(models=self._trained_models,
+                                          test_generator=test_generator,
+                                          steps=steps)
+
+    @classmethod
+    def evaluate_models(cls,
+                        models: List[BaseModel],
+                        test_generator: Sequence,
+                        steps: int = 1) -> vaex.DataFrame:
+        """
+        Evaluate a list of trained models.
+
+        :param models: List of trained models
+        :param test_generator:  The generator providing access to the test data
+        :param steps: number of steps that should be used to test the models
+        :return: a dataframe containing a column 'evaluate' which contains the results
+        """
+        for model in models:
+            return model.evaluate(label="evaluate",
+                                  evaluation_data=test_generator,
+                                  steps=steps)
+
+    def run(self,
+            logging_level: int = INFO) -> vaex.DataFrame:
+
+        _log.setLevel(logging_level)
+
+        # Load data and validate it by loading it into the annotated dataframe
+        # We remove values that are outside the Min/Max value defined in the specification
+        adf = AnnotatedDataFrame.from_file(self.input_data)
+
+        group_column = self.learning_task.group_column
+        if group_column not in adf.column_names:
+            raise RuntimeError(f"{self.__class__.__name__}.run: no colum '{group_column}' in the given dataset "
+                               f"'{self.input_data}' -- found only '{','.join(adf.column_names)}'")
+
+        features = self.compute_features(adf)
+        train_group, test_group, validate_group = \
+            self.compute_train_test_validate_groups(features,
+                                                    group=group_column,
+                                                    ratios=self._split_data_ratios)
+
+        self._trained_models = []
+        for model_instance_description in self.learning_task.models:
+            # min_group_length and forecast_length should be given as input to experiment init
+            train_data_gen = self.create_generator(features,
+                                                   group=group_column,
+                                                   group_ids=train_group)
+            validate = self.create_generator(features,
+                                             group=group_column,
+                                             group_ids=validate_group)
+
+            experiment_dir = self.create_experiment_directory(base_dir=self.output_directory,
+                                                              label=self.label)
+
+            model = self.train(base_model=model_instance_description,
+                               train_generator=train_data_gen,
+                               validate_generator=validate,
+                               output_dir=experiment_dir,
+                               **self._training_parameters._asdict()
+                               )
+            self._trained_models.append(model)
+
+        # TODO: This should return a 'REPORT / PROTOCOL' of the whole experiment
+        test_data_gen = self.create_generator(features,
+                                              group=group_column,
+                                              group_ids=test_group)
+
+        val_dat = self.evaluate(test_generator=test_data_gen,
+                                steps=1)
+
+        self._timestamp = datetime.datetime.utcnow()
+        return val_dat
+
+    def __eq__(self, other):
+        return dict(self) == dict(other)
+
+    def __iter__(self):
+        yield "label", self.label
+        yield "input_data", str(self.input_data)
+        yield "output_directory", str(self.output_directory)
+        yield "learning_task", dict(self.learning_task)
+        yield "training_parameters", dict(self._training_parameters)
+        yield "batch_size", self._batch_size
+        yield "split_data_ratios", self._split_data_ratios
+        yield "timestamp", self._timestamp.strftime(self.TIMESTAMP_FORMAT)

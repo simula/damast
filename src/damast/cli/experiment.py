@@ -1,0 +1,37 @@
+from pathlib import Path
+from argparse import ArgumentParser
+
+from damast.cli.base import BaseParser
+from damast.ml.experiments import Experiment
+
+
+class ExperimentParser(BaseParser):
+    """
+    Argparser for handling experiments
+
+    :param parser: The base parser
+    """
+
+    def __init__(self, parser: ArgumentParser):
+        super().__init__(parser=parser)
+
+        parser.description = "damast experiment - allow to execute experiments"
+        parser.add_argument("-f", "--filename",
+                            help="Filename of the experiment that should be executed",
+                            required=True
+                            )
+        parser.add_argument("-o", "--output-dir", dest="output_dir",
+                            default=str(Path() / "output").resolve(),
+                            help="Absolute path to output folder",
+                            required=True)
+        parser.add_argument("--loglevel", dest="loglevel", type=int,
+                            default=10,
+                            help="Set loglevel to display")
+
+    def execute(self, args):
+        super().execute(args)
+
+        experiment = Experiment.from_file(args.filename)
+        experiment.output_directory = args.output_dir
+
+        experiment.run(logging_level=args.loglevel)

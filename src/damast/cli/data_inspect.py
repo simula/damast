@@ -7,7 +7,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 
 class DataInspectParser(BaseParser):
     """
-    Argparser for converting CSV files to AnnotatedDataframes (.h5 and .yml files)
+    Argparser for inspecting AnnotatedDataFrame encodes as .h5
 
     :param parser: The base parser
     """

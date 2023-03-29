@@ -1,8 +1,10 @@
+from __future__ import annotations
 import glob
+import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, Dict, List, Union, ClassVar, OrderedDict
+from typing import Any, Dict, List, Union, ClassVar, OrderedDict, NamedTuple
 
 import keras
 import pandas as pd
@@ -10,12 +12,12 @@ import vaex
 from vaex import DataFrame
 import tensorflow as tf
 
+from damast.core import DataSpecification
 
 __all__ = [
-    "BaseModel"
+    "BaseModel",
+    "ModelInstanceDescription"
 ]
-
-from damast.core import DataSpecification
 
 HISTORY_FILENAME = 'training-history.csv'
 CHECKPOINT_BEST = "checkpoint.best"
@@ -270,3 +272,39 @@ class BaseModel(ABC):
             result_df.to_csv(self.evaluation_file)
 
         return self.get_evaluations()
+
+
+class ModelInstanceDescription(NamedTuple):
+    """
+    Provide a description of a model instance to allow serialization.
+    """
+    model: BaseModel
+    parameters: Dict[str, str]
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> ModelInstanceDescription:
+        if "module_name" not in data:
+            raise ValueError(f"{cls.__name__}.from_dict: missing 'module' specification")
+        if "class_name" not in data:
+            raise ValueError(f"{cls.__name__}.from_dict: missing 'class' specification")
+
+        module_name = data["module_name"]
+        class_name = data["class_name"]
+
+        m_module = importlib.import_module(module_name)
+        if not hasattr(m_module, class_name):
+            raise ImportError(f"{cls.__name__}.from_dict: could not import '{class_name}' from '{m_module}'")
+
+        model = getattr(m_module, class_name)
+
+        parameters = {}
+        if "parameters" in data:
+            parameters = data["parameters"]
+
+        return ModelInstanceDescription(model=model,
+                                        parameters=parameters)
+
+    def __iter__(self):
+        yield "module_name", self.model.__module__
+        yield "class_name", self.model.__qualname__
+        yield "parameters", self.parameters

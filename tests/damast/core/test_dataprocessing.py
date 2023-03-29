@@ -420,3 +420,14 @@ def test_toplevel_decorators(tmp_path):
              transformer=TransformX(),
              name_mappings={"x": "status"})
     p.transform(df=adf)
+
+
+def test_io(tmp_path):
+    pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
+        .add("transform-a", TransformerA()) \
+        .add("transform-b", TransformerB()) \
+        .add("transform-c", TransformerC())
+
+    pipeline_file = pipeline.save(tmp_path)
+    loaded_pipeline = DataProcessingPipeline.load(pipeline_file)
+    print(loaded_pipeline)
