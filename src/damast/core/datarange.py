@@ -4,13 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 import vaex
 
-__all__ = [
-    "CyclicMinMax",
-    "DataElement",
-    "DataRange",
-    "ListOfValues",
-    "MinMax"
-]
+__all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 
 
 class DataElement:
@@ -98,6 +92,7 @@ class DataRange(ABC):
         klass, values = data.popitem()
         try:
             import damast.core.datarange
+
             datarange_subclass = getattr(damast.core.datarange, klass)
             return datarange_subclass.from_data(data=values, dtype=dtype)
         except AttributeError:
@@ -112,8 +107,7 @@ class ListOfValues:
     #: Values in this list
     values: List[Any]
 
-    def __init__(self,
-                 values: List[Any]):
+    def __init__(self, values: List[Any]):
         """
         Initialise ListOfValue
 
@@ -121,7 +115,9 @@ class ListOfValues:
         :raise ValueError: Raises if values is not a list.
         """
         if not isinstance(values, list):
-            raise ValueError(f"{self.__class__.__name__}.__init__: required list of values for initialisation")
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: required list of values for initialisation"
+            )
 
         self.values = values
 
@@ -150,9 +146,7 @@ class ListOfValues:
         return True
 
     @classmethod
-    def from_data(cls,
-                  data: List[Any],
-                  dtype: Any) -> ListOfValues:
+    def from_data(cls, data: List[Any], dtype: Any) -> ListOfValues:
         """
         Create an instance from data and given datatype (dtype)
 
@@ -164,8 +158,10 @@ class ListOfValues:
         if len(data) > 0 and dtype is not None:
             actual_dtype = type(data[0])
             if actual_dtype != dtype:
-                raise ValueError(f"{cls.__name__}.from_data: expected list of {dtype.__name__}, but received"
-                                 f" {actual_dtype}")
+                raise ValueError(
+                    f"{cls.__name__}.from_data: expected list of {dtype.__name__}, but received"
+                    f" {actual_dtype}"
+                )
         return cls(values=data)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -193,9 +189,7 @@ class MinMax(DataRange):
     #: Maximum / Upper Bound of range
     max: Any = None
 
-    def __init__(self,
-                 min: Any,
-                 max: Any):
+    def __init__(self, min: Any, max: Any):
         """
         Constructor
         """
@@ -221,9 +215,7 @@ class MinMax(DataRange):
             return self.min <= value <= self.max
 
     @classmethod
-    def from_data(cls,
-                  data: Dict[str, Any],
-                  dtype: Any) -> MinMax:
+    def from_data(cls, data: Dict[str, Any], dtype: Any) -> MinMax:
         """
         Load the MinMax range from the given dictionary specification
 
@@ -242,8 +234,10 @@ class MinMax(DataRange):
                 raise KeyError(f"{cls.__name__}.from_data: missing '{required_key}'")
 
         if dtype is not None:
-            return cls(min=DataElement.create(data["min"], dtype),
-                       max=DataElement.create(data["max"], dtype))
+            return cls(
+                min=DataElement.create(data["min"], dtype),
+                max=DataElement.create(data["max"], dtype),
+            )
 
         return cls(min=data["min"], max=data["max"])
 
@@ -298,4 +292,5 @@ class CyclicMinMax(MinMax):
     """
     Define a cyclic min max range
     """
+
     pass

@@ -19,9 +19,7 @@ from logging import getLogger, Logger, INFO
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .annotations import Annotation
 
-__all__ = [
-    "AnnotatedDataFrame", "replace_na"
-]
+__all__ = ["AnnotatedDataFrame", "replace_na"]
 
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
@@ -34,8 +32,8 @@ _log.setLevel(INFO)
 
 def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
     """
-    Replace :code:`Not Available` and :code:`Not a Number` with a mask, and convert to given :code:`dtype`.
-    This means that one later call :code:`df[column].fill_missing(...)` to replace values
+    Replace ``Not Available`` and ``Not a Number`` with a mask, and convert to given ``dtype``.
+    This means that one later call ``df[column].fill_missing(...)`` to replace values
 
     :param df: The dataframe to modify
     :param dtype: The datatype to convert the columns to
@@ -45,7 +43,9 @@ def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
         column_names = []
     for column in column_names:
         mask = df[column].isnan() or df[column].isna()
-        df[column] = np.ma.masked_array(df[column].evaluate(), mask.evaluate(), dtype=dtype)
+        df[column] = np.ma.masked_array(
+            df[column].evaluate(), mask.evaluate(), dtype=dtype
+        )
 
 
 class AnnotatedDataFrame:
@@ -54,9 +54,9 @@ class AnnotatedDataFrame:
 
     :param dataframe: The vaex dataframe holding the data
     :param metadata: The metadata for the dataframe
-    :param validation_mode: If UPDATE_DATA replace values outside of valid range (specified in :attr:`metadata`)
-        with missing value. If UPDATA_METADATA update the metadata according to the encountered values ELSE
-        READONLY will throw when encountering inconsistencies
+    :param validation_mode: If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of valid range (specified in :attr:`metadata`)
+        with missing value. If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
+        Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
     """
 
     #: Metadata associated with the dataframe
@@ -65,17 +65,23 @@ class AnnotatedDataFrame:
     #: The actual dataframe
     _dataframe: DataFrame
 
-    def __init__(self,
-                 dataframe: DataFrame,
-                 metadata: MetaData,
-                 validation_mode: ValidationMode = ValidationMode.READONLY):
+    def __init__(
+        self,
+        dataframe: DataFrame,
+        metadata: MetaData,
+        validation_mode: ValidationMode = ValidationMode.READONLY,
+    ):
         if not isinstance(dataframe, DataFrame):
-            raise ValueError(f"{self.__class__.__name__}.__init__: dataframe must be"
-                             f" of type 'DataFrame', but was '{type(dataframe)}")
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: dataframe must be"
+                f" of type 'DataFrame', but was '{type(dataframe)}"
+            )
 
         if not isinstance(metadata, MetaData):
-            raise ValueError(f"{self.__class__.__name__}.__init__: metadata must be"
-                             f" of type 'MetaData', but was '{type(metadata)}")
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: metadata must be"
+                f" of type 'MetaData', but was '{type(metadata)}"
+            )
 
         self._dataframe = dataframe
         self._metadata = metadata
@@ -89,7 +95,7 @@ class AnnotatedDataFrame:
         Allows to access the underlying dataframe directly.
 
         .. note::
-            AnnotatedDataFrame behaves like a vaex.DataFrame, so typically you will not need to access the
+            AnnotatedDataFrame behaves like a ``vaex.DataFrame``, so typically you will not need to access the
             dataframe through this property.
 
         :return: The underlying dataframe
@@ -100,7 +106,9 @@ class AnnotatedDataFrame:
     def metadata(self):
         return self._metadata
 
-    def validate_metadata(self, validation_mode: ValidationMode = ValidationMode.READONLY) -> None:
+    def validate_metadata(
+        self, validation_mode: ValidationMode = ValidationMode.READONLY
+    ) -> None:
         """
         Validate this annotated dataframe and ensure that data and spec match.
 
@@ -121,7 +129,9 @@ class AnnotatedDataFrame:
 
         return False
 
-    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> MetaData.Fulfillment:
+    def get_fulfillment(
+        self, expected_specs: List[DataSpecification]
+    ) -> MetaData.Fulfillment:
         """
         Get the :class:`MetaData.Fulfillment` with respect to the given expected specification.
 
@@ -130,8 +140,7 @@ class AnnotatedDataFrame:
         """
         return self._metadata.get_fulfillment(expected_specs=expected_specs)
 
-    def update(self,
-               expectations: List[DataSpecification]):
+    def update(self, expectations: List[DataSpecification]):
         """
         Update the metadata based on a set of validated expectations.
 
@@ -143,11 +152,15 @@ class AnnotatedDataFrame:
                 # Column name description is not yet part of the metadata
                 # Verify that is it part of the data frame
                 if column_name not in self._dataframe.column_names:
-                    raise RuntimeError(f"{self.__class__.__name__}.update:"
-                                       f" required output '{column_name}' is not"
-                                       f" present in the result dataframe")
+                    raise RuntimeError(
+                        f"{self.__class__.__name__}.update:"
+                        f" required output '{column_name}' is not"
+                        f" present in the result dataframe"
+                    )
                 else:
-                    self._metadata.columns.append(DataSpecification.from_dict(data=dict(expected_data_spec)))
+                    self._metadata.columns.append(
+                        DataSpecification.from_dict(data=dict(expected_data_spec))
+                    )
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
         """
@@ -183,21 +196,27 @@ class AnnotatedDataFrame:
             dict_annotations = metadata[annotations]
             list_columns = list(self.columns)
 
-            h5f = h5py.File(filename, 'r+')
+            h5f = h5py.File(filename, "r+")
             # Add annotations to main group
             for key in dict_annotations.keys():
-                if (key in h5f[VAEX_HDF5_ROOT].attrs.keys() and
-                        h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]):
-                    raise RuntimeError(f"{self.__class__.__name__}.save:"
-                                       f" attribute '{key}' present"
-                                       f" in vaex dataframe but different from user-defined")
+                if (
+                    key in h5f[VAEX_HDF5_ROOT].attrs.keys()
+                    and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
+                ):
+                    raise RuntimeError(
+                        f"{self.__class__.__name__}.save:"
+                        f" attribute '{key}' present"
+                        f" in vaex dataframe but different from user-defined"
+                    )
                 else:
                     h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
 
             # Add attributes for columns
             for attrs in list_attrs:
-                if (DataSpecification.Key.name.value in attrs.keys() and
-                        attrs[DataSpecification.Key.name.value] in list_columns):
+                if (
+                    DataSpecification.Key.name.value in attrs.keys()
+                    and attrs[DataSpecification.Key.name.value] in list_columns
+                ):
                     group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
                     if group_name in h5f:
                         for key in attrs.keys():
@@ -224,9 +243,11 @@ class AnnotatedDataFrame:
         list_columns = list(df.columns)
         if Path(filename).suffix in [".hdf5", ".h5"]:
             # Read metadata
-            h5f = h5py.File(filename, 'r')
+            h5f = h5py.File(filename, "r")
             for key in h5f[VAEX_HDF5_ROOT].attrs.keys():
-                annotations.append(Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key]))
+                annotations.append(
+                    Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key])
+                )
 
             # Read attributes for columns
             for colname in list_columns:
@@ -249,9 +270,11 @@ class AnnotatedDataFrame:
                 metadata = MetaData.load_yaml(filename=metadata_filename)
             else:
                 # metadata missing
-                raise RuntimeError(f"{cls.__name__}.from_file:"
-                                   f" metadata is missing in '{filename}'"
-                                   f" and needs to be added")
+                raise RuntimeError(
+                    f"{cls.__name__}.from_file:"
+                    f" metadata is missing in '{filename}'"
+                    f" and needs to be added"
+                )
 
         if not metadata:
             metadata = MetaData(columns=list_attrs, annotations=annotations)
@@ -285,14 +308,15 @@ class AnnotatedDataFrame:
         self._dataframe[key] = value
 
     @classmethod
-    def convert_csv_to_adf(cls,
-                           csv_filenames: List[Union[Path, str]],
-                           metadata_filename: Union[Path, str],
-                           output_filename: Union[Path, str],
-                           validation_mode: ValidationMode = ValidationMode.READONLY,
-                           progress: Callable[[float], None] = None,
-                           csv_sep: str = ";"
-                           ):
+    def convert_csv_to_adf(
+        cls,
+        csv_filenames: List[Union[Path, str]],
+        metadata_filename: Union[Path, str],
+        output_filename: Union[Path, str],
+        validation_mode: ValidationMode = ValidationMode.READONLY,
+        progress: Callable[[float], None] = None,
+        csv_sep: str = ";",
+    ):
         """
         Convert a csv file toa an annotated dataframe
 
@@ -310,23 +334,21 @@ class AnnotatedDataFrame:
                 gc.collect()
 
                 tmp_hdf5 = Path(tmpdirname) / f"{Path(filename).stem}.hdf5"
-                df = vaex.from_csv(filename,
-                                   convert=str(tmp_hdf5),
-                                   progress=progress,
-                                   sep=csv_sep)
+                df = vaex.from_csv(
+                    filename, convert=str(tmp_hdf5), progress=progress, sep=csv_sep
+                )
 
                 # validate the data
-                AnnotatedDataFrame(metadata=metadata,
-                                   dataframe=df,
-                                   validation_mode=validation_mode)
+                AnnotatedDataFrame(
+                    metadata=metadata, dataframe=df, validation_mode=validation_mode
+                )
 
                 hdf_filenames.append(str(tmp_hdf5))
 
             _log.info(f"Concatenating files: {hdf_filenames}")
             df = vaex.concat([vaex.open(x) for x in hdf_filenames])
 
-            adf = cls(dataframe=df,
-                      metadata=metadata)
+            adf = cls(dataframe=df, metadata=metadata)
 
             _log.info(f"Metadata: {dict(metadata)}")
             _log.info(f"Saving dataframe into {output_filename}")

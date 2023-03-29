@@ -2,20 +2,22 @@
 Module to collect the classes to define meta data
 """
 from __future__ import annotations
-import warnings
+
+import ast
 import builtins
 import inspect
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import vaex
 import yaml
-import ast
 from vaex.datatype import DataType
 
 from .annotations import Annotation, History
-from .datarange import DataRange, MinMax, DataElement
+from .datarange import DataElement, DataRange, MinMax
 from .formatting import DEFAULT_INDENT
 from .units import Unit, unit_registry, units
 
@@ -24,20 +26,33 @@ __all__ = [
     "DataCategory",
     "DataSpecification",
     "MetaData",
-    "Status"
+    "Status",
+    "ValidationMode",
 ]
 
 
 class DataCategory(str, Enum):
     """
+    Specification of what state a data-set is in (static or dynamic)
     """
+
     DYNAMIC = "dynamic"
+    """Data-category is dynamic"""
+
     STATIC = "static"
+    """Data-category is static"""
 
 
 class Status(str, Enum):
+    """
+    Denoting if :class:`DataSpecification` adheres to :class:`DataSpecification.Fulfillment`
+    """
+
     OK = "OK"
+    """Data-specification is fulfilled"""
+
     FAIL = "FAIL"
+    """Data-specification is not adhered to"""
 
 
 class ArtifactSpecification:
@@ -45,7 +60,7 @@ class ArtifactSpecification:
     Specification of a (file) artifact that might be generated during data processing.
 
     :param requirements: Dictionary describing expected path artifacts, key is a descriptor,
-                         value an absolute path or a relative path (pattern)
+        value an absolute path or a relative path (pattern)
     """
 
     #: Dictionary mapping an artifact description to a file glob pattern
@@ -58,51 +73,61 @@ class ArtifactSpecification:
         """
         Validate the list of artifacts.
 
-        :param base_dir: Relative paths/patterns will be interpreted with base_dir as current working directory
+        :param base_dir: Relative paths/patterns will be interpreted with ``base_dir`` as current working directory
         :raise RuntimeError: When a matching file could not be found
         """
         for name, path_pattern in self.artifacts.items():
             a_path = Path(path_pattern)
             if a_path.is_absolute():
                 if not a_path.exists():
-                    raise RuntimeError(f"{self.__class__.__name__}.validate: artifact '{a_path}' is "
-                                       "missing")
+                    raise RuntimeError(
+                        f"{self.__class__.__name__}.validate: artifact '{a_path}' is "
+                        "missing"
+                    )
             else:
                 files = [x for x in Path(base_dir).glob(path_pattern)]
                 if len(files) == 0:
-                    raise RuntimeError(f"{self.__class__.__name__}.validate: no artifact matching "
-                                       f" {path_pattern} found in '{base_dir}'")
+                    raise RuntimeError(
+                        f"{self.__class__.__name__}.validate: no artifact matching "
+                        f" {path_pattern} found in '{base_dir}'"
+                    )
 
 
 class ValidationMode(str, Enum):
-    #: Metadata cannot be changed
+    """
+    Specification of how to apply meta-data to :class:`DataFrame`
+    """
+
     READONLY = "READONLY"
-    #: Data should be updated to comply with the metadata
+    """Metadata cannot be changed"""
+
     UPDATE_DATA = "UPDATE_DATA"
-    #: Metadata should be updated to comply with the data
+    """Data should be updated to comply with the metadata"""
+
     UPDATE_METADATA = "UPDATE_METADATA"
+    """Metadata should be updated to comply with the data"""
 
 
 class DataSpecification:
     """
-    Specification of a single column and/or dimension in a dataframe.
-
-    .. todo::
-
-        Document inputs
+    Specification of a single column and/or dimension in a :class:`damast.core.dataframe.DataFrame`.
 
     :param name: Name of the element
-    :param category: Category
-    :param is_optional:
-    :param abbreviation:
-    :param representation_type:
-    :param missing_value:
-    :param unit:
-    :param precision:
-    :param range:
+    :param category: A :class:`DataCategory` element
+    :param is_optional: If column is optional
+    :param abbreviation: Abbreviation of name
+    :param representation_type: The underlying representation type for this data element
+    :param missing_value: The representation of a missing value for this data element
+    :param unit: The (physical) unit of this data element
+    :param precision: The precision of this data element
+    :param range: The allowed data range, which remains as ``None`` if unrestricted
     """
 
     class Key(str, Enum):
+        """
+        Valid inputs to a :class:`DataSpecification`
+        """
+
         name = "name"
         description = "description"
         category = "category"
@@ -117,6 +142,10 @@ class DataSpecification:
         value_meanings = "value_meanings"
 
     class Fulfillment:
+        """
+        Base-class used for specific fulfillments
+        """
+
         # Would use Key here, but the concept for that is not yet ironed out in Python
         status: Dict[Enum, Dict[str, Union[Status, str]]]
 
@@ -124,9 +153,16 @@ class DataSpecification:
             self.status = {}
 
         def is_met(self) -> bool:
+            """Check if fulfillment is met
+
+            :raises KeyError: If `self.status` does not have the key ``"status"``
+            :return: ``True`` if fulfillment is met, else ``False``.
+            """
             for k, v in self.status.items():
                 if "status" not in v:
-                    raise KeyError(f"{self.__class__.__name__}: internal error. Status misses key 'status'")
+                    raise KeyError(
+                        f"{self.__class__.__name__}: internal error. Status misses key 'status'"
+                    )
 
                 if v["status"] == Status.FAIL:
                     return False
@@ -135,8 +171,8 @@ class DataSpecification:
         def __repr__(self):
             status = {}
             for k, v in self.status.items():
-                msg = v['status'].value
-                if 'message' in v:
+                msg = v["status"].value
+                if "message" in v:
                     msg += f" {v['message']}"
                 status[k.value] = msg
 
@@ -153,8 +189,7 @@ class DataSpecification:
         missing_column: str
         known_columns: List[str]
 
-        def __init__(self, missing_column: str = None,
-                     known_columns: List[str] = None):
+        def __init__(self, missing_column: str = None, known_columns: List[str] = None):
             super().__init__()
 
             self.missing_column = missing_column
@@ -198,25 +233,28 @@ class DataSpecification:
     #: a mapping from the value to a human-readable descriptor
     value_meanings: Optional[Dict[Any, str]] = None
 
-    def __init__(self,
-                 name: str,
-                 description: Optional[str] = None,
-                 category: Optional[Union[str, DataCategory]] = None,
-                 is_optional: bool = False,
-                 abbreviation: Optional[str] = None,
-                 representation_type: Any = None,
-                 missing_value: Any = None,
-                 unit: Optional[Unit] = None,
-                 precision: Any = None,
-                 value_range: Optional[DataRange] = None,
-                 value_meanings: Optional[Dict[Any, str]] = None):
+    def __init__(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        category: Optional[Union[str, DataCategory]] = None,
+        is_optional: bool = False,
+        abbreviation: Optional[str] = None,
+        representation_type: Any = None,
+        missing_value: Any = None,
+        unit: Optional[Unit] = None,
+        precision: Any = None,
+        value_range: Optional[DataRange] = None,
+        value_meanings: Optional[Dict[Any, str]] = None,
+    ):
         """
         Constructor
         """
 
         if name is None:
-            raise ValueError(f"{self.__class__.__name__}.__init__: "
-                             f"name cannot be None")
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: " f"name cannot be None"
+            )
 
         self.name = name
         if isinstance(category, str):
@@ -225,7 +263,7 @@ class DataSpecification:
             self.category = category
 
         self.is_optional = is_optional
-        if abbreviation is not None and abbreviation != '':
+        if abbreviation is not None and abbreviation != "":
             self.abbreviation = abbreviation
 
         self.representation_type = representation_type
@@ -256,17 +294,21 @@ class DataSpecification:
         """
         Validate the data specification
 
-        :raises ValueError: If the spec is not valid, raises ValueError with details
+        :raises ValueError: If the specification is invalid
         """
         if self.value_meanings and not self.value_range:
-            raise ValueError(f"{self.__class__.__name__}.__init__: "
-                             f" value meanings requires value range to be set")
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: "
+                f" value meanings requires value range to be set"
+            )
 
         if self.value_meanings:
             for k, v in self.value_meanings.items():
                 if k not in self.value_range:
-                    raise ValueError(f"{self.__class__.__name__}.validate: "
-                                     " value {k} is not in the defined value range")
+                    raise ValueError(
+                        f"{self.__class__.__name__}.validate: "
+                        " value {k} is not in the defined value range"
+                    )
 
     @classmethod
     def resolve_representation_type(cls, type_name: str) -> Any:
@@ -281,7 +323,7 @@ class DataSpecification:
 
         :param type_name: Name of the type
         :return: Instance of the type object
-        :raise ValueError: Raises if type_name cannot be resolved to a known type (in builtins or vaex)
+        :raise ValueError: Raises if ``type_name`` cannot be resolved to a known type (in builtins or :mod:`vaex`)
         """
         exceptions: List[Any] = []
         try:
@@ -299,14 +341,16 @@ class DataSpecification:
         except TypeError as e:
             exceptions.append(e)
 
-        raise ValueError(f"{cls.__name__}.resolve_representation_type: "
-                         f" could not find type '{type_name}'."
-                         f"It does not exist in builtins, nor "
-                         f" is this a known vaex.dtype -- {exceptions}")
+        raise ValueError(
+            f"{cls.__name__}.resolve_representation_type: "
+            f" could not find type '{type_name}'."
+            f"It does not exist in builtins, nor "
+            f" is this a known vaex.dtype -- {exceptions}"
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        Create a dictionary to represent MetaData.
+        Create a dictionary to represent the meta-data of the data-specification.
 
         :return: dictionary
         """
@@ -329,8 +373,10 @@ class DataSpecification:
             elif isinstance(self.representation_type, DataType):
                 yield "representation_type", self.representation_type.name
             else:
-                raise TypeError(f"{self.__class__.__name__}.__iter__ failed to identify representation_type from"
-                                f" {self.representation_type}")
+                raise TypeError(
+                    f"{self.__class__.__name__}.__iter__ failed to identify representation_type from"
+                    f" {self.representation_type}"
+                )
 
         if self.missing_value is not None:
             yield "missing_value", self.missing_value
@@ -367,8 +413,9 @@ class DataSpecification:
         if cls.Key.abbreviation.value in data:
             abbreviation = data[cls.Key.abbreviation.value]
             if not isinstance(abbreviation, str):
-                raise TypeError(f"{cls.__name__}.from_dict: "
-                                f"abbreviation must be of type 'str'")
+                raise TypeError(
+                    f"{cls.__name__}.from_dict: " f"abbreviation must be of type 'str'"
+                )
 
         data_category = None
         if cls.Key.category.value in data:
@@ -376,17 +423,25 @@ class DataSpecification:
             if not isinstance(data_category, DataCategory):
                 data_category = DataCategory(data_category)
 
-        spec = cls(name=data[cls.Key.name],
-                   category=data_category,
-                   is_optional=bool(data[cls.Key.is_optional]),
-                   abbreviation=abbreviation)
+        spec = cls(
+            name=data[cls.Key.name],
+            category=data_category,
+            is_optional=bool(data[cls.Key.is_optional]),
+            abbreviation=abbreviation,
+        )
 
         if cls.Key.representation_type.value in data:
-            spec.representation_type = cls.resolve_representation_type(data[cls.Key.representation_type.value])
+            spec.representation_type = cls.resolve_representation_type(
+                data[cls.Key.representation_type.value]
+            )
             if cls.Key.missing_value.value in data:
-                spec.missing_value = DataElement.create(data[cls.Key.missing_value.value], spec.representation_type)
+                spec.missing_value = DataElement.create(
+                    data[cls.Key.missing_value.value], spec.representation_type
+                )
             if cls.Key.precision.value in data:
-                spec.precision = DataElement.create(data[cls.Key.precision.value], spec.representation_type)
+                spec.precision = DataElement.create(
+                    data[cls.Key.precision.value], spec.representation_type
+                )
         else:
             # Missing representation type, missing value and precision will not be loaded
             pass
@@ -403,8 +458,10 @@ class DataSpecification:
             elif isinstance(unit_value, Unit):
                 unit = unit_value
             else:
-                raise RuntimeError(f"{cls.__name__}.from_dict: cannot interprete unit type "
-                                   f"'{type(unit_value)}")
+                raise RuntimeError(
+                    f"{cls.__name__}.from_dict: cannot interprete unit type "
+                    f"'{type(unit_value)}"
+                )
 
             spec.unit = unit
 
@@ -415,7 +472,9 @@ class DataSpecification:
             else:
                 if isinstance(value_range, str):
                     value_range = ast.literal_eval(value_range)
-                spec.value_range = DataRange.from_dict(value_range, dtype=spec.representation_type)
+                spec.value_range = DataRange.from_dict(
+                    value_range, dtype=spec.representation_type
+                )
 
             if cls.Key.value_meanings.value in data:
                 spec.value_meanings = data[cls.Key.value_meanings.value]
@@ -423,8 +482,7 @@ class DataSpecification:
         return spec
 
     @classmethod
-    def to_str(cls, specs: List[DataSpecification],
-               indent_level=0):
+    def to_str(cls, specs: List[DataSpecification], indent_level=0):
         """
         Generate string representation for list of specs
 
@@ -443,24 +501,26 @@ class DataSpecification:
             data += "\n"
         return data
 
-    def apply(self,
-              df: vaex.DataFrame,
-              column_name: str,
-              validation_mode: ValidationMode):
+    def apply(
+        self, df: vaex.DataFrame, column_name: str, validation_mode: ValidationMode
+    ):
         """
         Apply the metadata object to the dataframe
-        :param df: Dataframe that should be associated with the metadata
-        :param column_name: name of the column that need to be validated/checked
-        :param validation_mode: Mode which shall apply to updating either data or metadata,
-            when encountering inconsistencies
+
+        :param df: Dataframe that should be associated with the data-specification
+        :param column_name: Name of the column that need to be validated/checked
+        :param validation_mode: Mode which shall apply to updating either data or
+            metadata, when encountering inconsistencies
         """
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
             if self.representation_type is not None:
                 if df[column_name].dtype != self.representation_type:
-                    raise ValueError(f"{self.__class__.__name__}.apply: column '{column_name}':"
-                                     f" expected representation type: {self.representation_type},"
-                                     f" but got '{df[column_name].dtype}'")
+                    raise ValueError(
+                        f"{self.__class__.__name__}.apply: column '{column_name}':"
+                        f" expected representation type: {self.representation_type},"
+                        f" but got '{df[column_name].dtype}'"
+                    )
 
             if self.unit is not None:
                 if column_name not in df.units:
@@ -471,19 +531,25 @@ class DataSpecification:
             if self.value_range:
                 min_value, max_value = df.minmax(column_name)
                 if not self.value_range.is_in_range(min_value):
-                    raise ValueError(f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
-                                     f" lies outside of range {self.value_range}")
+                    raise ValueError(
+                        f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
+                        f" lies outside of range {self.value_range}"
+                    )
                 if not self.value_range.is_in_range(max_value):
-                    raise ValueError(f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
-                                     f" lies outside of range {self.value_range}")
+                    raise ValueError(
+                        f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
+                        f" lies outside of range {self.value_range}"
+                    )
             return
 
         if validation_mode == ValidationMode.UPDATE_DATA:
             if self.representation_type is not None:
                 if df[column_name].dtype != self.representation_type:
-                    warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}':"
-                                  f" expected representation type: {self.representation_type},"
-                                  f" but got '{df[column_name].dtype}'")
+                    warnings.warn(
+                        f"{self.__class__.__name__}.apply: column '{column_name}':"
+                        f" expected representation type: {self.representation_type},"
+                        f" but got '{df[column_name].dtype}'"
+                    )
                     df[column_name].dtype = self.representation_type
 
             if self.unit is not None:
@@ -491,17 +557,23 @@ class DataSpecification:
                     df.units[column_name] = self.unit
                 else:
                     if df.units[column_name] != self.unit:
-                        warnings.warn(f"{self.__class__.__name__}.apply: column '{column_name}:"
-                                      f" expected unit type: {self.unit},"
-                                      f" but got '{df.units[column_name]}'")
+                        warnings.warn(
+                            f"{self.__class__.__name__}.apply: column '{column_name}:"
+                            f" expected unit type: {self.unit},"
+                            f" but got '{df.units[column_name]}'"
+                        )
                         df[column_name].dtype = self.unit
 
             if self.value_range:
-                warnings.warn(f"Replacing values in {column_name} that are out of range.")
+                warnings.warn(
+                    f"Replacing values in {column_name} that are out of range."
+                )
                 mask = ~df[column_name].apply(self.value_range.is_in_range)
-                df[column_name] = np.ma.masked_array(df[column_name].evaluate(),
-                                                     mask.evaluate(),
-                                                     dtype=self.representation_type)
+                df[column_name] = np.ma.masked_array(
+                    df[column_name].evaluate(),
+                    mask.evaluate(),
+                    dtype=self.representation_type,
+                )
             return
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
@@ -516,7 +588,9 @@ class DataSpecification:
                     if isinstance(self.value_range, MinMax):
                         self.value_range.merge(MinMax(min_value, max_value))
                 else:
-                    warnings.warn(f"Setting MinMax range ({min_value}, {max_value}) for {column_name}")
+                    warnings.warn(
+                        f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
+                    )
                     self.value_range = MinMax(min_value, max_value)
             except ValueError:
                 # Type might not be numeric
@@ -539,32 +613,38 @@ class DataSpecification:
             if key == DataSpecification.Key.precision:
                 if self.precision is not None:
                     if data_spec.precision is None:
-                        fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': "column has no precision defined"}
+                        fulfillment.status[key] = {
+                            "status": Status.FAIL,
+                            "message": "column has no precision defined",
+                        }
                     elif self.precision < data_spec.precision:
-                        fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': "'data has insufficient precision: "
-                                                              f" required '{self.precision}',"
-                                                              f" available '#{data_spec.precision}'"}
+                        fulfillment.status[key] = {
+                            "status": Status.FAIL,
+                            "message": "'data has insufficient precision: "
+                            f" required '{self.precision}',"
+                            f" available '#{data_spec.precision}'",
+                        }
                     else:
-                        fulfillment.status[key] = {'status': Status.OK}
+                        fulfillment.status[key] = {"status": Status.OK}
             else:
                 expected_value = getattr(self, key.value)
                 if expected_value is not None:
                     spec_value = getattr(data_spec, key.name)
                     if spec_value is None:
-                        fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': f"Expected '{spec_value=}' == '{expected_value=}'"
-                                                   }
+                        fulfillment.status[key] = {
+                            "status": Status.FAIL,
+                            "message": f"Expected '{spec_value=}' == '{expected_value=}'",
+                        }
                         continue
 
                     if expected_value != spec_value:
-                        fulfillment.status[key] = {'status': Status.FAIL,
-                                                   'message': f"Expected '{spec_value=}' == '{expected_value=}'"
-                                                   }
+                        fulfillment.status[key] = {
+                            "status": Status.FAIL,
+                            "message": f"Expected '{spec_value=}' == '{expected_value=}'",
+                        }
                         continue
 
-                    fulfillment.status[key] = {'status': Status.OK}
+                    fulfillment.status[key] = {"status": Status.OK}
         return fulfillment
 
     @classmethod
@@ -589,11 +669,19 @@ class DataSpecification:
             required_specs.append(required_spec)
         return required_specs
 
-    def merge(self,
-              other: DataSpecification) -> DataSpecification:
+    def merge(self, other: DataSpecification) -> DataSpecification:
+        """Merge the current data-specification and one input specification
+        into a single :class:`DataSpecification` object.
 
+        :param other: The other data-specification
+        :raises ValueError: If :attr:`DataSpecification.name` differs between the two specs.
+        :raises ValueError: If the data-specifications have overlapping attributes, that have distinct non-``None``
+            values, the function throws an error.
+        """
         if self.name != other.name:
-            raise ValueError(f"{self.__class__.__name__}.merge: cannot merge specs with different name property")
+            raise ValueError(
+                f"{self.__class__.__name__}.merge: cannot merge specs with different name property"
+            )
 
         ds = DataSpecification(name=self.name)
         for key in self.Key:
@@ -612,14 +700,23 @@ class DataSpecification:
             else:
                 raise ValueError(
                     f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
-                    f" on self: '{this_value}' vs. other: '{other_value}'")
+                    f" on self: '{this_value}' vs. other: '{other_value}'"
+                )
         return ds
 
     @classmethod
-    def merge_lists(cls,
-                    a_specs: List[DataSpecification],
-                    b_specs: List[DataSpecification]) -> List[DataSpecification]:
+    def merge_lists(
+        cls, a_specs: List[DataSpecification], b_specs: List[DataSpecification]
+    ) -> List[DataSpecification]:
+        """
+        Merge two lists of data-specifications into a single list.
 
+        If a :class:`DataSpecification` in ``a_specs`` has the same :attr:`DataSpecification.name`
+        as one in ``b_specs``, the specs are merged using :func:`merge`.
+
+        :param a_specs: First list of specs
+        :param b_specs: Second list of specs
+        """
         result_specs: List[DataSpecification] = []
 
         b_column_dict = {x.name: x for x in b_specs}
@@ -647,35 +744,55 @@ class DataSpecification:
 
 class MetaData:
     """
-    The representation for metadata associated which can be associated with a single dataset.
+    The representation for metadata that can be associated with a :class:`DataFrame`.
 
     :param columns: (Ordered) list of column specifications
     :param annotations:  List of annotations for this dataframe.
 
-    ..note::
+    .. note::
         Each annotation is assumed to have a unique :attr:`Annotation.name`.
     """
 
     class Key(str, Enum):
-        columns = 'columns'
-        annotations = 'annotations'
+        """
+        The two allowed objects in the :class:`MetaData` and their string representation.
+        This is used for the dictionary representation :func:`MetaData.to_dict`, :func:`MetaData.__iter__`,
+        :func:`MetaData.from_dict`.
+        """
+
+        columns = "columns"
+        annotations = "annotations"
 
     class Fulfillment:
+        """
+        A class containing all fulfillments (set of :class:`DataSpecification.Fulfillment`), where a fulfillment describes whether a constraint on a column holds or not, added to :class:`MetaData`
+        """
+
         column_fulfillments: Dict[str, DataSpecification.Fulfillment]
 
         def __init__(self):
             self.column_fulfillments = {}
 
         def is_met(self) -> bool:
+            """Check if all fulfillments in the set of data-specifications are met."""
             for k, v in self.column_fulfillments.items():
                 if not v.is_met():
                     return False
             return True
 
-        def add_fulfillment(self,
-                            column_name: str,
-                            fulfillment: DataSpecification.Fulfillment) -> None:
+        def add_fulfillment(
+            self, column_name: str, fulfillment: DataSpecification.Fulfillment
+        ) -> None:
+            """Add fulfillment to a given column.
 
+            .. note::
+                This function replaces any old fulfillment set on this column.
+                Use :func:`DataSpecification.merge` to combine the existing spec
+                and new spec prior to calling this function
+
+            :param column_name: Name of column
+            :param fulfillment: Fulfillment object
+            """
             assert isinstance(fulfillment, DataSpecification.Fulfillment)
             self.column_fulfillments[column_name] = fulfillment
 
@@ -693,10 +810,11 @@ class MetaData:
     #: Dictionary containing all annotations
     _annotations: Dict[str, Annotation]
 
-    def __init__(self,
-                 columns: List[DataSpecification],
-                 annotations: Optional[List[Annotation]] = None):
-
+    def __init__(
+        self,
+        columns: List[DataSpecification],
+        annotations: Optional[List[Annotation]] = None,
+    ):
         assert isinstance(columns, list)
         self.columns = columns
         if annotations is None:
@@ -705,8 +823,10 @@ class MetaData:
             assert isinstance(annotations, list)
             unique_annotations = set([annotation.name for annotation in annotations])
             if len(unique_annotations) != len(annotations):
-                raise ValueError(f"{self.__class__.__name__}: Set of annotations in metadata has duplicate names " +
-                                 f"got {[dict(an) for an in annotations]}")
+                raise ValueError(
+                    f"{self.__class__.__name__}: Set of annotations in metadata has duplicate names "
+                    + f"got {[dict(an) for an in annotations]}"
+                )
             self._annotations = {an.name: an for an in annotations}
 
     @property
@@ -714,6 +834,14 @@ class MetaData:
         return self._annotations
 
     def __eq__(self, other) -> bool:
+        """
+        Check if the current meta-data object is equal to another.
+
+        .. note::
+            This function considers two :class:`MetaData` objects
+            with the same columns and annotations (but in different order)
+            as different objects
+        """
         if self.__class__ != other.__class__:
             return False
 
@@ -737,8 +865,8 @@ class MetaData:
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
 
-    def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
-        hspace = ' ' * indent
+    def to_str(self, indent: int = 0, default_indent: str = " " * 4) -> str:
+        hspace = " " * indent
         repr = [hspace + "Annotations:"]
         for name, annotation in self.annotations.items():
             repr.append(hspace + default_indent + f"{name}: {annotation.value}")
@@ -749,15 +877,38 @@ class MetaData:
             for field_name, value in spec_dict.items():
                 if field_name == "name":
                     continue
-                repr.append(hspace + default_indent + default_indent + f"{field_name}: {value}")
+                repr.append(
+                    hspace + default_indent + default_indent + f"{field_name}: {value}"
+                )
 
-        return '\n'.join(repr)
+        return "\n".join(repr)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> MetaData:
+        """
+        Create a :class:`MetaData` object by parsing a dictionary
+
+        .. note::
+            This function ignores all keys but those defined in :attr:`MetaData.Key`.
+            These keys are required to generate the object from a dictionary.
+
+        The items corresponding to the key :attr:`MetaData.Key.columns`
+        should be a list of :class:`DataSpecification` compatible dictionaries.
+        See :func:`DataSpecification.from_dict` for more information about those requirements.
+
+        The items corresponding to :attr:`MetaData.Key.annotations` should be a dictionary of
+        either :class:`damast.core.Annotation` compatible dictionaries (see :func:`damast.core.Annotation.from_dict`)
+        or :class:`damast.core.History` compatible dictionaries (see :func:`damast.core.History.from_dict`)
+
+        :param data: Input dictionary
+        :raises KeyError: If missing required keys
+        :raises RuntimeError: If data-specification dictionaries not compatible
+        """
         for key in [cls.Key.annotations.value, cls.Key.columns.value]:
             if key not in data:
-                raise KeyError(f"{cls.__name__}.from_dict: Missing {key} key in MetaData")
+                raise KeyError(
+                    f"{cls.__name__}.from_dict: Missing {key} key in MetaData"
+                )
 
         data_specs = []
         for data_spec_dict in data[cls.Key.columns.value]:
@@ -765,8 +916,10 @@ class MetaData:
                 data_specification = DataSpecification.from_dict(data=data_spec_dict)
                 data_specs.append(data_specification)
             except Exception as e:
-                raise RuntimeError(f"{cls.__name__}.from_dict: could not"
-                                   f" process column specification: {data_spec_dict} -- {e}")
+                raise RuntimeError(
+                    f"{cls.__name__}.from_dict: could not"
+                    f" process column specification: {data_spec_dict} -- {e}"
+                )
 
         annotations = []
         for annotation_key, annotation_value in data[cls.Key.annotations.value].items():
@@ -774,7 +927,9 @@ class MetaData:
             if annotation_key == Annotation.Key.History.value:
                 annotation = History.from_dict(data={annotation_key: annotation_value})
             else:
-                annotation = Annotation.from_dict(data={annotation_key: annotation_value})
+                annotation = Annotation.from_dict(
+                    data={annotation_key: annotation_value}
+                )
             annotations.append(annotation)
 
         metadata = cls(columns=data_specs, annotations=annotations)
@@ -782,10 +937,22 @@ class MetaData:
 
     @classmethod
     def load_yaml(cls, filename: Union[str, Path]) -> MetaData:
+        """
+        Load history from a `yaml` file.
+
+        .. note::
+            It is assumed that the input file follows a structure that is read in as
+            a dictionary compatible with :func:`from_dict`.
+
+        :param filename: The input file
+        :raises FileNotFoundError: If file does not exist
+        :return: A MetaData object
+        """
         yaml_path = Path(filename)
         if not yaml_path.exists():
-            raise FileNotFoundError(f"{cls.__name__}.load_yaml: file "
-                                    f" '{filename}' does not exist")
+            raise FileNotFoundError(
+                f"{cls.__name__}.load_yaml: file " f" '{filename}' does not exist"
+            )
 
         with open(yaml_path, "r") as f:
             md_dict = yaml.load(f, Loader=yaml.SafeLoader)
@@ -803,56 +970,72 @@ class MetaData:
             # the dictionary has been constructed
             yaml.dump(self.to_dict(), f, sort_keys=False)
 
-    def apply(self, df: vaex.DataFrame, validation_mode: ValidationMode = ValidationMode.READONLY):
-        """Check that each column in the :func:`vaex.DataFrame` fulfills the
+    def apply(
+        self,
+        df: vaex.DataFrame,
+        validation_mode: ValidationMode = ValidationMode.READONLY,
+    ):
+        """Check that each column in the :class:`vaex.DataFrame` fulfills the
         data-specifications.
 
         :param df: The dataframe
         :param validation_mode: If a column does not comply to the spec, force the spec, e.g.,
             for a given range specification, map data within range.
-
         :raises: ValueError: If data-frame is missing a column in the Data-specification
         """
         assert isinstance(df, vaex.DataFrame)
 
         for column_spec in self.columns:
             if column_spec.name in df.column_names:
-                column_spec.apply(df=df, column_name=column_spec.name, validation_mode=validation_mode)
+                column_spec.apply(
+                    df=df, column_name=column_spec.name, validation_mode=validation_mode
+                )
             else:
-                raise ValueError(f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
-                                 f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}")
+                raise ValueError(
+                    f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
+                    f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}"
+                )
 
-    def __contains__(self, column_name):
+    def __contains__(self, column_name: str):
+        """"""
         for colum_spec in self.columns:
             if colum_spec.name == column_name:
                 return True
         return False
 
-    def __getitem__(self, column_name: str):
+    def __getitem__(self, column_name: str) -> DataSpecification:
+        """
+        Get a data-specification by its column name
+        """
         for column_spec in self.columns:
             if column_spec.name == column_name:
                 return column_spec
 
-        raise KeyError(f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'")
+        raise KeyError(
+            f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'"
+        )
 
     def get_fulfillment(self, expected_specs: List[DataSpecification]) -> Fulfillment:
         """
         Get the fulfillment of the metadata with represent to the given data specification
 
         :param expected_specs: A list of data specifications
-        :return:
+        :return: The fullfillment object
         """
         md_fulfillment = MetaData.Fulfillment()
 
         for expected_spec in expected_specs:
             if expected_spec.name in self:
                 fulfillment = expected_spec.get_fulfillment(self[expected_spec.name])
-                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
-                                               fulfillment=fulfillment)
+                md_fulfillment.add_fulfillment(
+                    column_name=expected_spec.name, fulfillment=fulfillment
+                )
             else:
-                md_fulfillment.add_fulfillment(column_name=expected_spec.name,
-                                               fulfillment=DataSpecification.MissingColumn(
-                                                   missing_column=expected_spec.name,
-                                                   known_columns=[x.name for x in self.columns]
-                                               ))
+                md_fulfillment.add_fulfillment(
+                    column_name=expected_spec.name,
+                    fulfillment=DataSpecification.MissingColumn(
+                        missing_column=expected_spec.name,
+                        known_columns=[x.name for x in self.columns],
+                    ),
+                )
         return md_fulfillment
