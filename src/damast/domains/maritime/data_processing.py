@@ -88,7 +88,7 @@ def cleanse_and_sanitise(params: ParamsType, df: vaex.DataFrame) -> vaex.DataFra
 
     .. note::
 
-        Very little computation is actually done inside this module, as we are using :module:`vaex` for
+        Very little computation is actually done inside this module, as we are using :py:mod:`vaex` for
         lazy evaluation.
 
     .. todo::

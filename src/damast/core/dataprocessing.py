@@ -28,17 +28,31 @@ __all__ = [
     "DECORATED_DESCRIPTION",
     "DECORATED_INPUT_SPECS",
     "DECORATED_OUTPUT_SPECS",
-    "PipelineElement"
+    "PipelineElement",
 ]
 
-DECORATED_DESCRIPTION = '_damast_description'
 
-DECORATED_ARTIFACT_SPECS = '_damast_artifact_specs'
-DECORATED_INPUT_SPECS = '_damast_input_specs'
-DECORATED_OUTPUT_SPECS = '_damast_output_specs'
+DECORATED_DESCRIPTION = "_damast_description"
+"""Attribute description for :func:`describe`"""
+
+
+DECORATED_ARTIFACT_SPECS = "_damast_artifact_specs"
+"""Attribute description for :func:`artifacts`"""
+
+
+DECORATED_INPUT_SPECS = "_damast_input_specs"
+"""Attribute description for :func:`input`"""
+
+DECORATED_OUTPUT_SPECS = "_damast_output_specs"
+"""Attribute description for :func:`output`"""
 
 DAMAST_PIPELINE_SUFFIX: str = ".damast.ppl"
+"""Suffix of :class:`DataProcessingPipeline` files created in :func:`DataProcessingPipeline.save`
+and used by :func:`DataProcessingPipeline.load`"""
+
 VAEX_STATE_SUFFIX: str = ".vaex-state.json"
+"""Suffix of :class:`DataProcessingPipeline` files created in :func:`DataProcessingPipeline.save_state`
+and used by :func:`DataProcessingPipeline.load_state`"""
 
 
 def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
@@ -67,7 +81,7 @@ def describe(description: str):
     """
     Specify the description for the transformation for the decorated function.
 
-    The decorated function must return :class:`AnnotatedDataFrame`.
+    The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
 
     :param description: description of the action
     """
@@ -83,12 +97,14 @@ def input(requirements: Dict[str, Any]):
     """
     Specify the input for the decorated function.
 
-    The decorated function must return :class:`AnnotatedDataFrame`.
+    The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
 
     :param requirements: List of input requirements
     """
 
-    required_input_specs = DataSpecification.from_requirements(requirements=requirements)
+    required_input_specs = DataSpecification.from_requirements(
+        requirements=requirements
+    )
 
     def decorator(func):
         setattr(func, DECORATED_INPUT_SPECS, required_input_specs)
@@ -102,8 +118,9 @@ def input(requirements: Dict[str, Any]):
             if fulfillment.is_met():
                 return func(*args, **kwargs)
             else:
-                raise RuntimeError("Input requirements are not fulfilled:"
-                                   f" -- {fulfillment}")
+                raise RuntimeError(
+                    "Input requirements are not fulfilled:" f" -- {fulfillment}"
+                )
 
         return check
 
@@ -114,16 +131,20 @@ def output(requirements: Dict[str, Any]):
     """
     Specify the output for the decorated function.
 
-    The decorated function must return :class:`AnnotatedDataFrame`.
+    The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
 
     :param requirements: List of input requirements
     """
-    required_output_specs = DataSpecification.from_requirements(requirements=requirements)
+    required_output_specs = DataSpecification.from_requirements(
+        requirements=requirements
+    )
 
     def decorator(func):
         return_type = inspect.signature(func).return_annotation
         if return_type != AnnotatedDataFrame:
-            raise RuntimeError("output: decorator requires 'AnnotatedDataFrame' to be returned by function")
+            raise RuntimeError(
+                "output: decorator requires 'AnnotatedDataFrame' to be returned by function"
+            )
 
         setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
 
@@ -136,16 +157,22 @@ def output(requirements: Dict[str, Any]):
 
             adf: AnnotatedDataFrame = func(*args, **kwargs)
             if adf is None:
-                raise RuntimeError(f"output: decorated function {func} must return 'AnnotatedDataFrame',"
-                                   f" but was 'None'")
+                raise RuntimeError(
+                    f"output: decorated function {func} must return 'AnnotatedDataFrame',"
+                    f" but was 'None'"
+                )
             elif not isinstance(adf, AnnotatedDataFrame):
-                raise RuntimeError(f"output: decorated function {func} must return 'AnnotatedDataFrame', but was '"
-                                   f"{type(adf)}")
+                raise RuntimeError(
+                    f"output: decorated function {func} must return 'AnnotatedDataFrame', but was '"
+                    f"{type(adf)}"
+                )
 
             for c in input_columns:
                 if c not in adf._dataframe.column_names:
-                    raise RuntimeError(f"output: column '{c}' was removed by decorated function."
-                                       f" Only adding of columns is permitted.")
+                    raise RuntimeError(
+                        f"output: column '{c}' was removed by decorated function."
+                        f" Only adding of columns is permitted."
+                    )
 
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
@@ -163,7 +190,7 @@ def artifacts(requirements: Dict[str, Any]):
     """
     Specify the output for the decorated function.
 
-    The decorated function must return :class:`AnnotatedDataFrame`.
+    The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
 
     :param requirements: List of input requirements
     """
@@ -172,30 +199,42 @@ def artifacts(requirements: Dict[str, Any]):
     def decorator(func):
         return_type = inspect.signature(func).return_annotation
         if return_type != AnnotatedDataFrame:
-            raise RuntimeError("artifacts: decorator requires 'AnnotatedDataFrame' to be returned by function")
+            raise RuntimeError(
+                "artifacts: decorator requires 'AnnotatedDataFrame' to be returned by function"
+            )
 
         setattr(func, DECORATED_ARTIFACT_SPECS, required_artifact_specs)
 
         # When a pipeline does generate artifacts, then it might not provide any output, but serves only as
         # passthrough element. Hence, per default set an empty output spec if there is none.
         if not hasattr(func, DECORATED_OUTPUT_SPECS):
-            setattr(func, DECORATED_OUTPUT_SPECS, DataSpecification.from_requirements(requirements={}))
+            setattr(
+                func,
+                DECORATED_OUTPUT_SPECS,
+                DataSpecification.from_requirements(requirements={}),
+            )
 
         @functools.wraps(func)
         def check(*args, **kwargs) -> AnnotatedDataFrame:
             result = func(*args, **kwargs)
 
             if not isinstance(args[0], PipelineElement):
-                raise RuntimeError(f"{args[0].__class__.__name__} must inherit from PipelineElement")
+                raise RuntimeError(
+                    f"{args[0].__class__.__name__} must inherit from PipelineElement"
+                )
 
             # Validate the spec with respect to the existing parent pipeline
             try:
                 instance = args[0]
-                required_artifact_specs.validate(base_dir=instance.parent_pipeline.base_dir)
+                required_artifact_specs.validate(
+                    base_dir=instance.parent_pipeline.base_dir
+                )
             except RuntimeError as e:
-                raise RuntimeError(f"artifacts: {func} is expected to generate an artifact. "
-                                   f" Pipeline element ran as part of pipeline: '{instance.parent_pipeline.name}'"
-                                   f" -- {e}")
+                raise RuntimeError(
+                    f"artifacts: {func} is expected to generate an artifact. "
+                    f" Pipeline element ran as part of pipeline: '{instance.parent_pipeline.name}'"
+                    f" -- {e}"
+                )
 
             return result
 
@@ -242,8 +281,8 @@ class PipelineElement(Transformer):
 
         # Allow to use patterns, so that an existing input
         # reference can be reused for dynamic labelling
-        while re.match('{{\\w}}', name):
-            for match in re.finditer('{{\\w}}', name):
+        while re.match("{{\\w}}", name):
+            for match in re.finditer("{{\\w}}", name):
                 resolved_name = match.group()[2:-2]
                 if resolved_name in self.name_mappings:
                     resolved_name = self.name_mappings[resolved_name]
@@ -256,7 +295,8 @@ class PipelineElement(Transformer):
         if not hasattr(self.transform, DECORATED_INPUT_SPECS):
             raise AttributeError(
                 f"{self.__class__.__name__}.validate: missing input specification"
-                f" for processing step '{self.__class__.__name__}'")
+                f" for processing step '{self.__class__.__name__}'"
+            )
 
         generic_spec = getattr(self.transform, DECORATED_INPUT_SPECS)
         specs = copy.deepcopy(generic_spec)
@@ -270,7 +310,8 @@ class PipelineElement(Transformer):
         if not hasattr(self.transform, DECORATED_OUTPUT_SPECS):
             raise AttributeError(
                 f"{self.__class__.__name__}.validate: missing output specification"
-                f" for processing step '{self.__class__.__name__}'")
+                f" for processing step '{self.__class__.__name__}'"
+            )
 
         generic_spec = getattr(self.transform, DECORATED_OUTPUT_SPECS)
         specs = copy.deepcopy(generic_spec)
@@ -308,9 +349,7 @@ class DataProcessingPipeline(PipelineElement):
     # The processing steps that define this pipeline
     steps: List[Tuple[str, Transformer]]
 
-    def __init__(self,
-                 name: str,
-                 base_dir: Union[str, Path]):
+    def __init__(self, name: str, base_dir: Union[str, Path]):
         self.name = name
         self.base_dir = Path(base_dir)
 
@@ -322,14 +361,19 @@ class DataProcessingPipeline(PipelineElement):
     @property
     def output_specs(self):
         if not self.is_ready:
-            raise RuntimeError(f"{self.__class__.__name__}.output_specs: pipeline is not yet ready to run. "
-                               f"Please call 'prepare()' to set the correct output specs")
+            raise RuntimeError(
+                f"{self.__class__.__name__}.output_specs: pipeline is not yet ready to run. "
+                f"Please call 'prepare()' to set the correct output specs"
+            )
 
         return self._output_specs
 
-    def add(self, name: str,
-            transformer: PipelineElement,
-            name_mappings: Dict[str, str] = None) -> DataProcessingPipeline:
+    def add(
+        self,
+        name: str,
+        transformer: PipelineElement,
+        name_mappings: Dict[str, str] = None,
+    ) -> DataProcessingPipeline:
         """
         Add a pipeline step
 
@@ -347,30 +391,31 @@ class DataProcessingPipeline(PipelineElement):
         return self
 
     @classmethod
-    def validate(cls,
-                 steps: List[Tuple[str, PipelineElement]],
-                 metadata: MetaData) -> Dict[str, Any]:
+    def validate(
+        cls, steps: List[Tuple[str, PipelineElement]], metadata: MetaData
+    ) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the minimal input and output data specification.
 
-        .. todo::
-
-            Document output
-
         :param steps: processing steps
         :param metadata: the input metadata for this pipeline
-        :return: the minimal output specification for this pipeline
+        :return: The minimal output specification for this pipeline
         """
         # Keep track of the expected (minimal) specs at each step in the pipeline
-        current_specs: Optional[List[DataSpecification]] = copy.deepcopy(metadata.columns)
+        current_specs: Optional[List[DataSpecification]] = copy.deepcopy(
+            metadata.columns
+        )
         for name, transformer in steps:
-
             if name is None:
-                raise ValueError(f"{cls.__name__}.validate: missing name processing step")
+                raise ValueError(
+                    f"{cls.__name__}.validate: missing name processing step"
+                )
 
             if not hasattr(transformer, "transform"):
-                raise AttributeError(f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
-                                     f" TransformerMixin requirements - no method 'fit_transform' found")
+                raise AttributeError(
+                    f"{cls.__name__}.validate: processing step '{name}' does not fulfill the"
+                    f" TransformerMixin requirements - no method 'fit_transform' found"
+                )
 
             input_specs = transformer.input_specs
             output_specs = transformer.output_specs
@@ -378,8 +423,10 @@ class DataProcessingPipeline(PipelineElement):
             md = MetaData(columns=current_specs, annotations=[])
             fulfillment = md.get_fulfillment(expected_specs=input_specs)
             if not fulfillment.is_met():
-                raise RuntimeError(f"{cls.__name__}.validate: Input requirements are not fulfilled. "
-                                   f"Current input available (at step '{name}'): {fulfillment}")
+                raise RuntimeError(
+                    f"{cls.__name__}.validate: Input requirements are not fulfilled. "
+                    f"Current input available (at step '{name}'): {fulfillment}"
+                )
 
             current_specs = DataSpecification.merge_lists(current_specs, input_specs)
             current_specs = DataSpecification.merge_lists(current_specs, output_specs)
@@ -390,7 +437,8 @@ class DataProcessingPipeline(PipelineElement):
         """
         Output pipeline as string.
 
-        :param indent_level: Indentation per step. It is multiplied by :attr:`DEFAULT_INDENT`.
+        :param indent_level: Indentation per step.
+            It is multiplied by :attr:`damast.core.formatting.DEFAULT_INDENT`.
         :returns: The pipeline in string representation
         """
         hspace = DEFAULT_INDENT * indent_level
@@ -402,19 +450,26 @@ class DataProcessingPipeline(PipelineElement):
 
             if hasattr(transformer.transform, DECORATED_DESCRIPTION):
                 description = getattr(transformer.transform, DECORATED_DESCRIPTION)
-                data += hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
+                data += (
+                    hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
+                )
 
             data += hspace + DEFAULT_INDENT * 2 + "input:\n"
-            data += DataSpecification.to_str(transformer.input_specs, indent_level=indent_level + 4)
+            data += DataSpecification.to_str(
+                transformer.input_specs, indent_level=indent_level + 4
+            )
 
             data += hspace + DEFAULT_INDENT * 2 + "output:\n"
-            data += DataSpecification.to_str(transformer.output_specs, indent_level=indent_level + 4)
+            data += DataSpecification.to_str(
+                transformer.output_specs, indent_level=indent_level + 4
+            )
 
         return data
 
     def save(self, dir: Union[str, Path]) -> Path:
         """
         Save the processing pipeline
+
         :param dir: directory where to save this pipeline
         """
         filename = dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
@@ -422,11 +477,10 @@ class DataProcessingPipeline(PipelineElement):
             pickle.dump(self, f)
         return filename
 
-    def save_state(self,
-                   df: AnnotatedDataFrame,
-                   dir: Union[str, Path]) -> Path:
+    def save_state(self, df: AnnotatedDataFrame, dir: Union[str, Path]) -> Path:
         """
         Save the processing pipeline
+
         :param dir: directory where to save this pipeline
         """
         filename = dir / f"{self.name}{VAEX_STATE_SUFFIX}"
@@ -435,6 +489,12 @@ class DataProcessingPipeline(PipelineElement):
 
     @classmethod
     def load(cls, dir: Union[str, Path], name: str = "*") -> DataProcessingPipeline:
+        """
+        Load a :class:`DataProcessingPipeline` from file (without suffix :attr:`DAMAST_PIPELINE_SUFFIX`)
+
+        :param dir: Directory containing pipeline(s).
+        :name: Name of file(s) without suffix. Can be a Regex expression
+        """
         basename = f"{name}{DAMAST_PIPELINE_SUFFIX}"
         dir = Path(dir)
 
@@ -442,20 +502,33 @@ class DataProcessingPipeline(PipelineElement):
         if len(files) == 1:
             filename = files[0]
         elif len(files) == 0:
-            raise FileNotFoundError(f"{cls.__name__}.load: could not find '{basename}' in {dir}")
+            raise FileNotFoundError(
+                f"{cls.__name__}.load: could not find '{basename}' in {dir}"
+            )
         else:
-            raise RuntimeError(f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
-                               f" {','.join([x.name for x in files])}")
+            raise RuntimeError(
+                f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
+                f" {','.join([x.name for x in files])}"
+            )
 
         with open(filename, "rb") as f:
             pipeline: DataProcessingPipeline = pickle.load(f, fix_imports=True)
         return pipeline
 
     @classmethod
-    def load_state(cls,
-                   df: AnnotatedDataFrame,
-                   dir: Union[str, Path],
-                   name: str = "*") -> Path:
+    def load_state(
+        cls, df: AnnotatedDataFrame, dir: Union[str, Path], name: str = "*"
+    ) -> AnnotatedDataFrame:
+        """
+        Load a ``vaex`` state (from file) to a :class:`damast.core.AnnotatedDataFrame`.
+
+        :param df: The data-frame
+        :param dir: Directory of vaex state file
+        :param name: Regex describing vaex state file (without :attr:`VAEX_STATE_SUFFIX`)
+        :raises FileNotFoundError: If no files found
+        :raises RuntimeError: If multiple vaex-states satisfies the ``name`` requirement.
+        :return: The data-frame with applied state
+        """
         basename = f"{name}{VAEX_STATE_SUFFIX}"
         dir = Path(dir)
 
@@ -463,10 +536,14 @@ class DataProcessingPipeline(PipelineElement):
         if len(files) == 1:
             filename = files[0]
         elif len(files) == 0:
-            raise FileNotFoundError(f"{cls.__name__}.load: could not find '{basename}' in {dir}")
+            raise FileNotFoundError(
+                f"{cls.__name__}.load: could not find '{basename}' in {dir}"
+            )
         else:
-            raise RuntimeError(f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
-                               f" {','.join([x.name for x in files])}")
+            raise RuntimeError(
+                f"{cls.__name__}.load: multiple pipeline available, pls be more specific:"
+                f" {','.join([x.name for x in files])}"
+            )
 
         df._dataframe.state_load(file=filename)
         return df
@@ -484,14 +561,15 @@ class DataProcessingPipeline(PipelineElement):
         try:
             df.validate_metadata()
         except ValueError as e:
-            raise RuntimeError(f"{self.__class__.__name__}.prepare: specification of the provided AnnotatedDataFrame"
-                               f" does not match its data. If you modified the frame after construction ensure"
-                               f" consistency between 'data' and 'metadata' by using "
-                               f" AnnotatedDataFrame.validate_metadata()"
-                               f" -- {e}")
+            raise RuntimeError(
+                f"{self.__class__.__name__}.prepare: specification of the provided AnnotatedDataFrame"
+                f" does not match its data. If you modified the frame after construction ensure"
+                f" consistency between 'data' and 'metadata' by using "
+                f" AnnotatedDataFrame.validate_metadata()"
+                f" -- {e}"
+            )
 
-        validation_result = self.validate(steps=self.steps,
-                                          metadata=df._metadata)
+        validation_result = self.validate(steps=self.steps, metadata=df._metadata)
         self.is_ready = True
 
         self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
@@ -507,9 +585,11 @@ class DataProcessingPipeline(PipelineElement):
         :returns: The transformed dataframe
         """
         if not isinstance(df, AnnotatedDataFrame):
-            raise TypeError(f"{self.__class__.__name__}.transform"
-                            f" expected an annotated dataframe for processing, "
-                            f"got {type(df)}")
+            raise TypeError(
+                f"{self.__class__.__name__}.transform"
+                f" expected an annotated dataframe for processing, "
+                f"got {type(df)}"
+            )
 
         if not self.is_ready:
             self.prepare(df=df)
@@ -518,7 +598,9 @@ class DataProcessingPipeline(PipelineElement):
         pipeline = vaex.ml.Pipeline(steps)
 
         if df.is_empty():
-            raise RuntimeError(f"{self.__class__.__name__}.transform: there is no data available to transform")
+            raise RuntimeError(
+                f"{self.__class__.__name__}.transform: there is no data available to transform"
+            )
 
         adf = pipeline.transform(dataframe=df)
         assert isinstance(adf, AnnotatedDataFrame)
