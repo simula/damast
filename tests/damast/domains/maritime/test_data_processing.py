@@ -23,34 +23,6 @@ def workdir(tmp_path):
     return tmp_path
 
 
-@pytest.fixture(name="default_config")
-def default_config(workdir):
-    params = {
-        "workdir": workdir,
-        "outputs": {"processed":
-                    {
-                        "dir": "outputs/data_processing",
-                        "h5_key": "data"
-                    }
-                    },
-        "month": 1,
-        "inputs": {
-            "vessel_types": '',
-            "fishing_vessel_types": ''
-        },
-        "columns": {
-            "useless": [],
-            "unused": [],
-            "constraints": {"LAT": {
-                "min": -90,
-                "max": 90,
-                "type": 'float64',
-                "default": 0}
-            }}
-    }
-    return params
-
-
 @pytest.fixture()
 def ais_test_data() -> AISTestData:
     return AISTestData(number_of_trajectories=20)
@@ -93,17 +65,11 @@ def test_data_processing_with_plain_vaex(workdir,
     _ = vaex.from_pandas(ais_test_data.dataframe)
 
 
-def test_data_processing(default_config, workdir,
+def test_data_processing(workdir,
                          ais_test_data,
                          fishing_vessel_types_data,
                          vessel_types_data,
                          anchorages_data):
-    params = default_config.copy()
-    params["inputs"]["vessel_types"] = vessel_types_data[1]
-    params["inputs"]["fishing_vessel_types"] = fishing_vessel_types_data[1]
-    params["inputs"]["anchorages"] = anchorages_data[1]
-    params["MessageTypePosition"] = [2]
-    params["columns"]["useless"] = ["rot", "source"]
 
     # Data processing currently expects the following columns
     columns = {
@@ -115,28 +81,47 @@ def test_data_processing(default_config, workdir,
         "cog": ColumnName.COURSE_OVER_GROUND,
         "true_heading": ColumnName.HEADING,
         "nav_status": ColumnName.STATUS,
+        "rot": "rot",
         "message_nr": ColumnName.MESSAGE_TYPE,
+        "source": "source"
     }
     for (old_name, new_name) in columns.items():
         ais_test_data.dataframe.rename(old_name, new_name)
 
-    df = cleanse_and_sanitise(params=params, df=ais_test_data.dataframe)
-    df = df.extract()
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
                  damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.units.deg,
                                                representation_type=np.float64),
                  damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.units.deg,
                                                representation_type=np.float64),
+                 damast.core.DataSpecification(ColumnName.DATE_TIME_UTC, representation_type=str),
                  damast.core.DataSpecification(ColumnName.SPEED_OVER_GROUND, representation_type=float),
                  damast.core.DataSpecification(ColumnName.COURSE_OVER_GROUND, representation_type=float),
                  damast.core.DataSpecification(ColumnName.HEADING, representation_type=float),
                  damast.core.DataSpecification(ColumnName.STATUS, representation_type=int),
+                 damast.core.DataSpecification("rot", representation_type=float),
                  damast.core.DataSpecification("MessageType", representation_type=int),
-                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type=int),
+                 damast.core.DataSpecification("source", representation_type=str),
                  ])
-    adf = damast.core.AnnotatedDataFrame(df, metadata)
 
-    process_data(params=params,
-                 df=adf,
-                 workdir=workdir)
+    adf = damast.core.AnnotatedDataFrame(ais_test_data.dataframe, metadata)
+    print(adf._dataframe)
+    adf = cleanse_and_sanitise(df=adf,
+                              useless_columns=[ColumnName.DATE_TIME_UTC, "rot", "source"],
+                              message_type_position=[2],
+                              columns_default_values={ ColumnName.MMSI: 0, 
+                                                       ColumnName.SPEED_OVER_GROUND: 1023,
+                                                       ColumnName.COURSE_OVER_GROUND: 3600,
+
+                                                       },
+                              columns_compress_types={
+                                                       ColumnName.SPEED_OVER_GROUND: "int16",
+                                                       ColumnName.COURSE_OVER_GROUND: "int16",
+                                                       },
+                              workdir=workdir)
+ 
+    adf = process_data(df=adf,
+                 workdir=workdir,
+                 vessel_type_hdf5=vessel_types_data[1],
+                 fishing_vessel_type_hdf5=fishing_vessel_types_data[1],
+                 anchorages_hdf5=anchorages_data[1])

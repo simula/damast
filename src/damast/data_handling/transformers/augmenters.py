@@ -20,7 +20,10 @@ __all__ = [
     "AddLocalMessageIndex",
     "JoinDataFrameByColumn",
     "BallTreeAugmenter",
-    "AddUndefinedValue"
+    "AddUndefinedValue",
+    "RemoveValueRows",
+    "AddTimestamp",
+    "MultiplyValue"
 ]
 
 
@@ -257,3 +260,81 @@ class AddLocalMessageIndex(PipelineElement):
             [metadata.append(new_spec) for new_spec in new_specs]
             return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
                 metadata))
+
+def convert_to_datetime(date_string):
+    return int(datetime.datetime.strptime(
+            date_string, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H%M%S"))
+
+class AddTimestamp(PipelineElement):
+    """Add Timestamp from date Time UTC
+
+    """
+
+    @damast.core.describe("Add Timestamp")
+    @damast.core.input({"from": {"representation_type": str}})
+    @damast.core.output({"to": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Add Timestamp from datetimeUTC
+        """
+
+        from_mapped_name = self.get_name("from")
+        to_mapped_name = self.get_name("to")
+        df._dataframe[to_mapped_name] = df._dataframe[from_mapped_name].apply(convert_to_datetime)
+        return df
+
+class MultiplyValue(PipelineElement):
+    """Multiply a column by a value.
+
+    :param multiply_value: The value to use to multiply
+    """
+    _mul_value: Any
+
+    def __init__(self, mul_value: Any):
+        """Constructor"""
+        self._mul_value = mul_value
+
+    @property
+    def mul_value(self):
+        return self._mul_value
+
+    @damast.core.describe("Multiply a column by a given values")
+    @damast.core.input({"x": {}})
+    @damast.core.output({"x": {}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Multiply a column by a given value
+        """
+        mapped_name = self.get_name("x")
+        df._dataframe[mapped_name] *= self._mul_value
+        return df
+
+
+class ChangeTypeColumn(PipelineElement):
+    """Create a new column with the new type of a given column.
+       The new column name can be defined by providing a name_mapping for a column 'y'.
+       If no name_mapping is provided the column's new name will be 'y'
+
+    :param new_type: The new type of the column
+    """
+    _new_type: Any
+
+    def __init__(self, new_type: Any):
+        """Constructor"""
+        self._new_type = new_type
+
+    @property
+    def new_type(self):
+        return self._new_type
+
+    @damast.core.describe("Create a new column from an existing column but with a new type")
+    @damast.core.input({"x": {}})
+    @damast.core.output({"y": {}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Change the default type of a column
+        """
+        input_mapped_name = self.get_name("x")
+        output_mapped_name = self.get_name("y")
+        df._dataframe[output_mapped_name] = df._dataframe[input_mapped_name].astype(self._new_type)
+        return df
