@@ -5,10 +5,19 @@ from collections import OrderedDict
 from pathlib import Path
 
 import damast
+from damast.core.units import units
+from damast.core.datarange import CyclicMinMax, MinMax
+import tensorflow as tf
+
+import vaex
+from typing import List, Optional, Union
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.metadata import MetaData
 from damast.ml.models.base import BaseModel
 from damast.ml.experiments import Experiment, LearningTask, ForecastTask, ModelInstanceDescription
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
+
+from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
 
 
 class ModelA(BaseModel):
@@ -23,50 +32,119 @@ class TransformerA(PipelineElement):
         return df
 
 
+class LatLonTransformer(PipelineElement):
+    @damast.core.describe("Lat/Lon cyclic transformation")
+    @damast.core.input({
+        "lat": {"unit": units.deg},
+        "lon": {"unit": units.deg}
+    })
+    @damast.core.output({
+        "lat_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lat_y": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_y": {"value_range": MinMax(-1.0, 1.0)}
+    })
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        lat_cyclic_transformer = vaex.ml.CycleTransformer(features=["lat"], n=180.0)
+        lon_cyclic_transformer = vaex.ml.CycleTransformer(features=["lon"], n=360.0)
+
+        _df = lat_cyclic_transformer.fit_transform(df=df)
+        _df = lon_cyclic_transformer.fit_transform(df=_df)
+        df._dataframe = _df
+        return df
+
+
+class SimpleModel(BaseModel):
+    input_specs = OrderedDict({
+        "a": {"length": 1},
+        "b": {"length": 1},
+        "c": {"length": 1},
+        "d": {"length": 1}
+    })
+
+    output_specs = OrderedDict({
+        "a": {"length": 1},
+        "b": {"length": 1},
+        "c": {"length": 1},
+        "d": {"length": 1}
+    })
+
+    def __init__(self, output_dir: Union[str, Path]):
+        super().__init__(features=["a", "b", "c", "d"],
+                         targets=["a", "b", "c", "d"],
+                         output_dir=output_dir)
+
+    def _init_model(self):
+        inputs = keras.Input(shape=(4,),
+                             name="input",
+                             dtype=tensorflow.float32)
+        outputs = keras.layers.Dense(4)(inputs)
+
+        self.model = keras.Model(inputs=inputs,
+                                 outputs=outputs,
+                                 name=self.__class__.__name__)
+
+
+class ModelA(SimpleModel):
+    pass
+
+
+class ModelB(SimpleModel):
+    pass
+
+
+class Baseline(BaseModel):
+    input_specs = OrderedDict({
+        "lat_x": {"length": 1},
+        "lat_y": {"length": 1},
+        "lon_x": {"length": 1},
+        "lon_y": {"length": 1}
+    })
+
+    output_specs = OrderedDict({
+        "lat_x": {"length": 1},
+        "lat_y": {"length": 1},
+        "lon_x": {"length": 1},
+        "lon_y": {"length": 1}
+    })
+
+    def __init__(self,
+                 features: List[str],
+                 timeline_length: int,
+                 output_dir: Path,
+                 targets: Optional[List[str]] = None):
+        self.timeline_length = timeline_length
+
+        super().__init__(output_dir=output_dir,
+                         features=features,
+                         targets=targets)
+
+    def _init_model(self):
+        features_width = len(self.features)
+        targets_width = len(self.targets)
+
+        self.model = tf.keras.models.Sequential([
+            keras.layers.Flatten(input_shape=[self.timeline_length, features_width]),
+            keras.layers.Dense(targets_width)
+        ])
+
+
+class BaselineA(Baseline):
+    pass
+
+
+class BaselineB(Baseline):
+    pass
+
+
 @pytest.fixture()
 def experiment_dir(tmp_path):
-    class SimpleModel(BaseModel):
-        input_specs = OrderedDict({
-            "a": {"length": 1},
-            "b": {"length": 1},
-            "c": {"length": 1},
-            "d": {"length": 1}
-        })
-
-        output_specs = OrderedDict({
-            "a": {"length": 1},
-            "b": {"length": 1},
-            "c": {"length": 1},
-            "d": {"length": 1}
-        })
-
-        def __init__(self):
-            super().__init__(features=["a", "b", "c", "d"],
-                             targets=["a", "b", "c", "d"],
-                             output_dir=tmp_path)
-
-        def _init_model(self):
-            inputs = keras.Input(shape=(4,),
-                                 name="input",
-                                 dtype=tensorflow.float32)
-            outputs = keras.layers.Dense(4)(inputs)
-
-            self.model = keras.Model(inputs=inputs,
-                                     outputs=outputs,
-                                     name=self.__class__.__name__)
-
-    class ModelA(SimpleModel):
-        pass
-
-    class ModelB(SimpleModel):
-        pass
-
     Experiment.touch_marker(tmp_path)
 
-    model_a = ModelA()
+    model_a = ModelA(output_dir=tmp_path)
     model_a.save()
 
-    model_b = ModelB()
+    model_b = ModelB(output_dir=tmp_path)
     model_b.save()
 
     return tmp_path
@@ -152,3 +230,32 @@ def test_to_and_from_file(tmp_path):
 
     assert loaded_e == experiment
 
+
+def test_experiment_run(tmp_path):
+    pipeline = DataProcessingPipeline(name="ais_preparation",
+                                      base_dir=tmp_path) \
+        .add("cyclic", LatLonTransformer())
+    features = ["lat_x", "lat_y", "lon_x", "lon_y"]
+
+    data = AISTestData(1000)
+    adf = AnnotatedDataFrame(dataframe=data.dataframe,
+                             metadata=MetaData.from_dict(data=AISTestDataSpec.copy()))
+    dataset_filename = tmp_path / "test.hdf5"
+    adf.save(filename=dataset_filename)
+
+    forecast_task = ForecastTask(pipeline=pipeline, features=features,
+                                 models=[ModelInstanceDescription(BaselineA, {}),
+                                         ModelInstanceDescription(BaselineB, {}),
+                                         ],
+                                 group_column="mmsi",
+                                 sequence_length=5,
+                                 forecast_length=1)
+    training_parameters = Experiment.TrainingParameters(epochs=1,
+                                                        validation_steps=1)
+
+    experiment = Experiment(learning_task=forecast_task,
+                            training_parameters=training_parameters,
+                            input_data=dataset_filename,
+                            output_directory=tmp_path)
+    report = experiment.run()
+    print(report)
