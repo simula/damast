@@ -381,7 +381,7 @@ class DataProcessingPipeline(PipelineElement):
     # The processing steps that define this pipeline
     steps: List[Tuple[str, PipelineElement]]
 
-    def __init__(self,
+    def __init__(self, *,
                  name: str,
                  base_dir: Union[str, Path] = None,
                  steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = None
@@ -574,7 +574,7 @@ class DataProcessingPipeline(PipelineElement):
         with open(filename, "r") as f:
             data = yaml.load(f, Loader=yaml.SafeLoader)
 
-        return cls(data_dict=data)
+        return cls(**data)
 
     @classmethod
     def load_state(

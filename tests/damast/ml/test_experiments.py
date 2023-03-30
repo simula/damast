@@ -120,7 +120,7 @@ def test_learning_task(tmp_path):
                       models=models)
 
     data_dict = dict(lt)
-    loaded_t = LearningTask(**data_dict)
+    loaded_t = LearningTask.from_dict(data=data_dict)
     assert loaded_t == lt
 
 

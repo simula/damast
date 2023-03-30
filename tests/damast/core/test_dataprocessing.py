@@ -326,7 +326,8 @@ def test_single_element_pipeline(tmp_path):
             df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
             return df
 
-    pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+    pipeline = DataProcessingPipeline(name="TransformStatus",
+                                      base_dir=tmp_path)
     pipeline.add("Transform status",
                  TransformX(),
                  name_mappings={"x": "status"})
@@ -360,13 +361,15 @@ def test_decorator_renaming(tmp_path):
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
 
     with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
-        pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+        pipeline = DataProcessingPipeline(name="TransformStatus",
+                                          base_dir=tmp_path)
         pipeline.add("Transform status",
                      TransformX(),
                      name_mappings={"x": "extra_status"})
         pipeline.transform(df=adf)
 
-    pipeline = DataProcessingPipeline("TransformStatus", tmp_path)
+    pipeline = DataProcessingPipeline(name="TransformStatus",
+                                      base_dir=tmp_path)
     pipeline.add("Transform status",
                  TransformX(),
                  name_mappings={"x": "status"})
@@ -423,7 +426,8 @@ def test_toplevel_decorators(tmp_path):
 
 
 def test_io(tmp_path):
-    pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
+    pipeline = DataProcessingPipeline(name="abc",
+                                      base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
         .add("transform-b", TransformerB()) \
         .add("transform-c", TransformerC())

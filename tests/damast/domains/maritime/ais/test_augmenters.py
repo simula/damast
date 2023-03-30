@@ -61,7 +61,8 @@ def test_add_missing_ais_status(tmp_path):
     assert adf._dataframe["Status"].is_masked
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("AddMissingAISStatus", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="AddMissingAISStatus",
+                                                  base_dir=tmp_path)
     pipeline.add("Add missing AIS status", AddMissingAISStatus(),
                  name_mappings={"x": "Status"})
 
@@ -98,7 +99,8 @@ def test_delta_column(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("DeltaDistance", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="DeltaDistance",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Great circle distance", DeltaDistance(True, True, True),
                  name_mappings={"group": ColumnName.MMSI,
@@ -174,7 +176,8 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
                                 dataset_col=ColumnName.VESSEL_TYPE,
                                 dataset=vessel_data, inplace=inplace)
 
-    pipeline = damast.core.DataProcessingPipeline("Add vessel type", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="Add vessel type",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Add vessel-type", transformer,
                  name_mappings={"x": ColumnName.MMSI,
@@ -237,7 +240,8 @@ def test_add_distance_closest_anchorage(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     transformer = ComputeClosestAnchorage(dataset, [columns[1], columns[2]])
-    pipeline = damast.core.DataProcessingPipeline("Compute closest anchorage", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="Compute closest anchorage",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Add distance to achorage", transformer,
                  name_mappings={"x": ColumnName.LATITUDE,
@@ -287,7 +291,8 @@ def test_message_index(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("Compute message index", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="Compute message index",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Compute local message index",  AddLocalMessageIndex(),
                  name_mappings={"group": ColumnName.MMSI,
