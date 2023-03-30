@@ -175,6 +175,8 @@ class Experiment:
     _split_data_ratios: List[float]
 
     _timestamp: datetime.datetime
+    _evaluation_steps: int
+    _evaluation_report: Dict[str, Dict[str, Any]]
 
     _trained_models: List[BaseModel]
 
@@ -191,17 +193,24 @@ class Experiment:
                  training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  output_directory: Union[str, Path] = tempfile.gettempdir(),
                  batch_size: int = 2,
+                 evaluation_steps=1,
                  split_data_ratios: List[float] = [1.6, 0.2, 0.2],
                  label: str = "damast-ml-experiment",
-                 timestamp: Union[str, datetime.datetime] = datetime.datetime.utcnow()
+                 timestamp: Union[str, datetime.datetime] = datetime.datetime.utcnow(),
+                 evaluation = {}
                  ):
         """
         The ratios of how to split (test, training, validation) data from the input dataset
 
-        :param learning_task_description: A description of the machine-learning model setup
+        :param learning_task:  A description of the machine-learning model setup
+        :param input_data:
+        :param training_parameters:
+        :param evaluation_steps:
+        :param split_data_ratios:
+        :param label:
+        :param timestamp:
+        :param evaluation:
         :param batch_size: The batch-size
-        :param min_group_length: Minimal length of group to be considered for ML
-        :forecast_length: Number of rows in label (output)
         :param output_directory: Path to direct output to
         """
         if isinstance(learning_task, LearningTask):
@@ -225,11 +234,13 @@ class Experiment:
                              f"dict or TrainingParameters object")
 
         self._batch_size = batch_size
+        self._evaluation_steps = evaluation_steps
         self._split_data_ratios = split_data_ratios
         if isinstance(timestamp, str):
             timestamp = datetime.datetime.strptime(timestamp, Experiment.TIMESTAMP_FORMAT)
-        self._timestamp = timestamp
 
+        self._timestamp = timestamp
+        self._evaluation_report = evaluation
         self._trained_models = []
 
     @classmethod
@@ -418,7 +429,7 @@ class Experiment:
                 f"implemented for {self.learning_task.__class__.__name__}")
 
     def train(self,
-              base_model: BaseModel,
+              model_instance_description: ModelInstanceDescription,
               train_generator: Sequence,
               validate_generator: Sequence,
               output_dir: Path,
@@ -426,11 +437,11 @@ class Experiment:
               steps_per_epoch: int = 10,
               validation_steps: int = 12,
               learning_rate: float = 0.1,
-              loss_function: str = "mse") -> Path:
+              loss_function: str = "mse") -> BaseModel:
         """
         Train a set of machine-learning models on given input data.
 
-        :param base_model: The model that should be trained
+        :param model_instance_description: The model instance description for the model that should be trained
         :param train_generator: Generator providing data from training set
         :param validate_generator: Generator providing data from validation set
         :param output_dir: Directory where the model training log, etc. should go
@@ -439,15 +450,19 @@ class Experiment:
         :param validation_steps: Number of validation steps
         :param learning_rate: The learning rate for the Stochastic Gradient descent algorithm
         :param loss_function: The loss function
+
+        :return: model instance
         """
 
         # NOTE: This should probably be an individual step, as we could re-use an existing model to continue training
         if isinstance(self.learning_task, ForecastTask):
-            model = base_model.model(output_dir=output_dir,
-                                     features=self.learning_task.features,
-                                     targets=self.learning_task.targets,
-                                     timeline_length=self.learning_task.sequence_length
-                                     )
+            # TODO: the model needs to be applicable to a forecast task - so we might
+            model: BaseModel = model_instance_description.model(output_dir=output_dir,
+                                                                features=self.learning_task.features,
+                                                                targets=self.learning_task.targets,
+                                                                timeline_length=self.learning_task.sequence_length,
+                                                                **model_instance_description.parameters
+                                                                )
         else:
             raise NotImplementedError(
                 f"{self.__class__.__name__}.create_generator: Sorry, but there is currently no support "
@@ -455,6 +470,7 @@ class Experiment:
 
         model.build(loss_function=loss_function,
                     optimizer=keras.optimizers.SGD(learning_rate=learning_rate))
+
         # Train model
         model.train(training_data=train_generator,
                     validation_data=validate_generator,
@@ -466,7 +482,7 @@ class Experiment:
 
     def evaluate(self,
                  test_generator: Sequence,
-                 steps: int = 1) -> vaex.DataFrame:
+                 steps: int = 1) -> Dict[str, Dict[str, Any]]:
 
         return Experiment.evaluate_models(models=self._trained_models,
                                           test_generator=test_generator,
@@ -476,23 +492,42 @@ class Experiment:
     def evaluate_models(cls,
                         models: List[BaseModel],
                         test_generator: Sequence,
-                        steps: int = 1) -> vaex.DataFrame:
+                        steps: int = 1) -> Dict[str, Dict[str, Any]]:
         """
         Evaluate a list of trained models.
 
         :param models: List of trained models
         :param test_generator:  The generator providing access to the test data
         :param steps: number of steps that should be used to test the models
-        :return: a dataframe containing a column 'evaluate' which contains the results
+
+        :return: a dictionary mapping the model name to the results, e.g.
+                { "Baseline": { "mse": 0.1, "loss": 0.2 } }
         """
+        assert models is not None and len(models) > 0
+
+        evaluations_results = {}
         for model in models:
-            return model.evaluate(label="evaluate",
-                                  evaluation_data=test_generator,
-                                  steps=steps)
+            evaluation_result = model.evaluate(label=model.name,
+                                               evaluation_data=test_generator,
+                                               steps=steps)
+            evaluations_results[model.name] = evaluation_result
+        return evaluations_results
 
     def run(self,
-            logging_level: int = INFO) -> vaex.DataFrame:
+            logging_level: int = INFO,
+            report_filename: Union[str, Path] = None) -> vaex.DataFrame:
+        """
+        Run the experiment and return evaluation data.
 
+        The data will also be written into a report file into the current experiment folder unless
+        specified otherwise.
+
+        :param logging_level: The logging level that should be applied when running this experiment
+        :param report_filename: The report will be written into the experiment folder as experiment dictionary including
+            and an additional "evaluation" key
+
+        :return: the evaluation data
+        """
         _log.setLevel(logging_level)
 
         # Load data and validate it by loading it into the annotated dataframe
@@ -504,15 +539,27 @@ class Experiment:
             raise RuntimeError(f"{self.__class__.__name__}.run: no colum '{group_column}' in the given dataset "
                                f"'{self.input_data}' -- found only '{','.join(adf.column_names)}'")
 
+        # If a learning task is used, that requires a sequence length, then filter the data, so that
+        # only relevant data (with a minimum length of the given sequence length) will be accounted
+        # for this learning task
+        if hasattr(self.learning_task, "sequence_length"):
+            groups_with_sequence_length = adf.dataframe.groupby(group_column, agg={"sequence_length": "count"})
+            filtered_groups = groups_with_sequence_length[groups_with_sequence_length.sequence_length
+                                                          > self.learning_task.sequence_length]
+            permitted_values = filtered_groups[group_column].unique()
+            adf._dataframe = adf._dataframe[adf._dataframe[group_column].isin(permitted_values)]
+
         features = self.compute_features(adf)
         train_group, test_group, validate_group = \
             self.compute_train_test_validate_groups(features,
                                                     group=group_column,
                                                     ratios=self._split_data_ratios)
 
+        experiment_dir = self.create_experiment_directory(base_dir=self.output_directory,
+                                                          label=self.label)
+
         self._trained_models = []
         for model_instance_description in self.learning_task.models:
-            # min_group_length and forecast_length should be given as input to experiment init
             train_data_gen = self.create_generator(features,
                                                    group=group_column,
                                                    group_ids=train_group)
@@ -520,10 +567,7 @@ class Experiment:
                                              group=group_column,
                                              group_ids=validate_group)
 
-            experiment_dir = self.create_experiment_directory(base_dir=self.output_directory,
-                                                              label=self.label)
-
-            model = self.train(base_model=model_instance_description,
+            model = self.train(model_instance_description=model_instance_description,
                                train_generator=train_data_gen,
                                validate_generator=validate,
                                output_dir=experiment_dir,
@@ -536,11 +580,14 @@ class Experiment:
                                               group=group_column,
                                               group_ids=test_group)
 
-        val_dat = self.evaluate(test_generator=test_data_gen,
-                                steps=1)
+        self._evaluation_report = self.evaluate(test_generator=test_data_gen,
+                                                steps=self._evaluation_steps)
 
         self._timestamp = datetime.datetime.utcnow()
-        return val_dat
+
+        filename = experiment_dir / "experiment-report.yaml"
+        self.save(filename=filename)
+        return filename
 
     def __eq__(self, other):
         return dict(self) == dict(other)
@@ -550,7 +597,9 @@ class Experiment:
         yield "input_data", str(self.input_data)
         yield "output_directory", str(self.output_directory)
         yield "learning_task", dict(self.learning_task)
-        yield "training_parameters", dict(self._training_parameters)
+        yield "training_parameters", self._training_parameters._asdict()
         yield "batch_size", self._batch_size
+        yield "evaluation_steps", self._evaluation_steps
         yield "split_data_ratios", self._split_data_ratios
         yield "timestamp", self._timestamp.strftime(self.TIMESTAMP_FORMAT)
+        yield "evaluation", self._evaluation_report

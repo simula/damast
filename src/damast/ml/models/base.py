@@ -234,7 +234,7 @@ class BaseModel(ABC):
     def evaluate(self,
                  label: str,
                  evaluation_data: tf.data.Dataset,
-                 **kwargs) -> DataFrame:
+                 **kwargs) -> Dict[str, Any]:
         """
         Evaluate this model.
 
@@ -267,11 +267,9 @@ class BaseModel(ABC):
 
         result_df = pd.DataFrame([evaluation_results], columns=evaluation_column_names)
         if self.evaluation_file.exists():
-            result_df.to_csv(self.evaluation_file, mode='a', header=False)
-        else:
             result_df.to_csv(self.evaluation_file)
 
-        return self.get_evaluations()
+        return evaluation
 
 
 class ModelInstanceDescription(NamedTuple):
