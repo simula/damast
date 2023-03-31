@@ -78,8 +78,15 @@ class AISTestData:
 
     @staticmethod
     def generate_trajectory(min_size: int, max_size: int) -> List[List[Any]]:
-        mmsi = randint(2*MMSI.min_value, 2*MMSI.max_value)  # Create some invalid messages as well
+        """Generate a trajectory for a single vessel
 
+        :param min_size: Minimum size of trajectory
+        :param max_size: Maximum size of trajectory
+        :return: A nested list describing the trajectory
+        """
+        # Create some invalid messages as well
+        range_ext = 0.05
+        mmsi = randint(int((1-range_ext)*MMSI.min_value), int((1+range_ext)*MMSI.max_value))
         lat_start = (random() * 180.0) - 90.0
         lon_start = (random() * 360.0) - 180.0
 
@@ -144,6 +151,8 @@ class AISTestData:
                 df = t_df
             else:
                 df = pd.concat([df, t_df], axis=0, ignore_index=True)
+        # shuffle rows
+        df = df.sample(frac=1, axis="index").reset_index(drop=True)
         return vaex.from_pandas(df)
 
     def generate_vessel_type_data(self) -> vaex.DataFrame:
