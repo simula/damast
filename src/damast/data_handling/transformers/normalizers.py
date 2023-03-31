@@ -1,5 +1,3 @@
-from typing import List
-
 import numpy as np
 import numpy.typing as npt
 from numba import njit
@@ -33,7 +31,6 @@ def normalize(
     :returns: Normalized data
     """
     return (b - a) * (x - x_min) / (x_max - x_min) + a
-
 
 
 def cyclic_normalisation(x: npt.NDArray[np.float64],

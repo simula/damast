@@ -10,8 +10,8 @@ import damast.core
 from damast.core import units
 from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import (
-    cleanse_and_sanitise,
-    process_data
+    CleanseAndSanitise,
+    DataProcessing
 )
 from damast.domains.maritime.data_specification import ColumnName
 
@@ -105,23 +105,38 @@ def test_data_processing(workdir,
                  ])
 
     adf = damast.core.AnnotatedDataFrame(ais_test_data.dataframe, metadata)
-    print(adf._dataframe)
-    adf = cleanse_and_sanitise(df=adf,
-                              useless_columns=[ColumnName.DATE_TIME_UTC, "rot", "source"],
-                              message_type_position=[2],
-                              columns_default_values={ ColumnName.MMSI: 0, 
-                                                       ColumnName.SPEED_OVER_GROUND: 1023,
-                                                       ColumnName.COURSE_OVER_GROUND: 3600,
+    pipeline = CleanseAndSanitise(message_types=[2],
+                                  columns_default_values={},
+                                  columns_compress_types={
+        ColumnName.SPEED_OVER_GROUND: "int16",
+        ColumnName.COURSE_OVER_GROUND: "int16",
+    },
+        workdir=workdir)
 
-                                                       },
-                              columns_compress_types={
-                                                       ColumnName.SPEED_OVER_GROUND: "int16",
-                                                       ColumnName.COURSE_OVER_GROUND: "int16",
-                                                       },
-                              workdir=workdir)
- 
-    adf = process_data(df=adf,
-                 workdir=workdir,
-                 vessel_type_hdf5=vessel_types_data[1],
-                 fishing_vessel_type_hdf5=fishing_vessel_types_data[1],
-                 anchorages_hdf5=anchorages_data[1])
+    adf_preprocess = pipeline.transform(adf)
+
+    column_names = adf_preprocess.dataframe.column_names
+    assert (adf_preprocess.dataframe["source"].evaluate().to_numpy(zero_copy_only=False) == "s").all()
+    assert adf_preprocess.dataframe[ColumnName.DATE_TIME_UTC].countmissing() == 0
+    assert (adf_preprocess.dataframe[ColumnName.MESSAGE_TYPE].evaluate() == 2).all()
+    assert ColumnName.TIMESTAMP in column_names
+    assert ColumnName.SPEED_OVER_GROUND + "_int16" in column_names
+    assert adf_preprocess[ColumnName.SPEED_OVER_GROUND+"_int16"].dtype == np.int16
+    assert ColumnName.COURSE_OVER_GROUND + "_int16" in column_names
+    assert adf_preprocess[ColumnName.COURSE_OVER_GROUND+"_int16"].dtype == np.int16
+
+    pipeline2 = DataProcessing(workdir=workdir,
+                               vessel_type_hdf5=vessel_types_data[1],
+                               fishing_vessel_type_hdf5=fishing_vessel_types_data[1],
+                               anchorages_hdf5=anchorages_data[1])
+    adf_processed = pipeline2.transform(adf_preprocess)
+    processed_column_names = adf_processed.dataframe.column_names
+
+    assert ColumnName.VESSEL_TYPE in processed_column_names
+    assert adf_processed.dataframe[ColumnName.VESSEL_TYPE].countmissing() == 0
+    assert ColumnName.FISHING_TYPE in processed_column_names
+    assert adf_processed.dataframe[ColumnName.FISHING_TYPE].countmissing() == 0
+    assert adf_processed.dataframe[ColumnName.FISHING_TYPE].min() >= -1
+    assert ColumnName.DISTANCE_CLOSEST_ANCHORAGE in processed_column_names
+    assert ColumnName.HISTORIC_SIZE in processed_column_names
+    assert ColumnName.HISTORIC_SIZE_REVERSE in processed_column_names
