@@ -21,7 +21,6 @@ __all__ = [
     "JoinDataFrameByColumn",
     "BallTreeAugmenter",
     "AddUndefinedValue",
-    "RemoveValueRows",
     "AddTimestamp",
     "MultiplyValue"
 ]
@@ -82,8 +81,11 @@ class JoinDataFrameByColumn(PipelineElement):
 
         if file_path.suffix == ".csv":
             dataframe = vaex.from_csv(file_path, sep=sep)
-        elif file_path.suffix == ".hdf5":
+        elif file_path.suffix in [".hdf5", ".h5"]:
             dataframe = vaex.open(file_path)
+        else:
+            raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
+
         return dataframe
 
     @damast.core.input({"x": {}})
@@ -99,7 +101,6 @@ class JoinDataFrameByColumn(PipelineElement):
             dataframe = df._dataframe.copy()
         else:
             dataframe = df._dataframe
-
         dataframe.join(
             self._dataset[[self._right_on, self._dataset_column]],
             left_on=self.get_name("x"),
@@ -261,27 +262,63 @@ class AddLocalMessageIndex(PipelineElement):
             return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
                 metadata))
 
-def convert_to_datetime(date_string):
-    return int(datetime.datetime.strptime(
-            date_string, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H%M%S"))
+
+def convert_to_datetime(date_string: str) -> float:
+    """
+    Convert date-time to timestamp (float)
+
+    :param date_string: String representation of date, expected format is
+        ``YYYY-MM-DD HH:MM:SS``
+    :return: Time-stamp as float. Returns `nan`
+    """
+    try:
+        return datetime.datetime.timestamp(
+            datetime.datetime.strptime(
+                date_string, "%Y-%m-%d %H:%M:%S"))
+    except TypeError:
+        return float(np.nan)
+
 
 class AddTimestamp(PipelineElement):
-    """Add Timestamp from date Time UTC
-
     """
+    Add Timestamp from date Time UTC.
+
+    If time-stamp is not supplied for a row add ``NaN``
+
+    :param inplace: Copy input dataframe in transform if False
+    """
+    _inplace: bool
+
+    def __init__(self, inplace: bool = False):
+        self._inplace = inplace
 
     @damast.core.describe("Add Timestamp")
     @damast.core.input({"from": {"representation_type": str}})
-    @damast.core.output({"to": {"representation_type": int}})
+    @damast.core.output({"to": {"representation_type": float}})
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
         Add Timestamp from datetimeUTC
         """
+        if not self._inplace:
+            dataframe = df._dataframe.copy()
+        else:
+            dataframe = df._dataframe
 
         from_mapped_name = self.get_name("from")
         to_mapped_name = self.get_name("to")
-        df._dataframe[to_mapped_name] = df._dataframe[from_mapped_name].apply(convert_to_datetime)
-        return df
+
+        dataframe[to_mapped_name] = dataframe[from_mapped_name].apply(convert_to_datetime)
+
+        new_spec = damast.core.DataSpecification(self.get_name("to"), representation_type=float)
+        if self._inplace:
+            df._metadata.columns.append(new_spec)
+            return df
+        else:
+            metadata = df._metadata.columns.copy()
+            metadata.append(new_spec)
+            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
+                metadata))
+
 
 class MultiplyValue(PipelineElement):
     """Multiply a column by a value.
@@ -311,9 +348,11 @@ class MultiplyValue(PipelineElement):
 
 
 class ChangeTypeColumn(PipelineElement):
-    """Create a new column with the new type of a given column.
-       The new column name can be defined by providing a name_mapping for a column 'y'.
-       If no name_mapping is provided the column's new name will be 'y'
+    """
+    Create a new column with the new type of a given column.
+
+    The new column name can be defined by providing a name_mapping for a column 'y'.
+    If no name_mapping is provided the column's new name will be 'y'
 
     :param new_type: The new type of the column
     """

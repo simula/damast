@@ -1,23 +1,26 @@
 import datetime as dt
+from pathlib import Path
 
 import numpy as np
 import pandas
+import pytest
 import vaex
 from astropy import units
 
 import damast.core
-from damast.data_handling.transformers.augmenters import AddLocalMessageIndex
+from damast.data_handling.transformers.augmenters import (
+    AddLocalMessageIndex,
+    AddUndefinedValue
+)
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math import great_circle_distance
 from damast.domains.maritime.transformers import (
     AddMissingAISStatus,
-    DeltaDistance,
     AddVesselType,
     ComputeClosestAnchorage,
+    DeltaDistance
 )
-
-from damast.data_handling.transformers.augmenters import AddUndefinedValue
 
 
 def test_add_missing_ais_status(tmp_path):
@@ -122,7 +125,11 @@ def test_delta_column(tmp_path):
         assert np.allclose(pandas_distances, distances)
 
 
-def test_add_vessel_type(tmp_path):
+@pytest.mark.parametrize("inplace", [True, False])
+@pytest.mark.parametrize("vessel_file_mode", ["vaex", "file"])
+@pytest.mark.parametrize("right_on", [ColumnName.VESSEL_TYPE, "test_column"])
+def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
+                         right_on: str):
 
     # Create vessel-type dataframe
     vessel_type_data = [
@@ -137,6 +144,11 @@ def test_add_vessel_type(tmp_path):
     columns = [ColumnName.MMSI, ColumnName.VESSEL_TYPE]
     pd_vessel_types = pandas.DataFrame(vessel_type_data, columns=columns)
     df_vessel_types = vaex.from_pandas(pd_vessel_types)
+    if vessel_file_mode == "vaex":
+        vessel_data = df_vessel_types
+    else:
+        vessel_data = Path(tmp_path) / "vessel_data_types.h5"
+        df_vessel_types.export_hdf5(vessel_data)
 
     # Create input dataframe
     input_data = [
@@ -160,14 +172,21 @@ def test_add_vessel_type(tmp_path):
 
     transformer = AddVesselType(right_on=ColumnName.MMSI,
                                 dataset_col=ColumnName.VESSEL_TYPE,
-                                dataset=df_vessel_types)
+                                dataset=vessel_data, inplace=inplace)
 
     pipeline = damast.core.DataProcessingPipeline("Add vessel type", tmp_path)
 
     pipeline.add("Add vessel-type", transformer,
                  name_mappings={"x": ColumnName.MMSI,
                                 "out": ColumnName.VESSEL_TYPE})
+    copy_adf = damast.core.AnnotatedDataFrame(adf.dataframe.copy(),
+                                              damast.core.MetaData(columns=adf.metadata.columns.copy()))
     new_adf = pipeline.transform(adf)
+    if inplace:
+        assert len(new_adf.column_names) == len(adf.column_names)
+    else:
+        assert len(new_adf.column_names) == len(adf.column_names) + 1
+
     missing_data = []
     for mmsi in new_adf._dataframe[ColumnName.MMSI].unique():
         entries_per_mmsi = new_adf[new_adf[ColumnName.MMSI] == mmsi]
@@ -185,7 +204,7 @@ def test_add_vessel_type(tmp_path):
 
     # Test replacing missing values with vessel type
     pipeline.add("Replace missing", AddUndefinedValue("unspecified"), name_mappings={"x": ColumnName.VESSEL_TYPE})
-    fixed_adf = pipeline.transform(adf)
+    fixed_adf = pipeline.transform(copy_adf)
 
     for mmsi in missing_data:
         entries_per_mmsi = fixed_adf[fixed_adf[ColumnName.MMSI] == mmsi]

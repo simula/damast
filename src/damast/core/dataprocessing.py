@@ -581,6 +581,10 @@ class DataProcessingPipeline(PipelineElement):
         """
         Apply pipeline on given annotated dataframe
 
+        .. note::
+            If any filters are applied by the pipeline, these are executed at the end of the
+            transformation.
+
         :param df: The input dataframe
         :returns: The transformed dataframe
         """
@@ -604,6 +608,9 @@ class DataProcessingPipeline(PipelineElement):
 
         adf = pipeline.transform(dataframe=df)
         assert isinstance(adf, AnnotatedDataFrame)
+
+        # Remove all rows that have been filtered from the data-frame
+        adf._dataframe = adf._dataframe.extract()
         return adf
 
     def __repr__(self) -> str:

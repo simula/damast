@@ -97,6 +97,7 @@ class ColumnName:
     STATUS: str = "Status"
     MESSAGE_TYPE: str = "MessageType"
     DATE_TIME_UTC: str = "date_time_utc"
+    SOURCE: str = "source"
 
     # Computed Data
     DATA_MONTH: str = "data_month"
