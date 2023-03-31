@@ -2,7 +2,7 @@
 Module to collect the classes to define meta data
 """
 from __future__ import annotations
-
+import copy
 import ast
 import builtins
 import inspect
@@ -837,6 +837,14 @@ class MetaData:
                     + f"got {[dict(an) for an in annotations]}"
                 )
             self._annotations = {an.name: an for an in annotations}
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, copy.deepcopy(v, memo))
+        return result
 
     @property
     def annotations(self):

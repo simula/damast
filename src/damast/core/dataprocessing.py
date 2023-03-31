@@ -327,6 +327,8 @@ class DataProcessingPipeline(PipelineElement):
 
     :param name: Name of the pipeline
     :param base_dir: Base directory towards which transformer output which be relative
+    :param inplace_transformation: If true, the input :class:`damast.core.dataframe.AnnotatedDataFrame` is not
+        copied when calling :func:`transform`. Else input data-frame is untouched
 
     :raises ValueError: If any of the transformer names are `None`
     :raises AttributeError: If the transformer is missing the :func:`transform` function
@@ -348,13 +350,14 @@ class DataProcessingPipeline(PipelineElement):
     is_ready: bool
     # The processing steps that define this pipeline
     steps: List[Tuple[str, Transformer]]
+    _inplace_transformation: bool
 
-    def __init__(self, name: str, base_dir: Union[str, Path]):
+    def __init__(self, name: str, base_dir: Union[str, Path], inplace_transformation: bool = False):
         self.name = name
         self.base_dir = Path(base_dir)
 
         self._output_specs = None
-
+        self._inplace_transformation = inplace_transformation
         self.steps = []
         self.is_ready = False
 
@@ -598,6 +601,11 @@ class DataProcessingPipeline(PipelineElement):
         if not self.is_ready:
             self.prepare(df=df)
 
+        if self._inplace_transformation:
+            in_df = df
+        else:
+            in_df = copy.deepcopy(df)
+
         steps = [t for _, t in self.steps]
         pipeline = vaex.ml.Pipeline(steps)
 
@@ -606,7 +614,7 @@ class DataProcessingPipeline(PipelineElement):
                 f"{self.__class__.__name__}.transform: there is no data available to transform"
             )
 
-        adf = pipeline.transform(dataframe=df)
+        adf = pipeline.transform(dataframe=in_df)
         assert isinstance(adf, AnnotatedDataFrame)
 
         # Remove all rows that have been filtered from the data-frame

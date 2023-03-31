@@ -172,9 +172,9 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
 
     transformer = AddVesselType(right_on=ColumnName.MMSI,
                                 dataset_col=ColumnName.VESSEL_TYPE,
-                                dataset=vessel_data, inplace=inplace)
+                                dataset=vessel_data)
 
-    pipeline = damast.core.DataProcessingPipeline("Add vessel type", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline("Add vessel type", tmp_path, inplace_transformation=inplace)
 
     pipeline.add("Add vessel-type", transformer,
                  name_mappings={"x": ColumnName.MMSI,

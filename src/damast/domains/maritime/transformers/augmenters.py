@@ -26,19 +26,17 @@ __all__ = [
 
 class ComputeClosestAnchorage(PipelineElement):
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
-    _inplace: bool
 
     def __init__(self,
                  dataset: Union[str, Path, vaex.DataFrame],
                  columns: List[str],
-                 sep: str = ";", inplace: bool = True):
+                 sep: str = ";"):
         """
         Compute the closest anchorage given a data-set with all closest anchorages
 
         :param dataset: Path to data-set with closest anchorages
         :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
         :param sep: Separator used in dataset if dataset is a csv file
-        :param inplace: If False copy dataset during transform
         """
         if isinstance(dataset, vaex.DataFrame):
             _dataset = dataset
@@ -46,7 +44,6 @@ class ComputeClosestAnchorage(PipelineElement):
             _dataset = self.load_data(dataset, sep)
         radian_dataset = [_dataset[column].deg2rad().evaluate() for column in columns]
         self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
-        self._inplace = inplace
 
     @classmethod
     def load_data(cls,
@@ -74,10 +71,7 @@ class ComputeClosestAnchorage(PipelineElement):
                         "y": {"representation_type": np.float64, "unit": damast.core.units.units.deg}})
     @damast.core.output({"distance": {"representation_type": np.float64}})
     def transform(self, df:  damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
+        dataframe = df._dataframe
 
         # Transform latitude and longitude to radians
         dataframe.add_virtual_column(f"{self.get_name('x')}_rad",
@@ -96,14 +90,8 @@ class ComputeClosestAnchorage(PipelineElement):
         dataframe[self.get_name("distance")] *= EARTH_RADIUS
         dataframe.units[self.get_name("distance")] = damast.core.units.units.km
         new_spec = damast.core.DataSpecification(self.get_name("out"), unit=damast.core.units.units.km)
-        if self._inplace:
-            df._metadata.columns.append(new_spec)
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            metadata.append(new_spec)
-            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._metadata.columns.append(new_spec)
+        return df
 
 
 class AddMissingAISStatus(augmenters.AddUndefinedValue):
@@ -124,18 +112,14 @@ class AddMissingAISStatus(augmenters.AddUndefinedValue):
 class AddVesselType(augmenters.JoinDataFrameByColumn):
     def __init__(self, right_on: str,
                  dataset_col: str,
-                 dataset: Union[str, Path, vaex.DataFrame],
-                 inplace: bool = False
-                 ):
+                 dataset: Union[str, Path, vaex.DataFrame]):
         """Add in vessel type based on external data-set
 
         :param right_on: Name in data-set column to use for merging datasets
         :param dataset_col: Column to add to input dataframe
         :param dataset: Dataset or path to dataset
-        :param inplace (bool, optional): If inplace do not copy input dataframe
         """
-        super().__init__(dataset=dataset, right_on=right_on, dataset_col=dataset_col,
-                         inplace=inplace)
+        super().__init__(dataset=dataset, right_on=right_on, dataset_col=dataset_col)
 
     @damast.core.describe("Add vessel-type from other dataset to current dataset")
     @damast.core.input({"x": {}})

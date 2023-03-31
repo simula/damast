@@ -12,7 +12,7 @@ from typing import List, Union, Any, Callable, Dict
 import vaex
 from vaex import DataFrame
 import numpy as np
-
+import copy
 import h5py
 from logging import getLogger, Logger, INFO
 
@@ -101,6 +101,14 @@ class AnnotatedDataFrame:
         :return: The underlying dataframe
         """
         return self._dataframe
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, copy.deepcopy(v, memo))
+        return result
 
     @property
     def metadata(self):
