@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import MetaData
 from damast.ml.models.base import BaseModel
-from damast.ml.experiments import Experiment, LearningTask, ForecastTask, ModelInstanceDescription
+from damast.ml.experiments import Experiment, LearningTask, ForecastTask, ModelInstanceDescription, TrainingParameters
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
 
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
@@ -112,10 +112,12 @@ class Baseline(BaseModel):
                  features: List[str],
                  timeline_length: int,
                  output_dir: Path,
+                 name: str = "Baseline",
                  targets: Optional[List[str]] = None):
         self.timeline_length = timeline_length
 
-        super().__init__(output_dir=output_dir,
+        super().__init__(name=name,
+                         output_dir=output_dir,
                          features=features,
                          targets=targets)
 
@@ -193,9 +195,11 @@ def test_learning_task(tmp_path):
                                  parameters={})
     ]
 
-    lt = LearningTask(pipeline=pipeline,
-                      features=["a", "b", "c", "d"],
-                      models=models)
+    lt = LearningTask(
+        label="test learning task",
+        pipeline=pipeline,
+        features=["a", "b", "c", "d"],
+        models=models)
 
     data_dict = dict(lt)
     loaded_t = LearningTask.from_dict(data=data_dict)
@@ -212,6 +216,7 @@ def test_to_and_from_file(tmp_path):
     ]
 
     task = ForecastTask(
+        label="forecast-abcd",
         pipeline=pipeline,
         features=["a", "b", "c", "d"],
         models=models,
@@ -243,18 +248,20 @@ def test_experiment_run(tmp_path):
     dataset_filename = tmp_path / "test.hdf5"
     adf.save(filename=dataset_filename)
 
-    forecast_task = ForecastTask(pipeline=pipeline, features=features,
-                                 models=[ModelInstanceDescription(BaselineA, {}),
-                                         ModelInstanceDescription(BaselineB, {}),
-                                         ],
-                                 group_column="mmsi",
-                                 sequence_length=5,
-                                 forecast_length=1)
-    training_parameters = Experiment.TrainingParameters(epochs=1,
-                                                        validation_steps=1)
+    forecast_task = ForecastTask(
+        label="forecast-ais-short-sequence",
+        pipeline=pipeline, features=features,
+        models=[ModelInstanceDescription(BaselineA, {}),
+                ModelInstanceDescription(BaselineB, {}),
+                ],
+        group_column="mmsi",
+        sequence_length=5,
+        forecast_length=1,
+        training_parameters=TrainingParameters(epochs=1,
+                                               validation_steps=1)
+    )
 
     experiment = Experiment(learning_task=forecast_task,
-                            training_parameters=training_parameters,
                             input_data=dataset_filename,
                             output_directory=tmp_path)
     report = experiment.run()

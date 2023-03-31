@@ -29,6 +29,8 @@ class BaseModel(ABC):
     BaseModel for Machine Learning Models
 
     :param name: A name for this model - by default this will be the class name
+    :param features: List of the input feature names
+    :param targets: List of the target feature names
     :param distribution_strategy: A tensorflow distribution strategy when trying to distribute the training across
                          multiple devices
     :param output_dir: model / experiment specific output directory

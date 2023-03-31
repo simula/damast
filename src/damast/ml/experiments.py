@@ -26,8 +26,17 @@ __all__ = [
     "Experiment",
     "ForecastTask",
     "LearningTask",
-    "ModelInstanceDescription"
+    "ModelInstanceDescription",
+    "TrainingParameters"
 ]
+
+
+class TrainingParameters(NamedTuple):
+    epochs: int = 10
+    steps_per_epoch: int = 10
+    validation_steps: int = 12
+    learning_rate: float = 0.1
+    loss_function: str = "mse"
 
 
 class LearningTask:
@@ -36,24 +45,33 @@ class LearningTask:
 
     This class can associate a processing pipeline with a set of model to train and evaluation.
 
+    :param label: Label of this learning task (e.g. to uniquely mark the combination of task and learning parameters)
+           This label will be used to suffix the model-specific subfolder
     :param pipeline: The processing / feature extraction pipeline
     :param features: The features that this machine-learning model requires as input
     :param targets: The output features aka targets that this machine-learning model provides
     :param models: The actual model instances, i.e. model + parameters, that this learning
            task shall comprise
     """
+    label: str
     pipeline: DataProcessingPipeline
     features: List[str]
     targets: List[str]
 
     models: List[ModelInstanceDescription]
+    training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
 
-    def __init__(self,
+    def __init__(self, *,
+                 label: str,
                  pipeline: Union[Dict[str, Any], DataProcessingPipeline],
                  features: List[str],
                  models: List[Union[Dict[str, Any], ModelInstanceDescription]],
                  targets: List[str] = None,
+                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  ):
+
+        self.label = label
+
         if isinstance(pipeline, DataProcessingPipeline):
             self.pipeline = pipeline
         elif isinstance(pipeline, dict):
@@ -77,6 +95,14 @@ class LearningTask:
             else:
                 raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate ModelInstanceDescription"
                                  f" from {type(m)}")
+
+        if isinstance(training_parameters, TrainingParameters):
+            self.training_parameters = training_parameters
+        elif isinstance(training_parameters, dict):
+            self.training_parameters = TrainingParameters(**training_parameters)
+        else:
+            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either"
+                             f"dict or TrainingParameters object")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
@@ -103,10 +129,13 @@ class LearningTask:
         yield "module_name", self.__class__.__module__
         yield "class_name", self.__class__.__qualname__
 
+        yield "label", self.label
         yield "pipeline", dict(self.pipeline)
         yield "features", self.features
         yield "targets", self.targets
         yield "models", [dict(x) for x in self.models]
+
+        yield "training_parameters", self.training_parameters._asdict()
 
     def __eq__(self, other) -> bool:
         if type(self) != type(other):
@@ -123,7 +152,8 @@ class ForecastTask(LearningTask):
     forecast_length: int
     group_column: str
 
-    def __init__(self,
+    def __init__(self, *,
+                 label: str,
                  pipeline: Union[Dict[str, Any], DataProcessingPipeline],
                  group_column: str,
                  features: List[str],
@@ -131,11 +161,14 @@ class ForecastTask(LearningTask):
                  forecast_length: int,
                  models: List[Dict[str, Any], ModelInstanceDescription],
                  targets: List[str] = None,
+                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  ):
-        super().__init__(pipeline=pipeline,
+        super().__init__(label=label,
+                         pipeline=pipeline,
                          features=features,
                          models=models,
-                         targets=targets)
+                         targets=targets,
+                         training_parameters=training_parameters)
 
         self.group_column = group_column
         self.sequence_length = sequence_length
@@ -145,7 +178,8 @@ class ForecastTask(LearningTask):
         if type(self) != type(other):
             return False
 
-        for attr in ["pipeline", "features", "targets", "models", "group_column", "sequence_length", "forecast_length"]:
+        for attr in ["pipeline", "features", "targets", "models", "group_column", "sequence_length",
+                     "forecast_length", "training_parameters"]:
             if getattr(self, attr) != getattr(other, attr):
                 return False
 
@@ -170,7 +204,6 @@ class Experiment:
     output_directory: Path
     label: str
 
-    _training_parameters: TrainingParameters
     _batch_size: int
     _split_data_ratios: List[float]
 
@@ -180,31 +213,22 @@ class Experiment:
 
     _trained_models: List[BaseModel]
 
-    class TrainingParameters(NamedTuple):
-        epochs: int = 10
-        steps_per_epoch: int = 10
-        validation_steps: int = 12
-        learning_rate: float = 0.1
-        loss_function: str = "mse"
-
     def __init__(self,
                  learning_task: Union[Dict[str, Any], LearningTask],
                  input_data: Union[str, Path],
-                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  output_directory: Union[str, Path] = tempfile.gettempdir(),
                  batch_size: int = 2,
                  evaluation_steps=1,
                  split_data_ratios: List[float] = [1.6, 0.2, 0.2],
                  label: str = "damast-ml-experiment",
                  timestamp: Union[str, datetime.datetime] = datetime.datetime.utcnow(),
-                 evaluation = {}
+                 evaluation={}
                  ):
         """
         The ratios of how to split (test, training, validation) data from the input dataset
 
         :param learning_task:  A description of the machine-learning model setup
         :param input_data:
-        :param training_parameters:
         :param evaluation_steps:
         :param split_data_ratios:
         :param label:
@@ -224,14 +248,6 @@ class Experiment:
         self.input_data = Path(input_data)
         self.output_directory = output_directory
         self.label = label
-
-        if isinstance(training_parameters, Experiment.TrainingParameters):
-            self._training_parameters = training_parameters
-        elif isinstance(training_parameters, dict):
-            self._training_parameters = Experiment.TrainingParameters(**training_parameters)
-        else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either"
-                             f"dict or TrainingParameters object")
 
         self._batch_size = batch_size
         self._evaluation_steps = evaluation_steps
@@ -433,6 +449,7 @@ class Experiment:
               train_generator: Sequence,
               validate_generator: Sequence,
               output_dir: Path,
+              suffix: str = "",
               epochs: int = 2,
               steps_per_epoch: int = 10,
               validation_steps: int = 12,
@@ -440,7 +457,8 @@ class Experiment:
               loss_function: str = "mse") -> BaseModel:
         """
         Train a set of machine-learning models on given input data.
-
+        :param suffix: allow to add a training specific suffix to the output folder (otherwise) only the
+               model class name will be used, so only the last training would be kept
         :param model_instance_description: The model instance description for the model that should be trained
         :param train_generator: Generator providing data from training set
         :param validate_generator: Generator providing data from validation set
@@ -457,12 +475,14 @@ class Experiment:
         # NOTE: This should probably be an individual step, as we could re-use an existing model to continue training
         if isinstance(self.learning_task, ForecastTask):
             # TODO: the model needs to be applicable to a forecast task - so we might
-            model: BaseModel = model_instance_description.model(output_dir=output_dir,
-                                                                features=self.learning_task.features,
-                                                                targets=self.learning_task.targets,
-                                                                timeline_length=self.learning_task.sequence_length,
-                                                                **model_instance_description.parameters
-                                                                )
+            model: BaseModel = model_instance_description.model(
+                name=f"{model_instance_description.model.__name__}{suffix}",
+                output_dir=output_dir,
+                features=self.learning_task.features,
+                targets=self.learning_task.targets,
+                timeline_length=self.learning_task.sequence_length,
+                **model_instance_description.parameters
+            )
         else:
             raise NotImplementedError(
                 f"{self.__class__.__name__}.create_generator: Sorry, but there is currently no support "
@@ -567,12 +587,14 @@ class Experiment:
                                              group=group_column,
                                              group_ids=validate_group)
 
-            model = self.train(model_instance_description=model_instance_description,
-                               train_generator=train_data_gen,
-                               validate_generator=validate,
-                               output_dir=experiment_dir,
-                               **self._training_parameters._asdict()
-                               )
+            model = self.train(
+                suffix=f"-{self.learning_task.label}",
+                model_instance_description=model_instance_description,
+                train_generator=train_data_gen,
+                validate_generator=validate,
+                output_dir=experiment_dir,
+                **self.learning_task.training_parameters._asdict()  # noqa
+            )
             self._trained_models.append(model)
 
         # TODO: This should return a 'REPORT / PROTOCOL' of the whole experiment
@@ -597,7 +619,6 @@ class Experiment:
         yield "input_data", str(self.input_data)
         yield "output_directory", str(self.output_directory)
         yield "learning_task", dict(self.learning_task)
-        yield "training_parameters", self._training_parameters._asdict()
         yield "batch_size", self._batch_size
         yield "evaluation_steps", self._evaluation_steps
         yield "split_data_ratios", self._split_data_ratios
