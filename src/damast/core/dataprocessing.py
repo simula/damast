@@ -34,14 +34,11 @@ __all__ = [
     "PipelineElement",
 ]
 
-
 DECORATED_DESCRIPTION = "_damast_description"
 """Attribute description for :func:`describe`"""
 
-
 DECORATED_ARTIFACT_SPECS = "_damast_artifact_specs"
 """Attribute description for :func:`artifacts`"""
-
 
 DECORATED_INPUT_SPECS = "_damast_input_specs"
 """Attribute description for :func:`input`"""
@@ -227,8 +224,8 @@ def artifacts(requirements: Dict[str, Any]):
                 )
 
             # Validate the spec with respect to the existing parent pipeline
+            instance = args[0]
             try:
-                instance = args[0]
                 required_artifact_specs.validate(
                     base_dir=instance.parent_pipeline.base_dir
                 )
@@ -383,19 +380,18 @@ class DataProcessingPipeline(PipelineElement):
 
     def __init__(self, *,
                  name: str,
-                 base_dir: Union[str, Path] = None,
-                 steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = None
+                 base_dir: Union[str, Path] = tempfile.gettempdir(),
+                 steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = []
                  ):
         self.name = name
-        if base_dir is None:
-            base_dir = tempfile.gettempdir()
-
         self.base_dir = Path(base_dir)
 
         self._output_specs = None
-        if steps is None or len(steps) == 0:
-            self.steps = []
-        else:
+        if steps is None:
+            raise ValueError(f"{self.__class__.__name__}.__init__:"
+                             " steps must not be None")
+
+        if len(steps) > 0:
             name, instance = steps[0]
             if isinstance(instance, PipelineElement):
                 self.steps = steps
@@ -419,10 +415,10 @@ class DataProcessingPipeline(PipelineElement):
         return self._output_specs
 
     def add(
-        self,
-        name: str,
-        transformer: PipelineElement,
-        name_mappings: Dict[str, str] = None,
+            self,
+            name: str,
+            transformer: PipelineElement,
+            name_mappings: Optional[Dict[str, str]] = None,
     ) -> DataProcessingPipeline:
         """
         Add a pipeline step
@@ -442,7 +438,7 @@ class DataProcessingPipeline(PipelineElement):
 
     @classmethod
     def validate(
-        cls, steps: List[Tuple[str, PipelineElement]], metadata: MetaData
+            cls, steps: List[Tuple[str, PipelineElement]], metadata: MetaData
     ) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the minimal input and output data specification.
@@ -501,7 +497,7 @@ class DataProcessingPipeline(PipelineElement):
             if hasattr(transformer.transform, DECORATED_DESCRIPTION):
                 description = getattr(transformer.transform, DECORATED_DESCRIPTION)
                 data += (
-                    hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
+                        hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
                 )
 
             data += hspace + DEFAULT_INDENT * 2 + "input:\n"
@@ -578,7 +574,7 @@ class DataProcessingPipeline(PipelineElement):
 
     @classmethod
     def load_state(
-        cls, df: AnnotatedDataFrame, dir: Union[str, Path], name: str = "*"
+            cls, df: AnnotatedDataFrame, dir: Union[str, Path], name: str = "*"
     ) -> AnnotatedDataFrame:
         """
         Load a ``vaex`` state (from file) to a :class:`damast.core.AnnotatedDataFrame`.
@@ -628,12 +624,12 @@ class DataProcessingPipeline(PipelineElement):
                 f" consistency between 'data' and 'metadata' by using "
                 f" AnnotatedDataFrame.validate_metadata()"
                 f" -- {e}"
-            )
+            ) from e
 
         validation_result = self.validate(steps=self.steps, metadata=df._metadata)
         self.is_ready = True
 
-        self.steps: List[Tuple[str, Transformer]] = validation_result["steps"]
+        self.steps: List[Tuple[str, PipelineElement]] = validation_result["steps"]
         self._output_specs: List[DataSpecification] = validation_result["output_spec"]
 
         return self

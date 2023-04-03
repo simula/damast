@@ -182,13 +182,13 @@ class Change:
         :param data: Input dictionary
         :return: A change object
         """
-        instance = cls(
+        return cls(
             title=data["title"],
-            timestamp=datetime.strptime(data["timestamp"], Change.TIMESTAMP_FORMAT),
+            timestamp=datetime.strptime(
+                data["timestamp"], Change.TIMESTAMP_FORMAT
+            ),
             description=data["description"],
         )
-
-        return instance
 
 
 class History(Annotation):
