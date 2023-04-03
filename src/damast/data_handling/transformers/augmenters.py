@@ -233,7 +233,7 @@ class AddLocalMessageIndex(PipelineElement):
         del historic_position, reverse_historic_position
         new_specs = [damast.core.DataSpecification(self.get_name("msg_index"), representation_type=int),
                      damast.core.DataSpecification(self.get_name("reverse_{{msg_index}}"), representation_type=int)]
-        [df._metadata.columns.append(new_spec) for new_spec in new_specs]
+        df._metadata.columns.extend(new_specs)
         return df
 
 
