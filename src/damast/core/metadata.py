@@ -85,8 +85,8 @@ class ArtifactSpecification:
                         "missing"
                     )
             else:
-                files = [x for x in Path(base_dir).glob(path_pattern)]
-                if len(files) == 0:
+                files = list(Path(base_dir).glob(path_pattern))
+                if not files:
                     raise RuntimeError(
                         f"{self.__class__.__name__}.validate: no artifact matching "
                         f" {path_pattern} found in '{base_dir}'"
@@ -106,15 +106,6 @@ class ValidationMode(str, Enum):
 
     UPDATE_METADATA = "UPDATE_METADATA"
     """Metadata should be updated to comply with the data"""
-
-
-class ValidationMode(str, Enum):
-    #: Metadata cannot be changed
-    READONLY = "READONLY"
-    #: Data should be updated to comply with the metadata
-    UPDATE_DATA = "UPDATE_DATA"
-    #: Metadata should be updated to comply with the data
-    UPDATE_METADATA = "UPDATE_METADATA"
 
 
 class DataSpecification:
@@ -198,7 +189,9 @@ class DataSpecification:
         missing_column: str
         known_columns: List[str]
 
-        def __init__(self, missing_column: str = None, known_columns: List[str] = None):
+        def __init__(self,
+                     missing_column: str,
+                     known_columns: List[str]):
             super().__init__()
 
             self.missing_column = missing_column
@@ -290,11 +283,10 @@ class DataSpecification:
         if self.__class__ != other.__class__:
             return False
 
-        for m in DataSpecification.Key:
-            if getattr(self, m.value) != getattr(other, m.value):
-                return False
-
-        return True
+        return all(
+            getattr(self, m.value) == getattr(other, m.value)
+            for m in DataSpecification.Key
+        )
 
     def __repr__(self):
         return f"{self.__class__.__name__}[{self.name}, {self.category.__class__.__name__}]"
@@ -433,10 +425,10 @@ class DataSpecification:
                 data_category = DataCategory(data_category)
 
         spec = cls(
-            name=data[cls.Key.name],
-            category=data_category,
-            is_optional=bool(data[cls.Key.is_optional]),
-            abbreviation=abbreviation,
+            name = data[cls.Key.name],
+            category = data_category,
+            is_optional = bool(data[cls.Key.is_optional]),
+            abbreviation = abbreviation,
         )
 
         if cls.Key.representation_type.value in data:
@@ -451,9 +443,7 @@ class DataSpecification:
                 spec.precision = DataElement.create(
                     data[cls.Key.precision.value], spec.representation_type
                 )
-        else:
-            # Missing representation type, missing value and precision will not be loaded
-            pass
+        # else: Missing representation type, missing value and precision will not be loaded
 
         if cls.Key.unit.value in data:
             # Check if unit is part of the default definitions
@@ -468,7 +458,7 @@ class DataSpecification:
                 unit = unit_value
             else:
                 raise RuntimeError(
-                    f"{cls.__name__}.from_dict: cannot interprete unit type "
+                    f"{cls.__name__}.from_dict: cannot interpret unit type "
                     f"'{type(unit_value)}"
                 )
 
@@ -506,7 +496,7 @@ class DataSpecification:
         for spec in specs:
             data += hspace + spec.name
             if spec.unit is not None:
-                data += "[unit: " + spec.unit.to_string() + "]"
+                data += f"[unit: {spec.unit.to_string()}]"
             data += "\n"
         return data
 
@@ -784,10 +774,7 @@ class MetaData:
 
         def is_met(self) -> bool:
             """Check if all fulfillments in the set of data-specifications are met."""
-            for k, v in self.column_fulfillments.items():
-                if not v.is_met():
-                    return False
-            return True
+            return all(v.is_met() for k, v in self.column_fulfillments.items())
 
         def add_fulfillment(
             self, column_name: str, fulfillment: DataSpecification.Fulfillment
@@ -830,7 +817,7 @@ class MetaData:
             self._annotations = {}
         else:
             assert isinstance(annotations, list)
-            unique_annotations = set([annotation.name for annotation in annotations])
+            unique_annotations = {annotation.name for annotation in annotations}
             if len(unique_annotations) != len(annotations):
                 raise ValueError(
                     f"{self.__class__.__name__}: Set of annotations in metadata has duplicate names "
@@ -876,7 +863,7 @@ class MetaData:
 
     def to_str(self, indent: int = 0, default_indent: str = " " * 4) -> str:
         hspace = " " * indent
-        repr = [hspace + "Annotations:"]
+        repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
             repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
@@ -894,7 +881,7 @@ class MetaData:
 
     def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
         hspace = ' ' * indent
-        repr = [hspace + "Annotations:"]
+        repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
             repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
@@ -944,7 +931,7 @@ class MetaData:
                 raise RuntimeError(
                     f"{cls.__name__}.from_dict: could not"
                     f" process column specification: {data_spec_dict} -- {e}"
-                )
+                ) from e
 
         annotations = []
         for annotation_key, annotation_value in data[cls.Key.annotations.value].items():
@@ -957,8 +944,7 @@ class MetaData:
                 )
             annotations.append(annotation)
 
-        metadata = cls(columns=data_specs, annotations=annotations)
-        return metadata
+        return cls(columns=data_specs, annotations=annotations)
 
     @classmethod
     def load_yaml(cls, filename: Union[str, Path]) -> MetaData:
@@ -1023,10 +1009,7 @@ class MetaData:
 
     def __contains__(self, column_name: str):
         """"""
-        for colum_spec in self.columns:
-            if colum_spec.name == column_name:
-                return True
-        return False
+        return any(colum_spec.name == column_name for colum_spec in self.columns)
 
     def __getitem__(self, column_name: str) -> DataSpecification:
         """
