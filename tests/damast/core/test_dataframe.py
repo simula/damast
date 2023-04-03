@@ -112,7 +112,8 @@ def test_annotated_dataframe_import_hdf5():
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m, value_range=MinMax(min=0, max=40))
+        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m,
+        value_range=MinMax(min=0, max=40))
 
 
 def test_annotated_dataframe_import_csv():
@@ -128,7 +129,8 @@ def test_annotated_dataframe_import_csv():
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m, value_range=MinMax(min=0, max=40))
+        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m,
+        value_range=MinMax(min=0, max=40))
 
 
 def test_01_dataframe_composition():
