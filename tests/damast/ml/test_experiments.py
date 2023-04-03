@@ -152,6 +152,46 @@ def experiment_dir(tmp_path):
     return tmp_path
 
 
+def test_learning_task_init():
+    with pytest.raises(ValueError, match="could not instantiate"):
+        LearningTask(label="test",
+                     pipeline=10,
+                     features=["a"],
+                     targets=["b"],
+                     models=[],
+                     )
+
+    # ModelInstanceDescription is incorrect
+    with pytest.raises(ValueError, match="could not instantiate"):
+        LearningTask(label="test",
+                     pipeline=DataProcessingPipeline(name="test-pipeline"),
+                     features=["a"],
+                     targets=["b"],
+                     models=[10],
+                     )
+
+    with pytest.raises(ValueError, match="training_parameters"):
+        LearningTask(label="test",
+                     pipeline=DataProcessingPipeline(name="test-pipeline"),
+                     features=["a"],
+                     targets=["b"],
+                     models=[ModelInstanceDescription(BaseModel, {})],
+                     training_parameters=10
+                     )
+
+
+def test_learning_task_io():
+    with pytest.raises(KeyError, match="missing 'module_name'"):
+        LearningTask.from_dict(data={})
+
+    with pytest.raises(KeyError, match="missing 'class_name'"):
+        LearningTask.from_dict(data={'module_name': 'damast.ml.experiments'})
+
+    with pytest.raises(ValueError, match="could not find"):
+        LearningTask.from_dict({'module_name': 'damast.ml.experiments',
+                                'class_name': 'NotAnExistingClass'})
+
+
 def test_validate_experiment_dir(tmp_path):
     with pytest.raises(FileNotFoundError, match="does not exist"):
         Experiment.validate_experiment_dir(dir="UNKNOWN_DIR")
@@ -205,6 +245,42 @@ def test_learning_task(tmp_path):
     loaded_t = LearningTask.from_dict(data=data_dict)
     assert loaded_t == lt
 
+    loaded_t.pipeline.name = "new-pipeline-name"
+    assert loaded_t != lt
+
+    assert loaded_t != 10
+
+
+def test_forecast_task(tmp_path):
+    pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
+        .add("transform-a", TransformerA())
+
+    models = [
+        ModelInstanceDescription(model=ModelA,
+                                 parameters={})
+    ]
+
+    lt = ForecastTask(
+        label="test forecast task",
+        pipeline=pipeline,
+        features=["a", "b", "c", "d"],
+        models=models,
+        sequence_length=20,
+        forecast_length=1,
+        group_column="key-column"
+    )
+
+    data_dict = dict(lt)
+    loaded_t = LearningTask.from_dict(data=data_dict)
+    assert isinstance(loaded_t, ForecastTask)
+
+    assert loaded_t == lt
+
+    loaded_t.pipeline.name = "new-pipeline-name"
+    assert loaded_t != lt
+
+    assert loaded_t != 10
+
 
 def test_to_and_from_file(tmp_path):
     pipeline = DataProcessingPipeline(name="abc", base_dir=tmp_path) \
@@ -225,12 +301,21 @@ def test_to_and_from_file(tmp_path):
         forecast_length=1
     )
 
+    with pytest.raises(ValueError, match="learning_task"):
+        Experiment(learning_task="This is not a learning task",
+                   batch_size=10,
+                   input_data=Path(__file__).parent.parent / "data" / "test_dataframe.hdf5")
+
     experiment = Experiment(learning_task=task,
                             batch_size=10,
                             input_data=Path(__file__).parent.parent / "data" / "test_dataframe.hdf5")
 
     filename = tmp_path / "test-experiment.yaml"
     experiment.save(filename=filename)
+
+    with pytest.raises(FileNotFoundError):
+        Experiment.from_file("this-is-not-the-right-file")
+
     loaded_e = Experiment.from_file(filename)
 
     assert loaded_e == experiment
@@ -266,3 +351,40 @@ def test_experiment_run(tmp_path):
                             output_directory=tmp_path)
     report = experiment.run()
     print(report)
+
+    # Wrong key column
+    forecast_task = ForecastTask(
+        label="forecast-ais-short-sequence",
+        pipeline=pipeline, features=features,
+        models=[ModelInstanceDescription(BaselineA, {}),
+                ModelInstanceDescription(BaselineB, {}),
+                ],
+        group_column="no-valid-key-column",
+        sequence_length=5,
+        forecast_length=1,
+        training_parameters=TrainingParameters(epochs=1,
+                                               validation_steps=1)
+    )
+
+    experiment = Experiment(learning_task=forecast_task,
+                            input_data=dataset_filename,
+                            output_directory=tmp_path)
+    with pytest.raises(RuntimeError, match="no column 'no-valid-key-column'"):
+        experiment.run()
+
+    # Wrong Task
+    learning_task = LearningTask(
+        label="a learning task",
+        pipeline=pipeline, features=features,
+        models=[ModelInstanceDescription(BaselineA, {}),
+                ModelInstanceDescription(BaselineB, {}),
+                ],
+        training_parameters=TrainingParameters(epochs=1,
+                                               validation_steps=1)
+    )
+
+    experiment = Experiment(learning_task=learning_task,
+                            input_data=dataset_filename,
+                            output_directory=tmp_path)
+    with pytest.raises(NotImplementedError):
+        experiment.run()

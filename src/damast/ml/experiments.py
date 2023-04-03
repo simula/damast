@@ -101,7 +101,7 @@ class LearningTask:
         elif isinstance(training_parameters, dict):
             self.training_parameters = TrainingParameters(**training_parameters)
         else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either"
+            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either "
                              f"dict or TrainingParameters object")
 
     @classmethod
@@ -554,9 +554,14 @@ class Experiment:
         # We remove values that are outside the Min/Max value defined in the specification
         adf = AnnotatedDataFrame.from_file(self.input_data)
 
+        if not isinstance(self.learning_task, ForecastTask):
+            raise NotImplementedError(
+                f"{self.__class__.__name__}.run: Sorry, but there is currently only support "
+                f"implemented for ForecastTask")
+
         group_column = self.learning_task.group_column
         if group_column not in adf.column_names:
-            raise RuntimeError(f"{self.__class__.__name__}.run: no colum '{group_column}' in the given dataset "
+            raise RuntimeError(f"{self.__class__.__name__}.run: no column '{group_column}' in the given dataset "
                                f"'{self.input_data}' -- found only '{','.join(adf.column_names)}'")
 
         # If a learning task is used, that requires a sequence length, then filter the data, so that
