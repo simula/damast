@@ -1,6 +1,7 @@
 from pathlib import Path
 from time import sleep
 from functools import partial
+import psutil
 
 import numpy as np
 import pandas as pd
@@ -10,24 +11,19 @@ import subprocess
 
 from damast.ml.scheduler import JobScheduler, Job
 
-
-def test_scheduler_worker(monkeypatch, tmp_path):
+@pytest.fixture()
+def job(tmp_path):
     # Generate a simple sequence dataset, that can be loaded also by the triggered worker
     column_names = ["a", "b", "c", "d"]
     data = []
-    for i in range(0, 100):
-        row = []
-        for col in column_names:
-            row.append(i)
+    for i in range(100):
+        row = [i for _ in column_names]
         data.append(row)
 
     pandas_df = pd.DataFrame(data, columns=column_names)
     df = vaex.from_pandas(pandas_df)
     data_filename = tmp_path / "test_sequence.hdf5"
     df.export(data_filename)
-
-    run_test_worker = Path(__file__).parent / "run_test_worker.py"
-    assert run_test_worker.exists()
 
     job_dict = {
         "id": -1,
@@ -38,22 +34,44 @@ def test_scheduler_worker(monkeypatch, tmp_path):
         "sequence_length": 5,
         "data_filename": str(data_filename)
     }
-    job = Job(**job_dict)
+    return Job(**job_dict)
+
+
+@pytest.fixture()
+def worker_process():
+    # Ensure that no previous worker job is running
+    for proc in psutil.process_iter():
+        if "run_test_worker" in proc.name():
+            proc.kill()
+
+    run_test_worker = Path(__file__).parent / "run_test_worker.py"
+    assert run_test_worker.exists()
+
+    worker_process = subprocess.Popen(["python", str(run_test_worker)])
+    yield worker_process
+    worker_process.terminate()
+
+
+def test_scheduler_worker_fail(job):
+    # Ensure that no previous worker job is running
+    for proc in psutil.process_iter():
+        if "run_test_worker" in proc.name():
+            proc.kill()
+
     job_scheduler = JobScheduler()
     with pytest.raises(RuntimeError):
         job_scheduler.start(job)
 
-    worker_process = subprocess.Popen(["python", str(run_test_worker)])
-    for i in range(0, 10):
+def test_scheduler_worker(monkeypatch, job, worker_process):
+    job_scheduler = JobScheduler()
+    for _ in range(60):
         try:
             job_scheduler.start(job)
             break
         except Exception as e:
-            assert True, f"Waiting for worker: {e}"
             pass
         finally:
             sleep(1)
-
     assert job.id != -1, "Job has been successfully started"
 
     responses = Job.wait_for_responses(status_collector=partial(job_scheduler.get_status, job.id),
@@ -66,5 +84,3 @@ def test_scheduler_worker(monkeypatch, tmp_path):
 
     Job.wait_for_status(status_collector=partial(job_scheduler.get_status, job.id),
                         match_status=Job.Status.STOPPED)
-
-    worker_process.terminate()
