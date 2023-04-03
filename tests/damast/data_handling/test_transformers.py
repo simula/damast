@@ -18,7 +18,7 @@ def test_timestamp(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: bool):
     """
     Test if time-stamp is sensible to work by
     """
-    pipeline = damast.core.DataProcessingPipeline("test removal of source", Path(tmpdir))
+    pipeline = damast.core.DataProcessingPipeline(name="test removal of source", base_dir=Path(tmpdir))
     pipeline.add("Add time stamp", damast.data_handling.transformers.AddTimestamp(inplace),
                  name_mappings={"from": ColumnName.DATE_TIME_UTC, "to": ColumnName.TIMESTAMP})
     adf_copy = adf.dataframe.copy()
