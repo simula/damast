@@ -1,5 +1,6 @@
 import numpy as np
 from pathlib import Path
+import copy
 
 import astropy.units as units
 import pandas as pd
@@ -39,6 +40,29 @@ def vaex_dataframe():
     columns = ["height", "letter"]
     pandas_df = pd.DataFrame(data, columns=columns)
     return vaex.from_pandas(pandas_df)
+
+
+def test_annotated_dataframe_deep_copy(metadata, vaex_dataframe):
+    """
+    Validate the deep copy functionality of the dataframe"
+    """
+
+    adf = AnnotatedDataFrame(dataframe=vaex_dataframe,
+                             metadata=metadata)
+
+    adf_copy = copy.deepcopy(adf)
+
+    assert adf_copy.metadata.columns == adf.metadata.columns
+    assert adf_copy.dataframe.column_names == adf.dataframe.column_names
+
+    old_name = adf_copy.metadata.columns[0].name
+    adf_copy.metadata.columns[0].name = "new-name"
+    assert adf.metadata.columns[0].name == old_name
+
+    column_names = adf.dataframe.column_names
+    assert adf_copy.dataframe.drop(columns=adf_copy.dataframe.column_names, inplace=True).extract()
+    assert adf.dataframe.column_names == column_names
+    assert adf_copy.dataframe.column_names != column_names
 
 
 def test_annotated_dataframe_export_hdf5(metadata, vaex_dataframe, tmp_path):

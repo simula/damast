@@ -102,14 +102,6 @@ class AnnotatedDataFrame:
         """
         return self._dataframe
 
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, copy.deepcopy(v, memo))
-        return result
-
     @property
     def metadata(self):
         return self._metadata
@@ -295,6 +287,9 @@ class AnnotatedDataFrame:
         :param item: Name of column
         :return: The column data
         """
+        if item in ["__setstate__", "__getstate__"]:
+            raise AttributeError(f"{self.__class__.__name__}.__getattr__: {item} does not exist")
+
         return getattr(self._dataframe, item)
 
     def __getitem__(self, item) -> Any:
