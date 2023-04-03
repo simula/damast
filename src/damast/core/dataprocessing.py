@@ -391,17 +391,16 @@ class DataProcessingPipeline(PipelineElement):
             raise ValueError(f"{self.__class__.__name__}.__init__:"
                              " steps must not be None")
 
-        if len(steps) > 0:
-            name, instance = steps[0]
+        self.steps = []
+        for step in steps:
+            name, instance = step
             if isinstance(instance, PipelineElement):
-                self.steps = steps
+                self.steps.append(step)
             elif isinstance(instance, dict):
-                self.steps = []
-                for step in steps:
-                    self.steps.append([step[0], PipelineElement.create_new(**step[1])])
+                self.steps.append([step[0], PipelineElement.create_new(**step[1])])
             else:
                 raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate PipelineElement"
-                                 f" from {type(steps[1])}")
+                                 f" from {type(step)}")
         self.is_ready = False
 
     @property
