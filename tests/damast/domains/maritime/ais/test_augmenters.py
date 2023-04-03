@@ -100,7 +100,7 @@ def test_delta_column(tmp_path):
     # Create pipeline
     pipeline = damast.core.DataProcessingPipeline("DeltaDistance", tmp_path)
 
-    pipeline.add("Great circle distance", DeltaDistance(True, True, True),
+    pipeline.add("Great circle distance", DeltaDistance(True, True),
                  name_mappings={"group": ColumnName.MMSI,
                                 "sort": ColumnName.TIMESTAMP,
                                 "x": ColumnName.LATITUDE,
@@ -243,10 +243,10 @@ def test_add_distance_closest_anchorage(tmp_path):
                  name_mappings={"x": ColumnName.LATITUDE,
                                 "y": ColumnName.LONGITUDE,
                                 "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
-    pipeline.transform(adf)
-    closest_anchorages = adf._dataframe[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].evaluate()
+    new_adf = pipeline.transform(adf)
+    closest_anchorages = new_adf._dataframe[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].evaluate()
     distances = np.zeros(len(anchorage_data))
-    for idx in range(len(adf._dataframe)):
+    for idx in range(len(new_adf._dataframe)):
         for i, anchorage in enumerate(anchorage_data):
             pos = anchorage[1:3]
             distances[i] = great_circle_distance(pos[0], pos[1], data[idx][0], data[idx][1])

@@ -838,14 +838,6 @@ class MetaData:
                 )
             self._annotations = {an.name: an for an in annotations}
 
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, copy.deepcopy(v, memo))
-        return result
-
     @property
     def annotations(self):
         return self._annotations

@@ -52,13 +52,6 @@ class Annotation:
         if hasattr(self, validation_func_name):
             getattr(self, validation_func_name)()
 
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, copy.deepcopy(v, memo))
-        return result
     def __eq__(self, other) -> bool:
         """
         Check if two annotations are the same.

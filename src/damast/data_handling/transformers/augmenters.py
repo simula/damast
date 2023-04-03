@@ -203,9 +203,10 @@ class AddLocalMessageIndex(PipelineElement):
                          "reverse_{{msg_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
-        tmp_column = f"{self.__class__.__name__}"
+        tmp_column = f"{self.__class__.__name__}_tmp"
         if tmp_column in dataframe.column_names:
             raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
+        assert tmp_column not in [self.get_name("msg_index"), self.get_name("reverse_{{msg_index}}")]
         dataframe[tmp_column] = vaex.vrange(0, len(dataframe), dtype=int)
 
         historic_position = np.empty(len(dataframe), dtype=int)

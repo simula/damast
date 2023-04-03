@@ -54,7 +54,8 @@ class DeltaDistance(PipelineElement):
         in_y = self.get_name("y")
         shift_x = f"{in_x}_shifted"
         shift_y = f"{in_y}_shifted"
-        tmp_column = f"{self.__class__.__name__}"
+        tmp_column = f"{self.__class__.__name__}_tmp"
+        assert tmp_column != self.get_name("out")
         if tmp_column in dataframe.column_names:
             raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
 
