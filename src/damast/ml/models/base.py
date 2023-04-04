@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import gc
 import glob
 import importlib
 from abc import ABC, abstractmethod
@@ -202,12 +204,18 @@ class BaseModel(ABC):
             # log_hyperparams_cb = hp.KerasCallback(logdir=self.model_dir / "logs",
             #                                       hparams)
 
+            class CleanupCallback(keras.callbacks.Callback):
+                def on_train_batch_begin(self, epoch, logs=None):
+                    gc.collect()
+            cleanup_cb = CleanupCallback()
+
             # Allow to checkpoint per epoch
             self.history = self.model.fit(training_data,
                                           validation_data=validation_data,
                                           epochs=epochs,
                                           initial_epoch=initial_epoch,
                                           callbacks=[
+                                              cleanup_cb,
                                               model_checkpoint_cb,
                                               early_stopping_cb,
                                               tensorboard_cb,
