@@ -2,18 +2,65 @@
 
 Documentation at: https://simula-srl.gitlab.io/damast
 
-## Installation
+## Installation and Development Setup
 
-# Developer install
-    python3 -m pip install -e .[test]
+Firstly, you will want to create you an isolated development environment for Python, that being conda or venv-based.
+The following will go through a venv based setup.
 
-A docker container to install and run the project is in preparation.
+Let us assume you operate with a 'workspace' directory for this project:
+
+```
+    cd workspace
+```
+
+Here, you will create a virtual environment.
+Get an overview over venv (command):
+
+```
+    python -m venv --help
+```
+
+Create your venv and activate it:
+```
+    python -m venv damast-venv
+    source damast-venv/bin/activate
+```
+
+Clone the repo and install:
+
+```
+    git clone https://gitlab.com/simula-srl/damast
+    cd damast
+    pip install -e ".[test,dev]"
+
+```
+
+## Docker Container
+
+If you prefer to work or start with a docker container you can build it using the provided [Dockerfile](Dockerfile)
+```
+    docker build -t damast:latest -f Dockerfile .
+```
+
+To enter the container:
+```
+    docker run -it --rm damast:latest /bin/bash
+```
 
 ## Usage
 
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of
-usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably
-include in the README.
+Once you installed the package you can locally generate the documentation:
+```
+    tox -e build_docs
+```
+You can then open the documentation with a browser:
+```
+    <yourbrowser> _build/html/index.html
+```
+
+Otherwise you will find API and usage documentation [here](https://simula-srl.gitlab.io/damast/README.html).
+
+
 
 
 ## Testing
@@ -24,18 +71,16 @@ Install the project and use the predefined default test environment:
 
 ## Contributing
 
-This project is open to contributions. In order to collaborate, fork the project and create a merge request with your
-desired changes.
-Adhere to any existing code style and accompany your changes a corresponding tests. Check also if the documentation
-needs to be updated
-as result of your changes.
+This project is open to contributions. For details on how to contribute please check the [Contribution Guidelines](CONTRIBUTING.md)
 
 ## License
-BSD-3-Clause
+This project is licensed under the [BSD-3-Clause License](LICENSE).
+
+## Copyright
+
+Copyright (c) 2023 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/software-engineering)
 
 ## Acknowledgments
 
 This work has been derived from work that is part of the [T-SAR project](https://www.simula.no/research/projects/t-sar)
 Some derived work is mainly part of the specific data processing for the 'maritime' domain.
-
-The code will continue to undergo significant restructuring during 2023-Q1.
