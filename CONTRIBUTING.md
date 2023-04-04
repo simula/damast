@@ -7,38 +7,10 @@ below.  In case there is some information missing, or you feel lost, do not
 hesitate to ask or [open an issue](https://gitlab.com/simula-srl/damast/-/issues/new)
  on this project.
 
-## Development Setup
+ ## Installation
 
-Firstly, you will want to create you an isolated development environment for Python, that being conda or venv-based.
-The following will go through a venv based setup.
+ Follow the installation and setup instructions in the [README.md](README.md).
 
-Let us assume you operate with a 'workspace' directory for this project:
-
-```
-    cd workspace
-```
-
-Here, you will create a virtual environment.
-Get an overview over venv (command):
-
-```
-    python -m venv --help
-```
-
-Create your venv and activate it:
-```
-    python -m venv damast-venv
-    source damast-venv/bin/activate
-```
-
-Clone the repo and install:
-
-```
-    git clone https://gitlab.com/simula-srl/damast
-    cd damast
-    pip install -e ".[test,dev]"
-
-```
 
 ## Code and development style
 
