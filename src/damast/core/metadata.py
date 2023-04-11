@@ -425,10 +425,10 @@ class DataSpecification:
                 data_category = DataCategory(data_category)
 
         spec = cls(
-            name = data[cls.Key.name],
-            category = data_category,
-            is_optional = bool(data[cls.Key.is_optional]),
-            abbreviation = abbreviation,
+            name=data[cls.Key.name],
+            category=data_category,
+            is_optional=bool(data[cls.Key.is_optional]),
+            abbreviation=abbreviation,
         )
 
         if cls.Key.representation_type.value in data:
@@ -764,7 +764,9 @@ class MetaData:
 
     class Fulfillment:
         """
-        A class containing all fulfillments (set of :class:`DataSpecification.Fulfillment`), where a fulfillment describes whether a constraint on a column holds or not, added to :class:`MetaData`
+        A class containing all fulfillments (set of :class:`DataSpecification.Fulfillment`).
+
+        A fulfillment describes whether a constraint on a column holds or not, added to :class:`MetaData`
         """
 
         column_fulfillments: Dict[str, DataSpecification.Fulfillment]
@@ -860,24 +862,6 @@ class MetaData:
             assert key == value.name
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
-
-    def to_str(self, indent: int = 0, default_indent: str = " " * 4) -> str:
-        hspace = " " * indent
-        repr = [f"{hspace}Annotations:"]
-        for name, annotation in self.annotations.items():
-            repr.append(hspace + default_indent + f"{name}: {annotation.value}")
-
-        for spec in self.columns:
-            spec_dict = dict(spec)
-            repr.append(hspace + default_indent + f"{spec_dict['name']}:")
-            for field_name, value in spec_dict.items():
-                if field_name == "name":
-                    continue
-                repr.append(
-                    hspace + default_indent + default_indent + f"{field_name}: {value}"
-                )
-
-        return "\n".join(repr)
 
     def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
         hspace = ' ' * indent

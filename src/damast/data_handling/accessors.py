@@ -165,7 +165,8 @@ class GroupSequenceAccessor:
         datatypes = self.df[features].dtypes
         for dtype in datatypes:
             if dtype != datatypes[0]:
-                raise ValueError(f"{self.__class__.__name__}: Features {features} do not have a consistent (single) datatype," +
+                raise ValueError(f"{self.__class__.__name__}:"
+                                 f" Features {features} do not have a consistent (single) datatype,"
                                  f" got {datatypes.to_list()}")
 
         use_target = target is not None
@@ -173,7 +174,8 @@ class GroupSequenceAccessor:
             datatypes = self.df[target].dtypes
             for dtype in datatypes:
                 if dtype != datatypes[0]:
-                    raise ValueError(f"{self.__class__.__name__}: Targets {target} do not have a consistent (single) datatype," +
+                    raise ValueError(f"{self.__class__.__name__}:"
+                                     f" Targets {target} do not have a consistent (single) datatype,"
                                      f" got {datatypes.to_list()}")
 
         if use_target:
@@ -380,7 +382,8 @@ class SequenceIterator:
         datatypes = self.df[features].dtypes
         for dtype in datatypes:
             if dtype != datatypes[0]:
-                raise ValueError(f"{self.__class__.__name__}: Features {features} do not have a consistent (single) datatype," +
+                raise ValueError(f"{self.__class__.__name__}:"
+                                 f" Features {features} do not have a consistent (single) datatype,"
                                  f" got {datatypes.to_list()}")
 
         use_target = target is not None
@@ -388,7 +391,8 @@ class SequenceIterator:
             datatypes = self.df[target].dtypes
             for dtype in datatypes:
                 if dtype != datatypes[0]:
-                    raise ValueError(f"{self.__class__.__name__}: Targets {target} do not have a consistent (single) datatype," +
+                    raise ValueError(f"{self.__class__.__name__}:"
+                                     f" Targets {target} do not have a consistent (single) datatype,"
                                      f" got {datatypes.to_list()}")
 
         if sequence_forecast < 0:
@@ -412,8 +416,9 @@ class SequenceIterator:
 
         len_sequence = len(sequence)  # Equivalent to sequence.shape[0]
         if len_sequence < (sequence_length + sequence_forecast):
-            raise RuntimeError(f"{self.__class__.__name__}: 'Sequence length' plus 'forecast length' ({sequence_length + sequence_forecast}) larger than" +
-                               f" dataframe of size ({len_sequence})")
+            raise RuntimeError(f"{self.__class__.__name__}:"
+                               f" 'Sequence length' plus 'forecast length' ({sequence_length + sequence_forecast})"
+                               f" larger than dataframe of size ({len_sequence})")
 
         def _generator(sequence: pandas.DataFrame,
                        features: List[str],

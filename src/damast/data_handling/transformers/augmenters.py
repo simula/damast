@@ -4,7 +4,7 @@ Module which collects transformers that add / augment the existing data
 import datetime
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -17,7 +17,7 @@ from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import DataSpecification, PipelineElement
 
 __all__ = [
-    "AddLocalMessageIndex",
+    "AddLocalIndex",
     "JoinDataFrameByColumn",
     "BallTreeAugmenter",
     "AddUndefinedValue",
@@ -65,7 +65,7 @@ class JoinDataFrameByColumn(PipelineElement):
 
         column_dtype = dataset[self._dataset_column].dtype
         if column_dtype != int:
-            raise ValueError(f"{self.__class__.__name__}.__init__:" \
+            raise ValueError(f"{self.__class__.__name__}.__init__:"
                              f" column '{self._dataset_column}' must be of type int, "
                              f", but was: {column_dtype}")
 
@@ -235,7 +235,7 @@ class AddLocalIndex(PipelineElement):
         # Identify groups by selecting the indices
         groups = {}
         for i1, i2, chunk in dataframe.evaluate_iterator(df[self.get_name("group")], chunk_size=500):
-            for index in range(i1,i2):
+            for index in range(i1, i2):
                 group_id = chunk[index - i1]
                 if group_id not in groups:
                     groups[group_id] = [index]
@@ -250,8 +250,7 @@ class AddLocalIndex(PipelineElement):
 
             for index, idx, in enumerate(sorted_indices):
                 local_index[idx] = index
-                reverse_local_index[idx] = group_size - 1 -index
-
+                reverse_local_index[idx] = group_size - 1 - index
 
         # Assign global arrays to dataframe
         dataframe[self.get_name("local_index")] = local_index

@@ -354,7 +354,7 @@ class Experiment:
         elif not path.is_dir():
             raise NotADirectoryError(f"{cls.__name__}.touch_marker: {path} is not a directory")
 
-        with open(path / cls.MARKER_FILE, "a") as f:
+        with open(path / cls.MARKER_FILE, "a"):
             pass
 
     @classmethod

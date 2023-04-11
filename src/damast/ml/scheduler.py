@@ -3,14 +3,13 @@ from __future__ import annotations
 import json
 import select
 import socket
-import sys
 from enum import Enum
 from pathlib import Path
 from threading import Thread, Lock
 from time import sleep
 from typing import List, Any, Dict, Tuple, Callable
 
-from logging import getLogger, Logger, DEBUG, INFO
+from logging import getLogger, Logger, INFO
 
 PREDICT_FILE_SOCKET = "/tmp/.damast-ais-showcase"
 _log: Logger = getLogger(__name__)

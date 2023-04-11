@@ -1,5 +1,4 @@
 import glob
-import sys
 from argparse import ArgumentParser
 from pathlib import Path
 

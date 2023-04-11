@@ -2,13 +2,12 @@
 Module to define a dataframe
 """
 from __future__ import annotations
-from typing import Callable
 
 import gc
 import logging
 from tempfile import TemporaryDirectory
 from pathlib import Path
-from typing import List, Union, Any, Callable, Dict, Optional
+from typing import List, Union, Any, Callable, Optional
 
 import vaex
 from vaex import DataFrame
@@ -55,9 +54,11 @@ class AnnotatedDataFrame:
 
     :param dataframe: The vaex dataframe holding the data
     :param metadata: The metadata for the dataframe
-    :param validation_mode: If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of valid range (specified in :attr:`metadata`)
-        with missing value. If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
-        Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
+    :param validation_mode:
+        - If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of
+          valid range (specified in :attr:`metadata`) with missing value.
+        - If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
+        - Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
     """
 
     #: Metadata associated with the dataframe

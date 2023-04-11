@@ -1,4 +1,11 @@
-from .augmenters import JoinDataFrameByColumn, BallTreeAugmenter, AddUndefinedValue, AddTimestamp, MultiplyValue, ChangeTypeColumn
+from .augmenters import (
+    AddTimestamp,
+    AddUndefinedValue,
+    BallTreeAugmenter,
+    ChangeTypeColumn,
+    JoinDataFrameByColumn,
+    MultiplyValue
+)
 from .filters import RemoveValueRows, FilterWithin, DropMissing
 from .normalizers import normalize
 
@@ -6,7 +13,7 @@ __all__ = [
     "normalize",
     "BallTreeAugmenter",
     "AddUndefinedValue",
-    "RemoveValueRows", 
+    "RemoveValueRows",
     "JoinDataFrameByColumn",
     "FilterWithin",
     "DropMissing",

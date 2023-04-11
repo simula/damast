@@ -37,11 +37,11 @@ ParamsType = Dict[str, Any]
 
 
 def get_outputs_dir(workdir: Union[str, Path]) -> Path:
-    return workdir / f"processed_data"
+    return Path(workdir) / "processed_data"
 
 
 def get_plots_dir(workdir: Union[str, Path]) -> Path:
-    return workdir / f"plots"
+    return Path(workdir) / "plots"
 
 
 class CleanseAndSanitise(DataProcessingPipeline):
@@ -70,7 +70,7 @@ class CleanseAndSanitise(DataProcessingPipeline):
     2. Remove row which do not have a timestamp
     3. Keep only message-types in input ``message_types``
     4. Create a :code:`"timestamp"` field from date time UTC
-    5. Replace NaN/Na with default values as defined in  :code:`"columns_default_values"` 
+    5. Replace NaN/Na with default values as defined in  :code:`"columns_default_values"`
     6. Create new columns with new types using :code:`columns_compress_types`.
        The new column is name from the original column name with "_newtype" as a suffix.
 
@@ -131,7 +131,7 @@ class DataProcessing(DataProcessingPipeline):
     The pipeline does the following actions:
 
     * Plots longitude and latitude of all data
-    * Adds vessel-type information from ``vessel_type_hdf5`` to column 
+    * Adds vessel-type information from ``vessel_type_hdf5`` to column
       :attr:`damast.domains.maritime.data_specification.ColumnName.VESSEL_TYPE`.
     * Replace missing vessel-types with integer representation of
       :class:`damast.domains.maritime.ais.vessel_types.Unspecified`
@@ -186,7 +186,7 @@ class DataProcessing(DataProcessingPipeline):
             fishing_vessel_type_csv = fishing_vessel_type_hdf5
 
         # FIXME: Name mapping does not apply here
-        #self.add("plot_input-lat_lon",
+        # self.add("plot_input-lat_lon",
         #         PlotLatLon(output_dir=plots_dir,
         #                    filename_prefix="lat-lon-input"),
         #         name_mappings={"LAT": ColumnName.LATITUDE,

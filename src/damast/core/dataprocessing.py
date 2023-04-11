@@ -35,7 +35,7 @@ __all__ = [
     "PipelineElement",
 ]
 
-_log : Logger = getLogger(__name__)
+_log: Logger = getLogger(__name__)
 
 DECORATED_DESCRIPTION = "_damast_description"
 """Attribute description for :func:`describe`"""
@@ -582,7 +582,7 @@ class DataProcessingPipeline(PipelineElement):
         elif path.is_file():
             files = [path]
         else:
-            raise RuntimeError("{self.__class__.__name__}.load: {path}" \
+            raise RuntimeError("{self.__class__.__name__}.load: {path}"
                                " is neither directory nor file")
 
         if len(files) == 1:
@@ -669,7 +669,6 @@ class DataProcessingPipeline(PipelineElement):
                     if x == k:
                         pipeline_element.name_mappings[x] = v
 
-
         validation_result = self.validate(steps=self.steps, metadata=df._metadata)
         self.is_ready = True
 
@@ -750,7 +749,7 @@ class DataProcessingPipeline(PipelineElement):
         end_time = datetime.now(timezone.utc)
         delta = (end_time - start).total_seconds()
         delattr(step, "transform_start")
-        _log.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: " \
+        _log.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: "
                   f"{delta} seconds, {adf.shape[0]} remaining rows)")
 
         step_name = [x for x, y in self.steps if y == step][0]
