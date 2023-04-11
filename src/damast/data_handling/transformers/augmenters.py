@@ -4,7 +4,7 @@ Module which collects transformers that add / augment the existing data
 import datetime
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -17,7 +17,7 @@ from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import DataSpecification, PipelineElement
 
 __all__ = [
-    "AddLocalMessageIndex",
+    "AddLocalIndex",
     "JoinDataFrameByColumn",
     "BallTreeAugmenter",
     "AddUndefinedValue",
@@ -59,6 +59,12 @@ class JoinDataFrameByColumn(PipelineElement):
             if col_name not in dataset.column_names:
                 raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{dataset.head()}'"
                                " - available are {','.join(vessel_type_data.columns)}")
+
+        column_dtype = dataset[self._dataset_column].dtype
+        if column_dtype != int:
+            raise ValueError(f"{self.__class__.__name__}.__init__:"
+                             f" column '{self._dataset_column}' must be of type int, "
+                             f", but was: {column_dtype}")
 
         self._dataset = dataset
 
@@ -190,7 +196,7 @@ class AddUndefinedValue(PipelineElement):
         return df
 
 
-class AddLocalMessageIndex(PipelineElement):
+class AddLocalIndex(PipelineElement):
     """
     Compute the local index of an entry in a given group (sorted by a given column).
     Also compute the reverse index, i.e. how many entries in the group are after this message
@@ -199,42 +205,44 @@ class AddLocalMessageIndex(PipelineElement):
     @damast.core.describe("Compute the ")
     @damast.core.input({"group": {"representation_type": int},
                         "sort": {}})
-    @damast.core.output({"msg_index": {"representation_type": int},
-                         "reverse_{{msg_index}}": {"representation_type": int}})
+    @damast.core.output({"local_index": {"representation_type": int},
+                         "reverse_{{local_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
-        tmp_column = f"{self.__class__.__name__}_tmp"
-        if tmp_column in dataframe.column_names:
-            raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
-        assert tmp_column not in [self.get_name("msg_index"), self.get_name("reverse_{{msg_index}}")]
-        dataframe[tmp_column] = vaex.vrange(0, len(dataframe), dtype=int)
 
-        historic_position = np.empty(len(dataframe), dtype=int)
-        reverse_historic_position = np.empty(len(dataframe), dtype=int)
-        # Sort each group
-        groups = dataframe.groupby(by=self.get_name("group"))
-        for _, group in groups:
-            if len(group) == 0:
-                continue
-            sorted_group = group.sort(self.get_name("sort"))
-            # For each group compute the local position
-            position = np.arange(0, len(sorted_group), dtype=int)
-            # Assign local position and reverse position to global arrays
-            global_indices = sorted_group[tmp_column].evaluate()
-            historic_position[global_indices] = position
-            reverse_historic_position[global_indices] = len(group)-1-position
-            del global_indices
+        local_index = np.empty(len(dataframe), dtype=int)
+        reverse_local_index = np.empty(len(dataframe), dtype=int)
+
+        # Identify groups by selecting the indices
+        groups = {}
+        for i1, i2, chunk in dataframe.evaluate_iterator(df[self.get_name("group")], chunk_size=500):
+            for index in range(i1, i2):
+                group_id = chunk[index - i1]
+                if group_id not in groups:
+                    groups[group_id] = [index]
+                else:
+                    groups[group_id].append(index)
+
+        # Identify the column index of the sort field
+        local_sort_index = df.get_column_names().index(self.get_name("sort"))
+        for _, indices in groups.items():
+            group_size = len(indices)
+            sorted_indices = sorted(indices, key=lambda x: df[x][local_sort_index])
+
+            for index, idx, in enumerate(sorted_indices):
+                local_index[idx] = index
+                reverse_local_index[idx] = group_size - 1 - index
 
         # Assign global arrays to dataframe
-        dataframe[self.get_name("msg_index")] = historic_position
-        dataframe[self.get_name("reverse_{{msg_index}}")] = reverse_historic_position
+        dataframe[self.get_name("local_index")] = local_index
+        dataframe[self.get_name("reverse_{{local_index}}")] = reverse_local_index
 
-        # Drop global index column
-        dataframe.drop(tmp_column, inplace=True)
-        del historic_position, reverse_historic_position
-        new_specs = [damast.core.DataSpecification(self.get_name("msg_index"), representation_type=int),
-                     damast.core.DataSpecification(self.get_name("reverse_{{msg_index}}"), representation_type=int)]
-        df._metadata.columns.extend(new_specs)
+        # Drop temporary index columns
+        del local_index, reverse_local_index
+        new_specs = [damast.core.DataSpecification(self.get_name("local_index"), representation_type=int),
+                     damast.core.DataSpecification(self.get_name("reverse_{{local_index}}"), representation_type=int)]
+        
+        [df._metadata.columns.append(new_spec) for new_spec in new_specs]
         return df
 
 

@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+import gc
 import glob
+import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, Dict, List, Union, ClassVar, OrderedDict
+from typing import Any, Dict, List, Union, ClassVar, OrderedDict, NamedTuple
 
 import keras
 import pandas as pd
@@ -10,12 +14,12 @@ import vaex
 from vaex import DataFrame
 import tensorflow as tf
 
+from damast.core import DataSpecification
 
 __all__ = [
-    "BaseModel"
+    "BaseModel",
+    "ModelInstanceDescription"
 ]
-
-from damast.core import DataSpecification
 
 HISTORY_FILENAME = 'training-history.csv'
 CHECKPOINT_BEST = "checkpoint.best"
@@ -27,6 +31,8 @@ class BaseModel(ABC):
     BaseModel for Machine Learning Models
 
     :param name: A name for this model - by default this will be the class name
+    :param features: List of the input feature names
+    :param targets: List of the target feature names
     :param distribution_strategy: A tensorflow distribution strategy when trying to distribute the training across
                          multiple devices
     :param output_dir: model / experiment specific output directory
@@ -198,12 +204,18 @@ class BaseModel(ABC):
             # log_hyperparams_cb = hp.KerasCallback(logdir=self.model_dir / "logs",
             #                                       hparams)
 
+            class CleanupCallback(keras.callbacks.Callback):
+                def on_train_batch_begin(self, epoch, logs=None):
+                    gc.collect()
+            cleanup_cb = CleanupCallback()
+
             # Allow to checkpoint per epoch
             self.history = self.model.fit(training_data,
                                           validation_data=validation_data,
                                           epochs=epochs,
                                           initial_epoch=initial_epoch,
                                           callbacks=[
+                                              cleanup_cb,
                                               model_checkpoint_cb,
                                               early_stopping_cb,
                                               tensorboard_cb,
@@ -232,7 +244,7 @@ class BaseModel(ABC):
     def evaluate(self,
                  label: str,
                  evaluation_data: tf.data.Dataset,
-                 **kwargs) -> DataFrame:
+                 **kwargs) -> Dict[str, Any]:
         """
         Evaluate this model.
 
@@ -265,8 +277,42 @@ class BaseModel(ABC):
 
         result_df = pd.DataFrame([evaluation_results], columns=evaluation_column_names)
         if self.evaluation_file.exists():
-            result_df.to_csv(self.evaluation_file, mode='a', header=False)
-        else:
             result_df.to_csv(self.evaluation_file)
 
-        return self.get_evaluations()
+        return evaluation
+
+
+class ModelInstanceDescription(NamedTuple):
+    """
+    Provide a description of a model instance to allow serialization.
+    """
+    model: BaseModel
+    parameters: Dict[str, str]
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> ModelInstanceDescription:
+        if "module_name" not in data:
+            raise ValueError(f"{cls.__name__}.from_dict: missing 'module' specification")
+        if "class_name" not in data:
+            raise ValueError(f"{cls.__name__}.from_dict: missing 'class' specification")
+
+        module_name = data["module_name"]
+        class_name = data["class_name"]
+
+        m_module = importlib.import_module(module_name)
+        if not hasattr(m_module, class_name):
+            raise ImportError(f"{cls.__name__}.from_dict: could not import '{class_name}' from '{m_module}'")
+
+        model = getattr(m_module, class_name)
+
+        parameters = {}
+        if "parameters" in data:
+            parameters = data["parameters"]
+
+        return ModelInstanceDescription(model=model,
+                                        parameters=parameters)
+
+    def __iter__(self):
+        yield "module_name", self.model.__module__
+        yield "class_name", self.model.__qualname__
+        yield "parameters", self.parameters

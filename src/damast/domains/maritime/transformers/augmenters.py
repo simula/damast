@@ -16,6 +16,7 @@ from damast.data_handling.transformers.augmenters import BallTreeAugmenter
 from damast.domains.maritime.ais.navigational_status import (
     AISNavigationalStatus
 )
+from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.math.spatial import EARTH_RADIUS
 
 __all__ = [
@@ -110,19 +111,43 @@ class AddMissingAISStatus(augmenters.AddUndefinedValue):
 
 
 class AddVesselType(augmenters.JoinDataFrameByColumn):
+    """
+    Add the vessel type (as integer value) based on external data-set and corresponding to ::class::`VesselType`.
+
+    The vessel type might for instance come from the [global fishing watch database](https://globalfishingwatch.org/).
+    It must be either a string corresponding to the snake_case class name, or the corresponding integer
+
+    :param right_on: Name in data-set column to use for merging datasets
+    :param dataset_col: Column to add to input dataframe
+    :param dataset: Dataset or path to dataset
+    :raise ValueError: when the input column that shall extend the dataset is neither int nor str
+    """
+
     def __init__(self, right_on: str,
                  dataset_col: str,
-                 dataset: Union[str, Path, vaex.DataFrame]):
-        """Add in vessel type based on external data-set
+                 dataset: Union[str, Path, vaex.DataFrame]
+                 ):
 
-        :param right_on: Name in data-set column to use for merging datasets
-        :param dataset_col: Column to add to input dataframe
-        :param dataset: Dataset or path to dataset
-        """
-        super().__init__(dataset=dataset, right_on=right_on, dataset_col=dataset_col)
+        if not isinstance(dataset, vaex.DataFrame):
+            dataset = vaex.open(path=dataset)
 
-    @damast.core.describe("Add vessel-type from other dataset to current dataset")
+        column_dtype = dataset[dataset_col].dtype
+        name = f"{dataset_col}_mapped"
+        if column_dtype == str:
+            # VesselTypes should be mapped to integers
+            dataset[name] = dataset[dataset_col].map(mapper=VesselType.get_mapping())
+        elif column_dtype == int:
+            dataset[name] = dataset[dataset_col]
+        else:
+            raise ValueError(f"{self.__class__.__name__}.__init__: dtype of column '{dataset_col}',"
+                             " must be either int or str, but was '{column_dtype}'")
+
+        super().__init__(dataset=dataset, right_on=right_on, dataset_col=name)
+                         
+
+    @damast.core.describe("Add vessel-type from other dataset to current dataset, "
+                          "where the input x is the linking identifier")
     @damast.core.input({"x": {}})
-    @damast.core.output({"out": {}})
+    @damast.core.output({"out": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         return super().transform(df)

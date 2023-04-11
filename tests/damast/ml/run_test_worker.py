@@ -4,6 +4,7 @@ Module to provide a test worker instance, which provides predefined sequence pre
 from damast.ml.experiments import Experiment
 from damast.ml.worker import Worker
 import numpy as np
+from typing import List, Dict
 
 predicted_sequence = np.array([[0, 0]])
 
@@ -15,11 +16,11 @@ class MockMLModel:
     def predict(self, input_data, steps, verbose):
         return predicted_sequence
 
-    def loss(self, x, y) -> float:
-        return [float(i) for i in range(0, x.shape[0])]
+    def loss(self, x, y) -> List[float]:
+        return [float(i) for i in range(x.shape[0])]
 
 
-def mock_from_directory(dir):
+def mock_from_directory(dir) -> Dict[str, object]:
     """
     Mock the directory loading for Experiment to link to the Mocked machine learning model
     :param dir:

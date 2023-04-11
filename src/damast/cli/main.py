@@ -5,6 +5,7 @@ from damast.cli.base import BaseParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
+from damast.cli.experiment import ExperimentParser
 
 
 class MainParser(ArgumentParser):
@@ -42,6 +43,9 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="inspect",
                                          help=help_desc,
                                          parser_klass=DataInspectParser)
+    main_parser.attach_subcommand_parser(subcommand="experiment",
+                                         help=help_desc,
+                                         parser_klass=ExperimentParser)
     args = main_parser.parse_args()
     args.active_subparser.execute(args)
 

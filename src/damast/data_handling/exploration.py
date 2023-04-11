@@ -34,8 +34,8 @@ def plot_lat_lon(*,
     :return: Path to the file
     """
 
-    plt.scatter(x=df[longitude_name].evaluate().data,
-                y=df[latitude_name].evaluate().data,
+    plt.scatter(x=df[longitude_name].evaluate(),
+                y=df[latitude_name].evaluate(),
                 alpha=1)
     plt.xlim(-180, 180)
     plt.ylim(-90, 90)

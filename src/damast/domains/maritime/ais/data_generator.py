@@ -201,7 +201,7 @@ class AISTestData:
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
                             description="A simple generator for ais data that can be used as input to "
-                            + "data processing stage")
+                                        + "data processing stage")
 
     parser.add_argument("-t", "--number-of-trajectories", default=100, type=int)
     parser.add_argument("-o", "--output", default="test-data.hdf5", type=str)

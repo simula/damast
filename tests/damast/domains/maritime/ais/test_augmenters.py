@@ -9,10 +9,11 @@ from astropy import units
 
 import damast.core
 from damast.data_handling.transformers.augmenters import (
-    AddLocalMessageIndex,
+    AddLocalIndex,
     AddUndefinedValue
 )
 from damast.domains.maritime.ais import AISNavigationalStatus
+from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math import great_circle_distance
 from damast.domains.maritime.transformers import (
@@ -61,7 +62,8 @@ def test_add_missing_ais_status(tmp_path):
     assert adf._dataframe["Status"].is_masked
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("AddMissingAISStatus", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="AddMissingAISStatus",
+                                                  base_dir=tmp_path)
     pipeline.add("Add missing AIS status", AddMissingAISStatus(),
                  name_mappings={"x": "Status"})
 
@@ -98,7 +100,8 @@ def test_delta_column(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("DeltaDistance", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="DeltaDistance",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Great circle distance", DeltaDistance(True, True),
                  name_mappings={"group": ColumnName.MMSI,
@@ -144,6 +147,8 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     columns = [ColumnName.MMSI, ColumnName.VESSEL_TYPE]
     pd_vessel_types = pandas.DataFrame(vessel_type_data, columns=columns)
     df_vessel_types = vaex.from_pandas(pd_vessel_types)
+    df_vessel_types[f"{ColumnName.VESSEL_TYPE}_as_int"] = \
+        df_vessel_types[ColumnName.VESSEL_TYPE].map(mapper=VesselType.get_mapping())
     if vessel_file_mode == "vaex":
         vessel_data = df_vessel_types
     else:
@@ -174,7 +179,9 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
                                 dataset_col=ColumnName.VESSEL_TYPE,
                                 dataset=vessel_data)
 
-    pipeline = damast.core.DataProcessingPipeline("Add vessel type", tmp_path, inplace_transformation=inplace)
+    pipeline = damast.core.DataProcessingPipeline(name="Add vessel type",
+                                                  base_dir=tmp_path,
+                                                  inplace_transformation=inplace)
 
     pipeline.add("Add vessel-type", transformer,
                  name_mappings={"x": ColumnName.MMSI,
@@ -183,33 +190,34 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
                                               damast.core.MetaData(columns=adf.metadata.columns.copy()))
     new_adf = pipeline.transform(adf)
     if inplace:
-        assert len(new_adf.column_names) == len(adf.column_names)
+        assert len(new_adf.get_column_names()) == len(adf.get_column_names())
     else:
-        assert len(new_adf.column_names) == len(adf.column_names) + 1
+        assert len(new_adf.get_column_names()) == len(adf.get_column_names()) + 1
 
     missing_data = []
+
     for mmsi in new_adf._dataframe[ColumnName.MMSI].unique():
         entries_per_mmsi = new_adf[new_adf[ColumnName.MMSI] == mmsi]
         vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        exact_vessel_type = df_vessel_types[df_vessel_types[ColumnName.MMSI] == mmsi][ColumnName.VESSEL_TYPE].evaluate()
-        if len(exact_vessel_type) == 0:
+        exact_vessel_types = df_vessel_types[df_vessel_types[ColumnName.MMSI] == mmsi][f"{ColumnName.VESSEL_TYPE}_as_int"].evaluate()
+        if len(exact_vessel_types) == 0:
             # If no entry found in original input, this entry should be masked
             missing_data.append(mmsi)
             assert vessel_types.mask.all()
-        elif len(exact_vessel_type) == 1:
+        elif len(exact_vessel_types) == 1:
             # If one entry found in lookup dataframe, all entries should match this
-            assert (vessel_types == str(exact_vessel_type[0])).all()
+            assert (vessel_types == exact_vessel_types).all()
         else:
             raise RuntimeError("Input vessel types have more than one entry for a single vessel")
 
     # Test replacing missing values with vessel type
-    pipeline.add("Replace missing", AddUndefinedValue("unspecified"), name_mappings={"x": ColumnName.VESSEL_TYPE})
+    pipeline.add("Replace missing", AddUndefinedValue(VesselType["unspecified"]), name_mappings={"x": ColumnName.VESSEL_TYPE})
     fixed_adf = pipeline.transform(copy_adf)
 
     for mmsi in missing_data:
         entries_per_mmsi = fixed_adf[fixed_adf[ColumnName.MMSI] == mmsi]
         vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        assert (vessel_types == "unspecified").all()
+        assert (vessel_types == VesselType["unspecified"]).all()
 
 
 def test_add_distance_closest_anchorage(tmp_path):
@@ -237,7 +245,8 @@ def test_add_distance_closest_anchorage(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     transformer = ComputeClosestAnchorage(dataset, [columns[1], columns[2]])
-    pipeline = damast.core.DataProcessingPipeline("Compute closest anchorage", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="Compute closest anchorage",
+                                                  base_dir=tmp_path)
 
     pipeline.add("Add distance to achorage", transformer,
                  name_mappings={"x": ColumnName.LATITUDE,
@@ -265,7 +274,7 @@ def test_message_index(tmp_path):
     num_messages_A = 90
     num_messages_B = num_messages_A - 2
 
-    # Insert last message first
+    # Insert last message first to validate time-based sorting
     data.append([mmsi_a, timestamp + dt.timedelta(seconds=num_messages_A), lat, lon, num_messages_A-1, 0])
     # Next insert first message
     data.append([mmsi_a, timestamp - dt.timedelta(seconds=1), lat, lon, 0, num_messages_A-1])
@@ -287,13 +296,14 @@ def test_message_index(tmp_path):
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
-    pipeline = damast.core.DataProcessingPipeline("Compute message index", tmp_path)
+    pipeline = damast.core.DataProcessingPipeline(name="Compute message index",
+                                                  base_dir=tmp_path)
 
-    pipeline.add("Compute local message index",  AddLocalMessageIndex(),
+    pipeline.add("Compute local message index",  AddLocalIndex(),
                  name_mappings={"group": ColumnName.MMSI,
                                 "sort": ColumnName.TIMESTAMP,
-                                "msg_index": ColumnName.HISTORIC_SIZE,
-                                "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
+                                "local_index": ColumnName.HISTORIC_SIZE,
+                                "reverse_{{local_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
     new_adf = pipeline.transform(adf)
     assert np.allclose(new_adf["REF INDEX"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE].evaluate())
     assert np.allclose(new_adf["INVERSE REF"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE_REVERSE].evaluate())

@@ -37,7 +37,6 @@ class RemoveValueRows(PipelineElement):
         """
         Delete rows with remove_values
         """
-        dataframe = df._dataframe
         mapped_name = self.get_name("x")
         new_dataframe = df._dataframe[(df._dataframe[mapped_name] != self._remove_value)]
         df._dataframe = new_dataframe

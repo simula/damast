@@ -2,13 +2,12 @@
 Module to define a dataframe
 """
 from __future__ import annotations
-from typing import Callable
 
 import gc
 import logging
 from tempfile import TemporaryDirectory
 from pathlib import Path
-from typing import List, Union, Any, Callable, Dict
+from typing import List, Union, Any, Callable, Optional
 
 import vaex
 from vaex import DataFrame
@@ -31,7 +30,7 @@ _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
 
 
-def replace_na(df: DataFrame, dtype: str, column_names: List[str] = None):
+def replace_na(df: DataFrame, dtype: str, column_names: Optional[List[str]] = None):
     """
     Replace ``Not Available`` and ``Not a Number`` with a mask, and convert to given ``dtype``.
     This means that one later call ``df[column].fill_missing(...)`` to replace values
@@ -55,9 +54,11 @@ class AnnotatedDataFrame:
 
     :param dataframe: The vaex dataframe holding the data
     :param metadata: The metadata for the dataframe
-    :param validation_mode: If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of valid range (specified in :attr:`metadata`)
-        with missing value. If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
-        Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
+    :param validation_mode:
+        - If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of
+          valid range (specified in :attr:`metadata`) with missing value.
+        - If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
+        - Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
     """
 
     #: Metadata associated with the dataframe
@@ -125,10 +126,7 @@ class AnnotatedDataFrame:
 
         :return: False if there is an internal :code:`_dataframe` set, True otherwise
         """
-        if self._dataframe is None:
-            return True
-
-        return False
+        return self._dataframe is None
 
     def get_fulfillment(
         self, expected_specs: List[DataSpecification]
@@ -178,56 +176,57 @@ class AnnotatedDataFrame:
         :param filename: Filename to use for saving
 
         """
-        if self._dataframe is not None:
-            metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)
-            self._metadata.save_yaml(filename=metadata_filename)
-
-            if Path(filename).suffix not in [".hdf5", ".h5"]:
-                self.export(filename)
-                return
-
-            # First save the hdf5 file in order to add then the metadata to it
-            self.export_hdf5(filename)
-
-            # Add metadata
-            metadata = dict(self._metadata)
-            annotations = self._metadata.Key.annotations.value
-            columns = self._metadata.Key.columns.value
-            list_attrs = metadata[columns]
-            dict_annotations = metadata[annotations]
-            list_columns = list(self.columns)
-
-            h5f = h5py.File(filename, "r+")
-            # Add annotations to main group
-            for key in dict_annotations.keys():
-                if (
-                    key in h5f[VAEX_HDF5_ROOT].attrs.keys()
-                    and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
-                ):
-                    raise RuntimeError(
-                        f"{self.__class__.__name__}.save:"
-                        f" attribute '{key}' present"
-                        f" in vaex dataframe but different from user-defined"
-                    )
-                else:
-                    h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
-
-            # Add attributes for columns
-            for attrs in list_attrs:
-                if (
-                    DataSpecification.Key.name.value in attrs.keys()
-                    and attrs[DataSpecification.Key.name.value] in list_columns
-                ):
-                    group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
-                    if group_name in h5f:
-                        for key in attrs.keys():
-                            if isinstance(attrs[key], dict):
-                                h5f[group_name].attrs[key] = str(attrs[key])
-                            else:
-                                h5f[group_name].attrs[key] = attrs[key]
-            h5f.close()
-        else:
+        if self._dataframe is None:
             raise ValueError(f"{self.__class__.__name__}.save: no dataframe to save")
+
+        metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)
+        self._metadata.save_yaml(filename=metadata_filename)
+
+        if Path(filename).suffix not in [".hdf5", ".h5"]:
+            self.export(filename)
+            return self
+
+        # First save the hdf5 file in order to add then the metadata to it
+        self.export_hdf5(filename)
+
+        # Add metadata
+        metadata = dict(self._metadata)
+        annotations = self._metadata.Key.annotations.value
+        columns = self._metadata.Key.columns.value
+        list_attrs = metadata[columns]
+        dict_annotations = metadata[annotations]
+        list_columns = list(self.columns)
+
+        h5f = h5py.File(filename, "r+")
+        # Add annotations to main group
+        for key in dict_annotations.keys():
+            if (
+                key in h5f[VAEX_HDF5_ROOT].attrs.keys()
+                and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
+            ):
+                raise RuntimeError(
+                    f"{self.__class__.__name__}.save:"
+                    f" attribute '{key}' present"
+                    f" in vaex dataframe but different from user-defined"
+                )
+            else:
+                h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
+
+        # Add attributes for columns
+        for attrs in list_attrs:
+            if (
+                DataSpecification.Key.name.value in attrs.keys()
+                and attrs[DataSpecification.Key.name.value] in list_columns
+            ):
+                group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
+                if group_name in h5f:
+                    for key in attrs.keys():
+                        if isinstance(attrs[key], dict):
+                            h5f[group_name].attrs[key] = str(attrs[key])
+                        else:
+                            h5f[group_name].attrs[key] = attrs[key]
+        h5f.close()
+        return self
 
     @classmethod
     def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:
@@ -311,6 +310,14 @@ class AnnotatedDataFrame:
         """
         self._dataframe[key] = value
 
+    def __len__(self) -> int:
+        """
+        Get the length of the (underlying) dataframe.
+
+        :return: Length of the dataframe
+        """
+        return len(self._dataframe)
+
     @classmethod
     def convert_csv_to_adf(
         cls,
@@ -318,7 +325,7 @@ class AnnotatedDataFrame:
         metadata_filename: Union[Path, str],
         output_filename: Union[Path, str],
         validation_mode: ValidationMode = ValidationMode.READONLY,
-        progress: Callable[[float], None] = None,
+        progress: Optional[Callable[[float], None]] = None,
         csv_sep: str = ";",
     ):
         """
@@ -327,6 +334,9 @@ class AnnotatedDataFrame:
         :param csv_filenames: The input csv file that shall be converted
         :param metadata_filename: The metadata specification
         :param output_filename: The output file that will be generated
+        :param validation_mode: how to validate / enforce the conformity of the metadata and the data
+        :param progress: Callable to set for the dataframe consversion
+        :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
         with TemporaryDirectory() as tmpdirname:
