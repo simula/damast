@@ -9,7 +9,7 @@ from astropy import units
 
 import damast.core
 from damast.data_handling.transformers.augmenters import (
-    AddLocalMessageIndex,
+    AddLocalIndex,
     AddUndefinedValue
 )
 from damast.domains.maritime.ais import AISNavigationalStatus
@@ -269,7 +269,7 @@ def test_message_index(tmp_path):
     num_messages_A = 90
     num_messages_B = num_messages_A - 2
 
-    # Insert last message first
+    # Insert last message first to validate time-based sorting
     data.append([mmsi_a, timestamp + dt.timedelta(seconds=num_messages_A), lat, lon, num_messages_A-1, 0])
     # Next insert first message
     data.append([mmsi_a, timestamp - dt.timedelta(seconds=1), lat, lon, 0, num_messages_A-1])
@@ -294,11 +294,11 @@ def test_message_index(tmp_path):
     pipeline = damast.core.DataProcessingPipeline(name="Compute message index",
                                                   base_dir=tmp_path)
 
-    pipeline.add("Compute local message index",  AddLocalMessageIndex(),
+    pipeline.add("Compute local message index",  AddLocalIndex(),
                  name_mappings={"group": ColumnName.MMSI,
                                 "sort": ColumnName.TIMESTAMP,
-                                "msg_index": ColumnName.HISTORIC_SIZE,
-                                "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
+                                "local_index": ColumnName.HISTORIC_SIZE,
+                                "reverse_{{local_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
     new_adf = pipeline.transform(adf)
     assert np.allclose(new_adf["REF INDEX"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE].evaluate())
     assert np.allclose(new_adf["INVERSE REF"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE_REVERSE].evaluate())

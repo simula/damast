@@ -203,7 +203,7 @@ class AddUndefinedValue(PipelineElement):
         return df
 
 
-class AddLocalMessageIndex(PipelineElement):
+class AddLocalIndex(PipelineElement):
     """
     Compute the local index of an entry in a given group (sorted by a given column).
     Also compute the reverse index, i.e. how many entries in the group are after this message
@@ -218,41 +218,43 @@ class AddLocalMessageIndex(PipelineElement):
     @damast.core.describe("Compute the ")
     @damast.core.input({"group": {"representation_type": int},
                         "sort": {}})
-    @damast.core.output({"msg_index": {"representation_type": int},
-                         "reverse_{{msg_index}}": {"representation_type": int}})
+    @damast.core.output({"local_index": {"representation_type": int},
+                         "reverse_{{local_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
+        dataframe = df._dataframe
 
-        dataframe["INDEX"] = vaex.vrange(0, len(dataframe), dtype=int)
+        local_index = np.empty(len(dataframe), dtype=int)
+        reverse_local_index = np.empty(len(dataframe), dtype=int)
 
-        historic_position = np.empty(len(dataframe), dtype=int)
-        reverse_historic_position = np.empty(len(dataframe), dtype=int)
-        # Sort each group
-        groups = dataframe.groupby(by=self.get_name("group"))
-        for _, group in groups:
-            if len(group) == 0:
-                continue
-            sorted_group = group.sort(self.get_name("sort"))
-            # For each group compute the local position
-            position = np.arange(0, len(sorted_group), dtype=int)
-            # Assign local position and reverse position to global arrays
-            global_indices = sorted_group["INDEX"].evaluate()
-            historic_position[global_indices] = position
-            reverse_historic_position[global_indices] = len(group)-1-position
-            del global_indices
+        # Identify groups by selecting the indices
+        groups = {}
+        for i1, i2, chunk in dataframe.evaluate_iterator(df[self.get_name("group")], chunk_size=500):
+            for index in range(i1,i2):
+                group_id = chunk[index - i1]
+                if group_id not in groups:
+                    groups[group_id] = [index]
+                else:
+                    groups[group_id].append(index)
+
+        # Identify the column index of the sort field
+        local_sort_index = df.get_column_names().index(self.get_name("sort"))
+        for _, indices in groups.items():
+            group_size = len(indices)
+            sorted_indices = sorted(indices, key=lambda x: df[x][local_sort_index])
+
+            for index, idx, in enumerate(sorted_indices):
+                local_index[idx] = index
+                reverse_local_index[idx] = group_size - 1 -index
+
 
         # Assign global arrays to dataframe
-        dataframe[self.get_name("msg_index")] = historic_position
-        dataframe[self.get_name("reverse_{{msg_index}}")] = reverse_historic_position
+        dataframe[self.get_name("local_index")] = local_index
+        dataframe[self.get_name("reverse_{{local_index}}")] = reverse_local_index
 
-        # Drop global index column
-        dataframe.drop("INDEX", inplace=True)
-        del historic_position, reverse_historic_position
-        new_specs = [damast.core.DataSpecification(self.get_name("msg_index"), representation_type=int),
-                     damast.core.DataSpecification(self.get_name("reverse_{{msg_index}}"), representation_type=int)]
+        # Drop temporary index columns
+        del local_index, reverse_local_index
+        new_specs = [damast.core.DataSpecification(self.get_name("local_index"), representation_type=int),
+                     damast.core.DataSpecification(self.get_name("reverse_{{local_index}}"), representation_type=int)]
         if self._inplace:
             [df._metadata.columns.append(new_spec) for new_spec in new_specs]
             return df
