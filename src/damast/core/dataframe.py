@@ -13,7 +13,7 @@ from typing import List, Union, Any, Callable, Dict
 import vaex
 from vaex import DataFrame
 import numpy as np
-
+import copy
 import h5py
 from logging import getLogger, Logger, INFO
 
@@ -288,6 +288,9 @@ class AnnotatedDataFrame:
         :param item: Name of column
         :return: The column data
         """
+        if item in ["__setstate__", "__getstate__"]:
+            raise AttributeError(f"{self.__class__.__name__}.__getattr__: {item} does not exist")
+
         return getattr(self._dataframe, item)
 
     def __getitem__(self, item) -> Any:

@@ -21,11 +21,9 @@ class RemoveValueRows(PipelineElement):
     :param remove_value: remove rows with this value.
     """
     _remove_value: Any
-    _inplace: bool
 
-    def __init__(self, remove_value: Any, inplace: bool = False):
+    def __init__(self, remove_value: Any):
         super().__init__()
-        self._inplace = inplace
         self._remove_value = remove_value
 
     @property
@@ -39,34 +37,17 @@ class RemoveValueRows(PipelineElement):
         """
         Delete rows with remove_values
         """
-        if self._inplace:
-            dataframe = df._dataframe
-        else:
-            dataframe = df._dataframe.copy()
-
+        dataframe = df._dataframe
         mapped_name = self.get_name("x")
         new_dataframe = df._dataframe[(df._dataframe[mapped_name] != self._remove_value)]
-        if self._inplace:
-            df._dataframe = new_dataframe
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            return AnnotatedDataFrame(new_dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._dataframe = new_dataframe
+        return df
 
 
 class DropMissing(PipelineElement):
     """
     DropMissing rows that do not have a defined value for a given column
-
-    :param inplace: If True drop changes in input dataframe, else create a
-        new :class:`damast.core.dataframe.DataFrame`.
     """
-    _inplace: bool
-
-    def __init__(self, inplace: bool = False):
-        super().__init__()
-        self._inplace = inplace
 
     @damast.core.describe("Drop rows where a column has a missing value")
     @damast.core.input({"x": {}})
@@ -76,34 +57,22 @@ class DropMissing(PipelineElement):
         Drop rows with missing value
         """
         mapped_name = self.get_name("x")
-        if self._inplace:
-            dataframe = df._dataframe
-        else:
-            dataframe = df._dataframe.copy()
+        dataframe = df._dataframe
         new_dataframe = dataframe.dropmissing(column_names=[mapped_name])
-        if self._inplace:
-            df._dataframe = new_dataframe
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            return AnnotatedDataFrame(new_dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._dataframe = new_dataframe
+        return df
 
 
 class FilterWithin(PipelineElement):
     """
     Filter rows and keep those within given values
     :param within_values: list of values to keeps
-    :param inplace: If True drop changes in input dataframe, else create a
-        new :class:`damast.core.dataframe.DataFrame`.
     """
     _within_values: Any
-    _inplace: bool
 
-    def __init__(self, within_values: Any, inplace: bool = False):
+    def __init__(self, within_values: Any):
         super().__init__()
         self._within_values = within_values
-        self._inplace = inplace
 
     @property
     def within_values(self):
@@ -117,18 +86,7 @@ class FilterWithin(PipelineElement):
         Filter rows and keep those within given values
         """
         mapped_name = self.get_name("x")
-        if self._inplace:
-            dataframe = df._dataframe
-        else:
-            dataframe = df._dataframe.copy()
-
+        dataframe = df._dataframe
         new_dataframe = dataframe[dataframe[mapped_name].isin(self._within_values)]
-        if self._inplace:
-            df._dataframe = new_dataframe
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            return AnnotatedDataFrame(new_dataframe, metadata=damast.core.MetaData(
-                metadata))
-
+        df._dataframe = new_dataframe
         return df

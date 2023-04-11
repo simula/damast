@@ -42,16 +42,13 @@ class JoinDataFrameByColumn(PipelineElement):
     _right_on: str
     _dataset: pd.DataFrame
     _dataset_column: str
-    _inplace: bool
 
     def __init__(self,
                  dataset: Union[str, Path, vaex.DataFrame],
                  right_on: str,
                  dataset_col: str,
-                 sep: str = ";",
-                 inplace: bool = False):
+                 sep: str = ";"):
         self._right_on: str = right_on
-        self._inplace = inplace
         self._dataset_column = dataset_col
         # Load vessel type map
         if not isinstance(dataset, vaex.DataFrame):
@@ -97,10 +94,7 @@ class JoinDataFrameByColumn(PipelineElement):
 
         :returns: DataFrame with added column
         """
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
+        dataframe = df._dataframe
         dataframe.join(
             self._dataset[[self._right_on, self._dataset_column]],
             left_on=self.get_name("x"),
@@ -112,15 +106,8 @@ class JoinDataFrameByColumn(PipelineElement):
             dataframe.drop(self._right_on, inplace=True)
         dataframe.rename(self._dataset_column, self.get_name("out"))
         new_spec = DataSpecification(self.get_name("out"))
-
-        if self._inplace:
-            df._metadata.columns.append(new_spec)
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            metadata.append(new_spec)
-            return AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._metadata.columns.append(new_spec)
+        return df
 
 
 class BallTreeAugmenter():
@@ -207,13 +194,7 @@ class AddLocalMessageIndex(PipelineElement):
     """
     Compute the local index of an entry in a given group (sorted by a given column).
     Also compute the reverse index, i.e. how many entries in the group are after this message
-
-    :param inplace: Copy input dataframe in transform if False
     """
-    _inplace: bool
-
-    def __init__(self, inplace: bool = True):
-        self._inplace = inplace
 
     @damast.core.describe("Compute the ")
     @damast.core.input({"group": {"representation_type": int},
@@ -221,12 +202,12 @@ class AddLocalMessageIndex(PipelineElement):
     @damast.core.output({"msg_index": {"representation_type": int},
                          "reverse_{{msg_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
-
-        dataframe["INDEX"] = vaex.vrange(0, len(dataframe), dtype=int)
+        dataframe = df._dataframe
+        tmp_column = f"{self.__class__.__name__}_tmp"
+        if tmp_column in dataframe.column_names:
+            raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
+        assert tmp_column not in [self.get_name("msg_index"), self.get_name("reverse_{{msg_index}}")]
+        dataframe[tmp_column] = vaex.vrange(0, len(dataframe), dtype=int)
 
         historic_position = np.empty(len(dataframe), dtype=int)
         reverse_historic_position = np.empty(len(dataframe), dtype=int)
@@ -239,7 +220,7 @@ class AddLocalMessageIndex(PipelineElement):
             # For each group compute the local position
             position = np.arange(0, len(sorted_group), dtype=int)
             # Assign local position and reverse position to global arrays
-            global_indices = sorted_group["INDEX"].evaluate()
+            global_indices = sorted_group[tmp_column].evaluate()
             historic_position[global_indices] = position
             reverse_historic_position[global_indices] = len(group)-1-position
             del global_indices
@@ -249,18 +230,12 @@ class AddLocalMessageIndex(PipelineElement):
         dataframe[self.get_name("reverse_{{msg_index}}")] = reverse_historic_position
 
         # Drop global index column
-        dataframe.drop("INDEX", inplace=True)
+        dataframe.drop(tmp_column, inplace=True)
         del historic_position, reverse_historic_position
         new_specs = [damast.core.DataSpecification(self.get_name("msg_index"), representation_type=int),
                      damast.core.DataSpecification(self.get_name("reverse_{{msg_index}}"), representation_type=int)]
-        if self._inplace:
-            [df._metadata.columns.append(new_spec) for new_spec in new_specs]
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            [metadata.append(new_spec) for new_spec in new_specs]
-            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._metadata.columns.extend(new_specs)
+        return df
 
 
 def convert_to_datetime(date_string: str) -> float:
@@ -284,13 +259,7 @@ class AddTimestamp(PipelineElement):
     Add Timestamp from date Time UTC.
 
     If time-stamp is not supplied for a row add ``NaN``
-
-    :param inplace: Copy input dataframe in transform if False
     """
-    _inplace: bool
-
-    def __init__(self, inplace: bool = False):
-        self._inplace = inplace
 
     @damast.core.describe("Add Timestamp")
     @damast.core.input({"from": {"representation_type": str}})
@@ -299,10 +268,7 @@ class AddTimestamp(PipelineElement):
         """
         Add Timestamp from datetimeUTC
         """
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
+        dataframe = df._dataframe
 
         from_mapped_name = self.get_name("from")
         to_mapped_name = self.get_name("to")
@@ -310,14 +276,8 @@ class AddTimestamp(PipelineElement):
         dataframe[to_mapped_name] = dataframe[from_mapped_name].apply(convert_to_datetime)
 
         new_spec = damast.core.DataSpecification(self.get_name("to"), representation_type=float)
-        if self._inplace:
-            df._metadata.columns.append(new_spec)
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            metadata.append(new_spec)
-            return damast.core.AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._metadata.columns.append(new_spec)
+        return df
 
 
 class MultiplyValue(PipelineElement):

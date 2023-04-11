@@ -18,19 +18,16 @@ class DeltaDistance(PipelineElement):
 
     :param x_shift: True if one should compute the difference in latitude
     :param y_shift: True if one should compute the difference in longitude
-    :param inplace: True if the transformer should work on the input dataframe, else return a copy.
 
     .. note::
         If both :code:`x_shift` and :code:`y_shift` is :code:`True`, one computes the distance between two coordinates.
     """
     _x_shift: bool
     _y_shift: bool
-    _inplace: bool
 
-    def __init__(self, x_shift: bool, y_shift: bool, inplace: bool = True):
+    def __init__(self, x_shift: bool, y_shift: bool):
         self._x_shift = x_shift
         self._y_shift = y_shift
-        self._inplace = inplace
 
     @property
     def x_shift(self):
@@ -51,17 +48,18 @@ class DeltaDistance(PipelineElement):
         """
         Compute distance between adjacent messages
         """
-        if not self._inplace:
-            dataframe = df._dataframe.copy()
-        else:
-            dataframe = df._dataframe
+        dataframe = df._dataframe
 
         in_x = self.get_name("x")
         in_y = self.get_name("y")
         shift_x = f"{in_x}_shifted"
         shift_y = f"{in_y}_shifted"
+        tmp_column = f"{self.__class__.__name__}_tmp"
+        assert tmp_column != self.get_name("out")
+        if tmp_column in dataframe.column_names:
+            raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
 
-        dataframe["INDEX"] = vaex.vrange(0, len(dataframe), dtype=int)
+        dataframe[tmp_column] = vaex.vrange(0, len(dataframe), dtype=int)
 
         shifted_x_array = np.zeros(len(dataframe))
         shifted_y_array = np.zeros(len(dataframe))
@@ -73,7 +71,7 @@ class DeltaDistance(PipelineElement):
             # Add copy of in-column that should be shifted
             sorted_group.add_virtual_column(shift_x, sorted_group[in_x])
             sorted_group.add_virtual_column(shift_y, sorted_group[in_y])
-            global_indices = sorted_group["INDEX"].evaluate()
+            global_indices = sorted_group[tmp_column].evaluate()
 
             # Shift columns and assign to global output array
             sorted_group.shift(1, shift_x, inplace=True)
@@ -95,16 +93,10 @@ class DeltaDistance(PipelineElement):
         # Drop/Hide unused columns
         dataframe.drop(shift_x, inplace=True)
         dataframe.drop(shift_y, inplace=True)
-        dataframe.drop("INDEX", inplace=True)
+        dataframe.drop(tmp_column, inplace=True)
 
         # Add unit and data-specification to dataframe
         dataframe.units[self.get_name("out")] = units.km
         new_spec = DataSpecification(self.get_name("out"), unit=units.km)
-        if self._inplace:
-            df._metadata.columns.append(new_spec)
-            return df
-        else:
-            metadata = df._metadata.columns.copy()
-            metadata.append(new_spec)
-            return AnnotatedDataFrame(dataframe, metadata=damast.core.MetaData(
-                metadata))
+        df._metadata.columns.append(new_spec)
+        return df

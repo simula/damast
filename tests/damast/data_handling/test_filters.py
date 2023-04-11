@@ -17,8 +17,9 @@ def test_remove_values(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: boo
     """
     Test that removal of sources work on test data
     """
-    pipeline = damast.core.DataProcessingPipeline("test removal of source", Path(tmpdir))
-    pipeline.add("Remove rows with ground as source", damast.data_handling.transformers.filters.RemoveValueRows("g", inplace),
+    pipeline = damast.core.DataProcessingPipeline(
+        "test removal of source", Path(tmpdir), inplace_transformation=inplace)
+    pipeline.add("Remove rows with ground as source", damast.data_handling.transformers.filters.RemoveValueRows("g"),
                  name_mappings={"x": ColumnName.SOURCE})
     new_adf = pipeline.transform(adf)
 
@@ -38,9 +39,10 @@ def test_remove_values(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: boo
 @pytest.mark.parametrize("inplace", [True, False])
 def test_drop_missing(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: bool):
 
-    pipeline = damast.core.DataProcessingPipeline("test removal of source", Path(tmpdir))
+    pipeline = damast.core.DataProcessingPipeline(
+        "test removal of source", Path(tmpdir), inplace_transformation=inplace)
     pipeline.add("Remove rows with ground as source",
-                 damast.data_handling.transformers.filters.DropMissing(inplace),
+                 damast.data_handling.transformers.filters.DropMissing(),
                  name_mappings={"x": ColumnName.DATE_TIME_UTC})
 
     num_missing = adf.dataframe[ColumnName.DATE_TIME_UTC].countmissing()
@@ -59,11 +61,12 @@ def test_drop_missing(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: boo
 @pytest.mark.parametrize("inplace", [True, False])
 def test_filter_within(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: bool):
 
-    pipeline = damast.core.DataProcessingPipeline("test removal of source", Path(tmpdir))
+    pipeline = damast.core.DataProcessingPipeline(
+        "test removal of source", Path(tmpdir), inplace_transformation=inplace)
     unique_values = adf["message_nr"].unique()
     assert len(unique_values) > 1
     pipeline.add("Filter rows within message types",
-                 damast.data_handling.transformers.filters.FilterWithin(unique_values[:1], inplace),
+                 damast.data_handling.transformers.filters.FilterWithin(unique_values[:1]),
                  name_mappings={"x": "message_nr"})
     num_all = len(adf.dataframe)
     num_eq = len(adf[adf["message_nr"] == unique_values[0]])
