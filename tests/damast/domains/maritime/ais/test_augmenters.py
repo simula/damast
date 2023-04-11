@@ -13,6 +13,7 @@ from damast.data_handling.transformers.augmenters import (
     AddUndefinedValue
 )
 from damast.domains.maritime.ais import AISNavigationalStatus
+from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.data_specification import ColumnName
 from damast.domains.maritime.math import great_circle_distance
 from damast.domains.maritime.transformers import (
@@ -146,6 +147,8 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     columns = [ColumnName.MMSI, ColumnName.VESSEL_TYPE]
     pd_vessel_types = pandas.DataFrame(vessel_type_data, columns=columns)
     df_vessel_types = vaex.from_pandas(pd_vessel_types)
+    df_vessel_types[f"{ColumnName.VESSEL_TYPE}_as_int"] = \
+        df_vessel_types[ColumnName.VESSEL_TYPE].map(mapper=VesselType.get_mapping())
     if vessel_file_mode == "vaex":
         vessel_data = df_vessel_types
     else:
@@ -186,33 +189,34 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
                                               damast.core.MetaData(columns=adf.metadata.columns.copy()))
     new_adf = pipeline.transform(adf)
     if inplace:
-        assert len(new_adf.column_names) == len(adf.column_names)
+        assert len(new_adf.get_column_names()) == len(adf.get_column_names())
     else:
-        assert len(new_adf.column_names) == len(adf.column_names) + 1
+        assert len(new_adf.get_column_names()) == len(adf.get_column_names()) + 1
 
     missing_data = []
+
     for mmsi in new_adf._dataframe[ColumnName.MMSI].unique():
         entries_per_mmsi = new_adf[new_adf[ColumnName.MMSI] == mmsi]
         vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        exact_vessel_type = df_vessel_types[df_vessel_types[ColumnName.MMSI] == mmsi][ColumnName.VESSEL_TYPE].evaluate()
-        if len(exact_vessel_type) == 0:
+        exact_vessel_types = df_vessel_types[df_vessel_types[ColumnName.MMSI] == mmsi][f"{ColumnName.VESSEL_TYPE}_as_int"].evaluate()
+        if len(exact_vessel_types) == 0:
             # If no entry found in original input, this entry should be masked
             missing_data.append(mmsi)
             assert vessel_types.mask.all()
-        elif len(exact_vessel_type) == 1:
+        elif len(exact_vessel_types) == 1:
             # If one entry found in lookup dataframe, all entries should match this
-            assert (vessel_types == str(exact_vessel_type[0])).all()
+            assert (vessel_types == exact_vessel_types).all()
         else:
             raise RuntimeError("Input vessel types have more than one entry for a single vessel")
 
     # Test replacing missing values with vessel type
-    pipeline.add("Replace missing", AddUndefinedValue("unspecified"), name_mappings={"x": ColumnName.VESSEL_TYPE})
+    pipeline.add("Replace missing", AddUndefinedValue(VesselType["unspecified"]), name_mappings={"x": ColumnName.VESSEL_TYPE})
     fixed_adf = pipeline.transform(copy_adf)
 
     for mmsi in missing_data:
         entries_per_mmsi = fixed_adf[fixed_adf[ColumnName.MMSI] == mmsi]
         vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        assert (vessel_types == "unspecified").all()
+        assert (vessel_types == VesselType["unspecified"]).all()
 
 
 def test_add_distance_closest_anchorage(tmp_path):

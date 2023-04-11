@@ -63,6 +63,12 @@ class JoinDataFrameByColumn(PipelineElement):
                 raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{dataset.head()}'"
                                " - available are {','.join(vessel_type_data.columns)}")
 
+        column_dtype = dataset[self._dataset_column].dtype
+        if column_dtype != int:
+            raise ValueError(f"{self.__class__.__name__}.__init__:" \
+                             f" column '{self._dataset_column}' must be of type int, "
+                             f", but was: {column_dtype}")
+
         self._dataset = dataset
 
     @classmethod

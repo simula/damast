@@ -3,7 +3,7 @@ Module to encode the class hierarchy of the global fishing watch
 """
 from __future__ import annotations
 import re
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict
 
 
 class VesselType:
@@ -124,6 +124,18 @@ class VesselType:
         """
         klass = cls.by_name(name=name)
         return cls.to_id(klass=klass)
+
+    @classmethod
+    def get_mapping(cls) -> Dict[str, int]:
+        """
+        Compute the mapping from vessel typename to integer
+
+        :return: Dictionary representing the mapping
+        """
+        mapping = {}
+        for t in cls.get_types():
+            mapping[t.typename()] = cls.to_id(klass=t)
+        return mapping
 
 
 class Unspecified(VesselType):

@@ -12,7 +12,7 @@ import vaex
 
 from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.transformers.augmenters import (
-    AddLocalMessageIndex,
+    AddLocalIndex,
 )
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import ComputeClosestAnchorage
@@ -80,8 +80,11 @@ class CleanseAndSanitise(DataProcessingPipeline):
                  columns_default_values: Dict[str, Any],
                  columns_compress_types: Dict[str, str],
                  workdir: Union[str, Path],
-                 name: str = "Cleanse and sanitise data"):
-        super().__init__(name=name, base_dir=workdir)
+                 name: str = "Cleanse and sanitise data",
+                 name_mappings: Dict[str, str] = {}):
+        super().__init__(name=name,
+                         base_dir=workdir,
+                         name_mappings=name_mappings)
 
         self.add("Remove rows with ground as source", RemoveValueRows("g"),
                  name_mappings={"x": ColumnName.SOURCE})
@@ -149,9 +152,12 @@ class DataProcessing(DataProcessingPipeline):
                  vessel_type_hdf5: Union[str, Path],
                  fishing_vessel_type_hdf5: Union[str, Path],
                  anchorages_hdf5: Union[str, Path],
-                 name: str = "AIS-processor"):
+                 name: str = "AIS-processor",
+                 name_mappings: Dict[str, str] = {}):
 
-        super().__init__(name=name, base_dir=workdir)
+        super().__init__(name=name,
+                         base_dir=workdir,
+                         name_mappings=name_mappings)
 
         plots_dir = get_plots_dir(workdir=workdir)
         plots_dir.mkdir(parents=True, exist_ok=True)
@@ -179,11 +185,12 @@ class DataProcessing(DataProcessingPipeline):
         else:
             fishing_vessel_type_csv = fishing_vessel_type_hdf5
 
-        self.add("plot_input-lat_lon",
-                 PlotLatLon(output_dir=plots_dir,
-                            filename_prefix="lat-lon-input"),
-                 name_mappings={"LAT": ColumnName.LATITUDE,
-                                "LON": ColumnName.LONGITUDE})
+        # FIXME: Name mapping does not apply here
+        #self.add("plot_input-lat_lon",
+        #         PlotLatLon(output_dir=plots_dir,
+        #                    filename_prefix="lat-lon-input"),
+        #         name_mappings={"LAT": ColumnName.LATITUDE,
+        #                        "LON": ColumnName.LONGITUDE})
 
         self.add("augment_vessel_type",
                  AddVesselType(dataset=vessel_type_csv,
@@ -208,8 +215,8 @@ class DataProcessing(DataProcessingPipeline):
                  name_mappings={"x": ColumnName.LATITUDE,
                                 "y": ColumnName.LONGITUDE,
                                 "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
-        self.add("Compute local message index",  AddLocalMessageIndex(),
+        self.add("Compute local message index",  AddLocalIndex(),
                  name_mappings={"group": ColumnName.MMSI,
                                 "sort": ColumnName.TIMESTAMP,
-                                "msg_index": ColumnName.HISTORIC_SIZE,
-                                "reverse_{{msg_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
+                                "local_index": ColumnName.HISTORIC_SIZE,
+                                "reverse_{{local_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
