@@ -143,7 +143,6 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
                              " must be either int or str, but was '{column_dtype}'")
 
         super().__init__(dataset=dataset, right_on=right_on, dataset_col=name)
-                         
 
     @damast.core.describe("Add vessel-type from other dataset to current dataset, "
                           "where the input x is the linking identifier")

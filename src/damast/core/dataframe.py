@@ -12,7 +12,6 @@ from typing import List, Union, Any, Callable, Optional
 import vaex
 from vaex import DataFrame
 import numpy as np
-import copy
 import h5py
 from logging import getLogger, Logger, INFO
 

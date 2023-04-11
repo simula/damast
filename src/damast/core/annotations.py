@@ -5,7 +5,6 @@
 # SPDX-License-Identifier:    BSD-3-Clause
 from __future__ import annotations
 
-import copy
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Union

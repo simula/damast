@@ -2,7 +2,6 @@
 Module to collect the classes to define meta data
 """
 from __future__ import annotations
-import copy
 import ast
 import builtins
 import inspect

@@ -241,7 +241,7 @@ class AddLocalIndex(PipelineElement):
         del local_index, reverse_local_index
         new_specs = [damast.core.DataSpecification(self.get_name("local_index"), representation_type=int),
                      damast.core.DataSpecification(self.get_name("reverse_{{local_index}}"), representation_type=int)]
-        
+
         [df._metadata.columns.append(new_spec) for new_spec in new_specs]
         return df
 
