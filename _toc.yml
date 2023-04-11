@@ -8,6 +8,7 @@ parts:
   - caption: Documentation of Damast
     chapters:
       - file: docs/usage
+      - file: docs/experiments
   - caption: API Documentation
     chapters:
       - file: docs/modules
