@@ -9,8 +9,9 @@ import importlib
 import inspect
 import re
 import tempfile
-
 import yaml
+from logging import Logger, getLogger
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -33,6 +34,8 @@ __all__ = [
     "DECORATED_OUTPUT_SPECS",
     "PipelineElement",
 ]
+
+_log : Logger = getLogger(__name__)
 
 DECORATED_DESCRIPTION = "_damast_description"
 """Attribute description for :func:`describe`"""
@@ -114,8 +117,13 @@ def input(requirements: Dict[str, Any]):
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
-            fulfillment = _df.get_fulfillment(expected_specs=args[0].input_specs)
+
+            pipeline_element = args[0]
+            fulfillment = _df.get_fulfillment(expected_specs=pipeline_element.input_specs)
             if fulfillment.is_met():
+                if hasattr(pipeline_element, "parent_pipeline"):
+                    getattr(pipeline_element, "parent_pipeline").on_transform_start(step=pipeline_element,
+                                                                                    adf=_df)
                 return func(*args, **kwargs)
             else:
                 raise RuntimeError(
@@ -153,7 +161,7 @@ def output(requirements: Dict[str, Any]):
             setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
 
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
-            input_columns = [c for c in _df.column_names]
+            input_columns = list(_df.column_names)
 
             adf: AnnotatedDataFrame = func(*args, **kwargs)
             if adf is None:
@@ -176,9 +184,16 @@ def output(requirements: Dict[str, Any]):
 
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
+            pipeline_element = args[0]
 
             # Ensure that metadata is up to date with the dataframe
-            adf.update(expectations=args[0].output_specs)
+            adf.update(expectations=pipeline_element.output_specs)
+
+            if hasattr(pipeline_element, "parent_pipeline"):
+                parent_pipeline = getattr(pipeline_element, "parent_pipeline")
+                parent_pipeline.on_transform_end(step=pipeline_element,
+                                                 adf=adf)
+
             return adf
 
         return check
@@ -277,7 +292,13 @@ class PipelineElement(Transformer):
         :return: Name for this input after resolving name mappings and references
         """
         if name in self.name_mappings:
-            return self.name_mappings[name]
+            # allow multiple levels of name resolution, e.g.,
+            # x -> y, y -> z --> x -> z
+            mapped_name = self.name_mappings[name]
+            if mapped_name == name:
+                return name
+            else:
+                return self.get_name(mapped_name)
 
         # Allow to use patterns, so that an existing input
         # reference can be reused for dynamic labelling
@@ -378,15 +399,22 @@ class DataProcessingPipeline(PipelineElement):
     # The processing steps that define this pipeline
     steps: List[Tuple[str, PipelineElement]]
 
+    _name_mappings: Dict[str, str]
+    _processing_stats: Dict[str, Dict[str, Any]]
+
     def __init__(self, *,
                  name: str,
                  base_dir: Union[str, Path] = tempfile.gettempdir(),
-                 steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = []
+                 steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = [],
+                 name_mappings: Dict[str, str] = {},
                  ):
         self.name = name
         self.base_dir = Path(base_dir)
 
         self._output_specs = None
+        self._name_mappings = name_mappings
+        self._processing_stats = {}
+
         if steps is None:
             raise ValueError(f"{self.__class__.__name__}.__init__:"
                              " steps must not be None")
@@ -550,9 +578,12 @@ class DataProcessingPipeline(PipelineElement):
         basename = f"{name}{DAMAST_PIPELINE_SUFFIX}"
         path = Path(path)
         if path.is_dir():
-            files = [x for x in path.glob(basename)]
+            files = list(path.glob(basename))
         elif path.is_file():
             files = [path]
+        else:
+            raise RuntimeError("{self.__class__.__name__}.load: {path}" \
+                               " is neither directory nor file")
 
         if len(files) == 1:
             filename = files[0]
@@ -588,7 +619,7 @@ class DataProcessingPipeline(PipelineElement):
         basename = f"{name}{VAEX_STATE_SUFFIX}"
         dir = Path(dir)
 
-        files = [x for x in dir.glob(basename)]
+        files = list(dir.glob(basename))
         if len(files) == 1:
             filename = files[0]
         elif len(files) == 0:
@@ -606,7 +637,7 @@ class DataProcessingPipeline(PipelineElement):
 
     def prepare(self, df: AnnotatedDataFrame) -> DataProcessingPipeline:
         """
-        Prepare the pipeline by validating all step that define the pipeline.
+        Prepare the pipeline by applying necessary name mapping and validating all steps that define the pipeline.
 
         A :class:`DataProcessingPipeline` must be prepared before execution.
 
@@ -624,6 +655,20 @@ class DataProcessingPipeline(PipelineElement):
                 f" AnnotatedDataFrame.validate_metadata()"
                 f" -- {e}"
             ) from e
+
+        # The pipeline will define a name mapping (only for items in its interface)
+        for k, v in self._name_mappings.items():
+            for step in self.steps:
+                _, pipeline_element = step
+
+                input_columns = [x.name for x in pipeline_element.input_specs]
+                output_columns = [x.name for x in pipeline_element.output_specs]
+
+                columns = input_columns + output_columns
+                for x in columns:
+                    if x == k:
+                        pipeline_element.name_mappings[x] = v
+
 
         validation_result = self.validate(steps=self.steps, metadata=df._metadata)
         self.is_ready = True
@@ -668,6 +713,52 @@ class DataProcessingPipeline(PipelineElement):
         # Remove all rows that have been filtered from the data-frame
         adf._dataframe = adf._dataframe.extract()
         return adf
+
+    def on_transform_start(self,
+                           step: PipelineElement,
+                           adf: AnnotatedDataFrame):
+        """
+        Default implementation of the on_transform_start callback.
+
+        This output is a message in INFO log level
+        """
+        if hasattr(step, "transform_start"):
+            return
+
+        _log.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
+        start_time = datetime.now(timezone.utc)
+        setattr(step, "transform_start", start_time)
+
+        step_name = [x for x, y in self.steps if y == step][0]
+        self._processing_stats[step_name] = {
+            "input_dataframe_length": adf.shape[0],
+            "start_time": start_time
+        }
+
+    def on_transform_end(self,
+                         step: PipelineElement,
+                         adf: AnnotatedDataFrame):
+        """
+        Default implementation of the on_transform_end callback.
+
+        This outputs a message in INFO log level
+        """
+        if not hasattr(step, "transform_start"):
+            return
+
+        start = getattr(step, "transform_start")
+        end_time = datetime.now(timezone.utc)
+        delta = (end_time - start).total_seconds()
+        delattr(step, "transform_start")
+        _log.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: " \
+                  f"{delta} seconds, {adf.shape[0]} remaining rows)")
+
+        step_name = [x for x, y in self.steps if y == step][0]
+        self._processing_stats[step_name] = {
+            "processing_time_in_s": delta,
+            "output_dataframe_length": adf.shape[0],
+            "end_time": end_time
+        }
 
     def __repr__(self) -> str:
         """
