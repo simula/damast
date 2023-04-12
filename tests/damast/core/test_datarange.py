@@ -43,3 +43,7 @@ def test_data_range_from_dict(data, expected_instance):
 
     instance = DataRange.from_dict(data=data)
     assert instance == expected_instance
+
+    data_dict = instance.to_dict()
+    instance = DataRange.from_dict(data=data_dict)
+    assert expected_instance == instance

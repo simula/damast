@@ -98,8 +98,8 @@ class DataRange(ABC):
 
             datarange_subclass = getattr(damast.core.datarange, klass)
             return datarange_subclass.from_data(data=values, dtype=dtype)
-        except AttributeError:
-            raise ValueError(f"DataRange.from_dict: unknown range definition '{klass}'")
+        except AttributeError as e:
+            raise ValueError(f"DataRange.from_dict: unknown range definition '{klass}'") from e
 
 
 class ListOfValues:
