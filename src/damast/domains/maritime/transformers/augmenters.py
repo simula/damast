@@ -26,19 +26,19 @@ __all__ = [
 
 
 class ComputeClosestAnchorage(PipelineElement):
+    """
+    Compute the closest anchorage given a data-set with all closest anchorages
+
+    :param dataset: Path to data-set with closest anchorages
+    :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
+    :param sep: Separator used in dataset if dataset is a csv file
+    """
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
 
     def __init__(self,
                  dataset: Union[str, Path, vaex.DataFrame],
                  columns: List[str],
                  sep: str = ";"):
-        """
-        Compute the closest anchorage given a data-set with all closest anchorages
-
-        :param dataset: Path to data-set with closest anchorages
-        :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
-        :param sep: Separator used in dataset if dataset is a csv file
-        """
         if isinstance(dataset, vaex.DataFrame):
             _dataset = dataset
         else:

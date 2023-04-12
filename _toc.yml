@@ -9,6 +9,7 @@ parts:
     chapters:
       - file: docs/usage
       - file: docs/experiments
+      - file: docs/pipeline_elements
       - file: CONTRIBUTING
   - caption: API Documentation
     chapters:

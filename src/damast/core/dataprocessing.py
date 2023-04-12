@@ -370,6 +370,44 @@ class PipelineElement(Transformer):
     def __eq__(self, other):
         return dict(self) == dict(other)
 
+    @classmethod
+    def get_types(cls) -> List[PipelineElement]:
+        """
+        Get all available PipelineElement implementations
+
+        :return: List of PipelineElement classes
+        """
+        klasses = []
+        for subclass in cls.__subclasses__():
+            klasses.append(subclass)
+            klasses.extend(subclass._subclasses())
+        return klasses
+
+    @classmethod
+    def _subclasses(cls) -> List[PipelineElement]:
+        """
+        Generate the list of subclasses for the calling class
+        """
+        klasses = []
+        for subclass in cls.__subclasses__():
+            klasses.append(subclass)
+            klasses.extend(subclass._subclasses())
+        return klasses
+
+    @classmethod
+    def generate_subclass_documentation(cls) -> str:
+        """
+        Generate the documentation for all subclasses of ::class::`PipelineElement`
+        """
+        implementations = sorted(cls.get_types(), key=lambda x: str(x))
+        txt = ""
+        for k in implementations:
+            txt += "=" * 80
+            txt += f"\n{k.__name__} -- from {k.__module__}\n"
+            txt += k.__doc__
+            txt += '\n'
+        return txt
+
 
 class DataProcessingPipeline(PipelineElement):
     """
