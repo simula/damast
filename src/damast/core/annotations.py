@@ -1,3 +1,6 @@
+"""
+Module to define Annotation object for data specification
+"""
 # Copyright (C) 2023 Simula Research Laboratory
 #
 # This file is part of Damast

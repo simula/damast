@@ -1,3 +1,7 @@
+"""
+Module containing the functionality for a Job Scheduler to run learning tasks
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,13 +11,13 @@ from enum import Enum
 from pathlib import Path
 from threading import Thread, Lock
 from time import sleep
-from typing import List, Any, Dict, Tuple, Callable
+from typing import List, Any, Dict, Tuple, Callable, Optional, Union
 
 from logging import getLogger, Logger, INFO
+import tempfile
 
-PREDICT_FILE_SOCKET = "/tmp/.damast-ais-showcase"
+PREDICT_FILE_SOCKET = str(Path(tempfile.gettempdir()) / ".damast-predict")
 _log: Logger = getLogger(__name__)
-_log.setLevel(INFO)
 
 
 class Job:
@@ -23,7 +27,7 @@ class Job:
     id: int
 
     #: The experiment directory which will be used to look for available models
-    experiment_dir: Path
+    experiment_dir: str
     #: The model that shall be loaded
     model_name: str
     #: The (input) features
@@ -33,7 +37,7 @@ class Job:
     #: The length of the sequence
     sequence_length: int
     #: The path to the vaex-readable file containing the sequences to run the prediction on
-    data_filename: Path
+    data_filename: str
 
     class Status(str, Enum):
         NOT_STARTED = "NOT STARTED"
@@ -45,9 +49,9 @@ class Job:
 
     @classmethod
     def wait_for_status(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
-                        match_status: Job.Status = None,
+                        match_status: Optional[Job.Status] = None,
                         timeout_in_s: int = 10):
-        for i in range(0, timeout_in_s):
+        for i in range(timeout_in_s):
             collected_responses, current_status = status_collector()
             if match_status == current_status:
                 return collected_responses
@@ -102,7 +106,7 @@ class Job:
             self.actual_sequence = actual_sequence
             self.predicted_sequence = predicted_sequence
 
-        def encode(self) -> str:
+        def encode(self) -> bytes:
             """
             Encode this object into a transferable string
             :return: encoded string
@@ -110,13 +114,13 @@ class Job:
             return json.dumps(self.__dict__).encode()
 
         @classmethod
-        def decode(cls, bytes: str) -> Job.Response:
+        def decode(cls, bytes: bytes) -> Job.Response:
             """
             Decode an encoded string / bytes into a :class:`Job.Response`
             :param bytes:
             :return: Instance of :class:`Job.Response`
             """
-            values = json.loads(bytes.decode())
+            values = json.loads(s=bytes.decode())
             return cls(**values)
 
         def __eq__(self, other):
@@ -124,32 +128,32 @@ class Job:
 
     def __init__(self,
                  id: int,
-                 experiment_dir: str,
+                 experiment_dir: Union[str, Path],
                  model_name: str,
                  features: List[str],
                  target: List[str],
                  sequence_length: int,
-                 data_filename: str):
+                 data_filename: Union[str, Path]):
         self.id = id
-        self.experiment_dir = experiment_dir
+        self.experiment_dir = str(experiment_dir)
         self.model_name = model_name
         self.features = features
         self.target = target
         self.sequence_length = sequence_length
-        self.data_filename = data_filename
+        self.data_filename = str(data_filename)
 
         # try to encode for validation purposes
         self.encode()
 
-    def encode(self):
+    def encode(self) -> bytes:
         return json.dumps(self.__dict__).encode()
 
     @classmethod
-    def decode(cls, bytes):
+    def decode(cls, bytes: bytes) -> Job:
         values = json.loads(bytes.decode())
         return cls(**values)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return self.__dict__ == other.__dict__
 
 
@@ -161,8 +165,8 @@ class ControlCommand(str, Enum):
 class ResponseCollector:
     job_id: int
 
-    sock: socket
-    thread: Thread
+    sock: socket.socket
+    thread: Optional[Thread]
 
     responses: List[Job.Response]
     lock: Lock
@@ -170,7 +174,7 @@ class ResponseCollector:
 
     def __init__(self,
                  job_id: int,
-                 sock: socket):
+                 sock: socket.socket):
         self.job_id = job_id
         self.sock = sock
         self.thread = None
@@ -237,7 +241,7 @@ class JobScheduler:
 
     # region Job Mapping
     #: Mapping of job id to socket
-    _sockets: Dict[int, socket]
+    _sockets: Dict[int, socket.socket]
     #: Mapping of job id to job
     _jobs: Dict[int, Job]
     #: Mapping of job id to the collecting threads
@@ -248,7 +252,7 @@ class JobScheduler:
     def __init__(self):
 
         self._job_id = 0
-        self._sockets: Dict[int, socket] = {}
+        self._sockets: Dict[int, socket.socket] = {}
 
         self._jobs = {}
         self._collectors = {}
@@ -278,11 +282,11 @@ class JobScheduler:
         soc = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
         try:
-            soc.connect(PREDICT_FILE_SOCKET)
-        except ConnectionRefusedError:
-            raise RuntimeError(f"{self.__class__.__name__}.start: no worker available")
-        except FileNotFoundError:
-            raise RuntimeError(f"{self.__class__.__name__}.start: no worker started")
+            soc.connect(str(PREDICT_FILE_SOCKET))
+        except ConnectionRefusedError as e:
+            raise RuntimeError(f"{self.__class__.__name__}.start: no worker available") from e
+        except FileNotFoundError as e:
+            raise RuntimeError(f"{self.__class__.__name__}.start: no worker started") from e
         soc.setblocking(0)
 
         job.id = self._job_id

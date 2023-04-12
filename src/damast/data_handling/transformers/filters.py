@@ -1,6 +1,5 @@
 """
 Module which collect all filters that filter the existing data.
-
 """
 
 from typing import Any
@@ -10,14 +9,15 @@ from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
 
 __all__ = [
-    "RemoveValueRows",
-    "FilterWithin"
+    "FilterWithin",
+    "RemoveValueRows"
 ]
 
 
 class RemoveValueRows(PipelineElement):
     """
-    Remove rows that do not have a defined value for a given column
+    Remove rows that do not have a defined value for a given column.
+
     :param remove_value: remove rows with this value.
     """
     _remove_value: Any
@@ -45,7 +45,7 @@ class RemoveValueRows(PipelineElement):
 
 class DropMissing(PipelineElement):
     """
-    DropMissing rows that do not have a defined value for a given column
+    DropMissing rows that do not have a defined value for a given column.
     """
 
     @damast.core.describe("Drop rows where a column has a missing value")
@@ -64,8 +64,9 @@ class DropMissing(PipelineElement):
 
 class FilterWithin(PipelineElement):
     """
-    Filter rows and keep those within given values
-    :param within_values: list of values to keeps
+    Filter rows and keep those within given values.
+
+    :param within_values: list of values to keep
     """
     _within_values: Any
 

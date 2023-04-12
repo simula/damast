@@ -1,5 +1,5 @@
 """
-Module to define a dataframe
+Module to define an annotated dataframe, i.e. the combination of data and metadata.
 """
 from __future__ import annotations
 

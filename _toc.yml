@@ -9,6 +9,7 @@ parts:
     chapters:
       - file: docs/usage
       - file: docs/experiments
+      - file: CONTRIBUTING
   - caption: API Documentation
     chapters:
       - file: docs/modules

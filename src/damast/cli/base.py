@@ -1,3 +1,6 @@
+"""
+Module containing the BaseParser functionality, in order to simplify the usage of subparsers.
+"""
 import argparse
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser

@@ -18,10 +18,10 @@ from damast.core.dataprocessing import DataSpecification, PipelineElement
 
 __all__ = [
     "AddLocalIndex",
-    "JoinDataFrameByColumn",
-    "BallTreeAugmenter",
-    "AddUndefinedValue",
     "AddTimestamp",
+    "AddUndefinedValue",
+    "BallTreeAugmenter",
+    "JoinDataFrameByColumn",
     "MultiplyValue"
 ]
 
@@ -169,7 +169,8 @@ class BallTreeAugmenter():
 
 
 class AddUndefinedValue(PipelineElement):
-    """Replace missing and Not Available (NA) entries in a column with a given value.
+    """
+    Replace missing and Not Available (NA) entries in a column with a given value.
 
     :param fill_value: The value replacing NA
     """
@@ -199,6 +200,7 @@ class AddUndefinedValue(PipelineElement):
 class AddLocalIndex(PipelineElement):
     """
     Compute the local index of an entry in a given group (sorted by a given column).
+
     Also compute the reverse index, i.e. how many entries in the group are after this message
     """
 
@@ -289,7 +291,8 @@ class AddTimestamp(PipelineElement):
 
 
 class MultiplyValue(PipelineElement):
-    """Multiply a column by a value.
+    """
+    Multiply a column by a value.
 
     :param multiply_value: The value to use to multiply
     """

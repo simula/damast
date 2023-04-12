@@ -1,6 +1,15 @@
+"""
+This module extends the existing units found in ::class::`astropy.units`.
+"""
 import astropy.units as _units
 
-__all__ = ["units", "unit_registry", "Unit"]
+__all__ = [
+    "knots",
+    "units",
+    "unit_registry",
+    "Unit"
+]
+
 units = _units
 Unit = _units.Unit
 # Additional type

@@ -1,5 +1,5 @@
 """
-Module that contains transformer which do not modify data, but serve only data exploration.
+Module that contains transformers which do not modify data, but serve only data exploration.
 """
 from pathlib import Path
 from typing import Union

@@ -1,3 +1,6 @@
+"""
+Main argument parser and CLI entry point.
+"""
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -31,6 +34,9 @@ class MainParser(ArgumentParser):
 
 
 def run():
+    """
+    Run the main command line interface
+    """
     main_parser = MainParser()
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data",

@@ -1,8 +1,11 @@
+"""
+Module containing the worker functionality to perform a learning task
+"""
 import select
 import socket
 from logging import getLogger, Logger, basicConfig, INFO
 from pathlib import Path
-from typing import List, Callable, Dict
+from typing import List, Callable, Dict, Optional
 import datetime as dt
 
 import pandas as pd
@@ -11,16 +14,11 @@ import vaex
 
 from damast.data_handling.accessors import SequenceIterator
 from damast.ml.experiments import Experiment
-from damast.ml.scheduler import Job, ControlCommand
+from damast.ml.scheduler import Job, ControlCommand, PREDICT_FILE_SOCKET
 
 from threading import Thread, Event
 
-basicConfig()
-
 _log: Logger = getLogger(__name__)
-_log.setLevel(INFO)
-
-PREDICT_FILE_SOCKET = "/tmp/.damast-ais-showcase"
 
 
 class Worker:
@@ -33,16 +31,16 @@ class Worker:
         self.stop_event.clear()
 
     def predict(self,
-                job_id: id,
+                job_id: int,
                 model_name: str,
                 experiment_dir: Path,
                 df: pd.DataFrame,
                 features: List[str],
                 target: List[str],
                 sequence_length: int,
-                connection: socket,
+                connection: socket.socket,
                 stop_event: Event,
-                update_callback: Callable = None
+                update_callback: Optional[Callable] = None
                 ):
         models = Experiment.from_directory(experiment_dir)
         current_model = models[model_name]
@@ -168,11 +166,14 @@ class Worker:
             connection.sendmsg([ControlCommand.BYE.value.encode()])
         except BrokenPipeError as e:
             raise ConnectionError(f"{self.__class__.__name__}.run_prediction:"
-                                  f" failed to communicate the results due to a connection error - {e}")
+                                  f" failed to communicate the results due to a connection error - {e}") from e
         finally:
             connection.close()
 
 
 if __name__ == "__main__":
+    basicConfig()
+    _log.setLevel(INFO)
+
     w = Worker()
     w.listen_and_accept()

@@ -1,3 +1,6 @@
+"""
+Collection of generic Transformer implementations
+"""
 from .augmenters import (
     AddTimestamp,
     AddUndefinedValue,
@@ -10,14 +13,14 @@ from .filters import RemoveValueRows, FilterWithin, DropMissing
 from .normalizers import normalize
 
 __all__ = [
-    "normalize",
-    "BallTreeAugmenter",
-    "AddUndefinedValue",
-    "RemoveValueRows",
-    "JoinDataFrameByColumn",
-    "FilterWithin",
-    "DropMissing",
     "AddTimestamp",
+    "AddUndefinedValue",
+    "BallTreeAugmenter",
+    "ChangeTypeColumn",
+    "DropMissing",
+    "FilterWithin",
+    "JoinDataFrameByColumn",
     "MultiplyValue",
-    "ChangeTypeColumn"
+    "RemoveValueRows",
+    "normalize"
 ]

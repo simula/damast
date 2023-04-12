@@ -1,12 +1,14 @@
+"""
+Module containing (de)normalisation functions
+"""
 import numpy as np
 import numpy.typing as npt
 from numba import njit
 
 __all__ = [
-
-    "normalize",
+    "cyclic_denormalisation",
     "cyclic_normalisation",
-    "cyclic_denormalisation"
+    "normalize"
 ]
 
 

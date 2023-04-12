@@ -1,3 +1,6 @@
+"""
+Module containing functionality to setup up an Machine-Learning Experiment
+"""
 from __future__ import annotations
 
 import importlib
@@ -8,7 +11,7 @@ import random
 import tempfile
 from logging import getLogger, Logger, basicConfig, INFO
 from pathlib import Path
-from typing import Union, Dict, List, Any, Sequence, NamedTuple
+from typing import Union, Dict, List, Any, Sequence, NamedTuple, Optional
 
 import keras
 import numpy as np
@@ -66,7 +69,7 @@ class LearningTask:
                  pipeline: Union[Dict[str, Any], DataProcessingPipeline],
                  features: List[str],
                  models: List[Union[Dict[str, Any], ModelInstanceDescription]],
-                 targets: List[str] = None,
+                 targets: Optional[List[str]] = None,
                  training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  ):
 
@@ -135,7 +138,7 @@ class LearningTask:
         yield "targets", self.targets
         yield "models", [dict(x) for x in self.models]
 
-        yield "training_parameters", self.training_parameters._asdict()
+        yield "training_parameters", self.training_parameters._asdict() # type: ignore
 
     def __eq__(self, other) -> bool:
         if type(self) != type(other):
@@ -159,8 +162,8 @@ class ForecastTask(LearningTask):
                  features: List[str],
                  sequence_length: int,
                  forecast_length: int,
-                 models: List[Dict[str, Any], ModelInstanceDescription],
-                 targets: List[str] = None,
+                 models: List[Union[Dict[str, Any], ModelInstanceDescription]],
+                 targets: Optional[List[str]] = None,
                  training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
                  ):
         super().__init__(label=label,
@@ -246,7 +249,7 @@ class Experiment:
                              f"dict or LearningTask object")
 
         self.input_data = Path(input_data)
-        self.output_directory = output_directory
+        self.output_directory = Path(output_directory)
         self.label = label
 
         self._batch_size = batch_size
@@ -535,7 +538,7 @@ class Experiment:
 
     def run(self,
             logging_level: int = INFO,
-            report_filename: Union[str, Path] = None) -> vaex.DataFrame:
+            report_filename: Optional[Union[str, Path]] = None) -> vaex.DataFrame:
         """
         Run the experiment and return evaluation data.
 
@@ -612,7 +615,11 @@ class Experiment:
 
         self._timestamp = datetime.datetime.utcnow()
 
-        filename = experiment_dir / "experiment-report.yaml"
+        if report_filename is None:
+            filename = experiment_dir / "experiment-report.yaml"
+        else:
+            filename = report_filename
+
         self.save(filename=filename)
         return filename
 
