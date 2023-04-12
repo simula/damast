@@ -288,7 +288,7 @@ class DataSpecification:
         )
 
     def __repr__(self):
-        return f"{self.__class__.__name__}[{self.name}, {self.category.__class__.__name__}]"
+        return f"{self.__class__.__name__}[{dict(self)}]"
 
     def _validate(self):
         """
