@@ -76,14 +76,6 @@ class Annotation:
 
         return True
 
-    def to_dict(self):
-        """
-        Create a dictionary to represent this object, e.g., to serialise the object.
-
-        :return: dictionary
-        """
-        return dict(self)
-
     def __iter__(self):
         yield self.name, self.value
 
@@ -165,9 +157,6 @@ class Change:
 
         return True
 
-    def to_dict(self):
-        return dict(self)
-
     def __iter__(self):
         yield "title", self.title
         yield "timestamp", self.timestamp.strftime(self.TIMESTAMP_FORMAT)
@@ -208,9 +197,9 @@ class History(Annotation):
         if changes is None:
             self.changes = []
         else:
-            self.changes = changes
+            self.changes = sorted(changes, key=lambda x: str(x))
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         """
         A history is equal to another history of it has the same sequence of changes
 
@@ -219,10 +208,7 @@ class History(Annotation):
         if self.__class__ != other.__class__:
             return False
 
-        if self.changes != other.changes:
-            return False
-
-        return True
+        return self.changes == other.changes
 
     def add_change(self, change: Change):
         """
@@ -230,10 +216,8 @@ class History(Annotation):
 
         :param change: The change
         """
-        self.changes.append(change)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return dict(self)
+        changes = self.changes + [change]
+        self.changes = sorted(changes, key=lambda x: str(x))
 
     def __iter__(self):
         yield Annotation.Key.History.value, [dict(c) for c in self.changes]

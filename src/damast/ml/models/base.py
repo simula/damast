@@ -231,15 +231,26 @@ class BaseModel(ABC):
             history.export_csv(f"{self.model_dir / HISTORY_FILENAME}")
 
     def get_evaluations(self) -> DataFrame:
+        """
+        Read the evaluation results from the evaluation file.
+
+        :raise FileNotFoundError: If evaluation result file does not exist
+        """
         if self.evaluation_file.exists():
-            evaluations = vaex.read_csv(self.evaluation_file)
-            return evaluations
+            return vaex.read_csv(self.evaluation_file)
 
         raise FileNotFoundError(f"There is are no evaluation results for {self.name} available: {self.evaluation_file} "
                                 "does not exist")
 
-    def save(self):
-        self.model.save(self.model_dir / MODEL_TF_HDF5)
+    def save(self) -> Path:
+        """
+        Save the model in the model directory.
+
+        :return: Path to the saved model.
+        """
+        filename = self.model_dir / MODEL_TF_HDF5
+        self.model.save(filepath=filename)
+        return filename
 
     def evaluate(self,
                  label: str,

@@ -609,7 +609,7 @@ class DataProcessingPipeline(PipelineElement):
 
         :param dir: directory where to save this pipeline
         """
-        filename = dir / f"{self.name}{VAEX_STATE_SUFFIX}"
+        filename = Path(dir) / f"{self.name}{VAEX_STATE_SUFFIX}"
         df._dataframe.state_write(file=filename)
         return filename
 
@@ -663,14 +663,14 @@ class DataProcessingPipeline(PipelineElement):
         :return: The data-frame with applied state
         """
         basename = f"{name}{VAEX_STATE_SUFFIX}"
-        dir = Path(dir)
+        dir_path = Path(dir)
 
-        files = list(dir.glob(basename))
+        files = list(dir_path.glob(basename))
         if len(files) == 1:
             filename = files[0]
         elif len(files) == 0:
             raise FileNotFoundError(
-                f"{cls.__name__}.load: could not find '{basename}' in {dir}"
+                f"{cls.__name__}.load: could not find '{basename}' in {dir_path}"
             )
         else:
             raise RuntimeError(

@@ -8,6 +8,12 @@ columns:
     MinMax:
       min: 0
       max: 40
+  representation_type: int
+- name: letter
+  is_optional: false
+  abbreviation: letter
+  category: static
+  representation_type: str
 annotations:
   license: MIT License
   comment: test dataframe

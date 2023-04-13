@@ -9,7 +9,7 @@ import select
 import socket
 from enum import Enum
 from pathlib import Path
-from threading import Thread, Lock
+from threading import Thread
 from time import sleep
 from typing import List, Any, Dict, Tuple, Callable, Optional, Union
 
@@ -51,7 +51,7 @@ class Job:
     def wait_for_status(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
                         match_status: Optional[Job.Status] = None,
                         timeout_in_s: int = 10):
-        for i in range(timeout_in_s):
+        for _ in range(timeout_in_s):
             collected_responses, current_status = status_collector()
             if match_status == current_status:
                 return collected_responses
@@ -64,7 +64,7 @@ class Job:
     def wait_for_responses(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
                            predicate_responses: Callable[[List[Job.Response]], bool],
                            timeout_in_s: int = 10):
-        for i in range(0, timeout_in_s):
+        for _ in range(timeout_in_s):
             collected_responses, _ = status_collector()
             if predicate_responses(collected_responses):
                 return collected_responses
@@ -169,7 +169,6 @@ class ResponseCollector:
     thread: Optional[Thread]
 
     responses: List[Job.Response]
-    lock: Lock
     status: Job.Status
 
     def __init__(self,

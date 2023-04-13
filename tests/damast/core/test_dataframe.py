@@ -41,6 +41,14 @@ def vaex_dataframe():
     pandas_df = pd.DataFrame(data, columns=columns)
     return vaex.from_pandas(pandas_df)
 
+def test_annotated_dataframe_wrong_init(vaex_dataframe):
+    with pytest.raises(ValueError, match="must be of type 'DataFrame'"):
+        AnnotatedDataFrame(dataframe="test",
+                           metadata="any")
+
+    with pytest.raises(ValueError, match="must be of type 'MetaData'"):
+        AnnotatedDataFrame(dataframe=vaex_dataframe,
+                           metadata="any")
 
 def test_annotated_dataframe_deep_copy(metadata, vaex_dataframe):
     """
@@ -79,6 +87,10 @@ def test_annotated_dataframe_export_hdf5(metadata, vaex_dataframe, tmp_path):
     test_file = tmp_path / "test_dataframe.hdf5"
     adf.save(filename=test_file)
     assert test_file.exists()
+
+    with pytest.raises(ValueError, match="no dataframe to save"):
+        adf._dataframe = None
+        adf.save(filename=test_file)
 
 
 def test_annotated_dataframe_export_csv(metadata, vaex_dataframe, tmp_path):
@@ -129,9 +141,8 @@ def test_annotated_dataframe_import_csv():
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m,
-        value_range=MinMax(min=0, max=40))
-
+        name="height", abbreviation="height", category=DataCategory.STATIC,
+        unit=units.m, value_range=MinMax(min=0, max=40), representation_type=int)
 
 def test_01_dataframe_composition():
     """
@@ -182,3 +193,20 @@ def test_force_range():
     masked_mmsis = adf["mmsi"].evaluate()
     assert np.allclose(masked_mmsis, mmsi)
     assert np.isin(np.flatnonzero(masked_mmsis.mask), invalid).all()
+
+def test_convert_csv_to_adf(tmp_path):
+    output_filename =  tmp_path / "test-convert-csv.hdf5"
+    test_path = Path(__file__).parent.parent / "data"
+    AnnotatedDataFrame.convert_csv_to_adf(csv_filenames=[test_path / "test_dataframe.csv"],
+                                          metadata_filename=test_path / "test_dataframe.spec.yaml",
+                                          output_filename=output_filename,
+                                          csv_sep=",")
+
+    adf = AnnotatedDataFrame.from_file(filename=output_filename)
+    assert "height" in adf.get_column_names()
+    assert "letter" in adf.get_column_names()
+
+    columns_in_metadata = [ x.name for x in adf.metadata.columns]
+
+    assert "height" in columns_in_metadata
+    assert "letter" in columns_in_metadata

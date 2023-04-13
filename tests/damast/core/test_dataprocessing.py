@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pytest
 import vaex
 from astropy import units
@@ -28,8 +29,12 @@ class DataProcessorA(PipelineElement):
         "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        transformer = CycleTransformer(features=["latitude", "longitude"])
-        df._dataframe = transformer.fit_transform(df._dataframe)
+        lat_cyclic_transformer = CycleTransformer(features=[self.get_name("latitude")], n=180.0)
+        lon_cyclic_transformer = CycleTransformer(features=[self.get_name("longitude")], n=360.0)
+
+        _df = lat_cyclic_transformer.fit_transform(df=df)
+        _df = lon_cyclic_transformer.fit_transform(df=_df)
+        df._dataframe = _df
         return df
 
 
@@ -425,7 +430,7 @@ def test_toplevel_decorators(tmp_path):
     p.transform(df=adf)
 
 
-def test_io(tmp_path):
+def test_save(tmp_path):
     pipeline = DataProcessingPipeline(name="abc",
                                       base_dir=tmp_path) \
         .add("transform-a", TransformerA()) \
@@ -435,3 +440,20 @@ def test_io(tmp_path):
     pipeline_file = pipeline.save(tmp_path)
     loaded_pipeline = DataProcessingPipeline.load(pipeline_file)
     print(loaded_pipeline)
+
+
+def test_save_load_state(lat_lon_annotated_dataframe, lat_lon_metadata, tmp_path):
+    """
+    Test the load/save_state functionality of the pipeline
+    """
+    pipeline = DataProcessingPipeline(name="a",
+                                      base_dir=tmp_path) \
+        .add("transform-a", DataProcessorA())
+
+    df_transformed = pipeline.transform(df=lat_lon_annotated_dataframe)
+    pipeline.save_state(df=df_transformed, dir=tmp_path)
+
+    loaded_adf = pipeline.load_state(df=lat_lon_annotated_dataframe, dir=tmp_path)
+
+    for i in range(len(df_transformed)):
+        assert np.array_equiv(df_transformed[i], loaded_adf[i])

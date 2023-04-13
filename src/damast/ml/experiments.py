@@ -295,6 +295,9 @@ class Experiment:
         prefix = datetime.datetime.utcnow().strftime(cls.TIMESTAMP_FORMAT)
         experiment_dir = base_dir / f"{prefix}-{label}"
         experiment_dir.mkdir(exist_ok=False, parents=True)
+
+        Experiment.touch_marker(experiment_dir)
+
         return experiment_dir
 
     @classmethod
