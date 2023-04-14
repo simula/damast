@@ -30,7 +30,7 @@ def test_add_missing_ais_status(tmp_path):
     """
     # Create dataframe with NaNs
     mmsi_a = 400000000
-    timestamp = dt.datetime.utcnow()
+    timestamp = dt.datetime.now(dt.timezone.utc)
     status = AISNavigationalStatus.EngagedInFishing
     data = [
         [mmsi_a, timestamp, status],
@@ -77,13 +77,12 @@ def test_add_missing_ais_status(tmp_path):
 def test_delta_column(tmp_path):
     mmsi_a = 400000000
     mmsi_b = 500000000
-    timestamp = dt.datetime.utcnow()
+    timestamp = dt.datetime.now(dt.timezone.utc)
 
     lat = 0.0
     lon = 0.0
 
-    data = []
-    data.append([mmsi_a, timestamp + dt.timedelta(seconds=100), lat, lon])
+    data = [[mmsi_a, timestamp + dt.timedelta(seconds=100), lat, lon]]
     for i in range(1, 90):
         data.append([mmsi_a, timestamp + dt.timedelta(seconds=i * 1), lat + i * 1.0, lon + i * 1.0])
         data.append([mmsi_b, timestamp + dt.timedelta(seconds=i * 1), lat - i * 0.5, lon - i * 0.5])
@@ -266,7 +265,7 @@ def test_message_index(tmp_path):
     mmsi_a = 400000000
     mmsi_b = 500000000
     mmsi_c = 600000000
-    timestamp = dt.datetime.utcnow()
+    timestamp = dt.datetime.now(dt.timezone.utc)
 
     lat = 0.0
     lon = 0.0

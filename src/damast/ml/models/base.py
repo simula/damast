@@ -6,9 +6,12 @@ import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, Dict, List, Union, ClassVar, OrderedDict, NamedTuple
+from typing import Any, Dict, List, Union, ClassVar, OrderedDict, NamedTuple, Optional
 
 import keras
+import keras.callbacks
+import keras.utils
+
 import pandas as pd
 import vaex
 from vaex import DataFrame
@@ -47,31 +50,34 @@ class BaseModel(ABC):
     targets: List[str]
 
     #: Name of this model
-    name: str = None
+    name: str
     #: Underlying keras model
-    model: keras.Model = None
+    model: keras.Model
 
     # Computation
-    distribution_strategy: tf.distribute.Strategy = None
+    distribution_strategy: tf.distribute.Strategy
 
     #: The directory where all the model output will be stored
-    model_dir: Path = None
+    model_dir: Path
 
     #: History of the training
-    history: keras.callbacks.History = None
+    history: keras.callbacks.History
 
     def __init__(self,
-                 name: str = None,
-                 features: List[str] = None,
-                 targets: List[str] = None,
-                 distribution_strategy: tf.distribute.Strategy = None,
-                 output_dir: Path = gettempdir()
+                 features: List[str],
+                 targets: Optional[List[str]] = None,
+                 name: Optional[str] = None,
+                 distribution_strategy: Optional[tf.distribute.Strategy] = None,
+                 output_dir: Path = Path(gettempdir())
                  ):
         if not hasattr(self, "input_specs"):
             raise RuntimeError(f"{self.__class__.__name__}.__init__: input_specs are not set")
 
         if not hasattr(self, "output_specs"):
             raise RuntimeError(f"{self.__class__.__name__}.__init__: output_specs are not set")
+
+        if name is None:
+            self.name = self.__class__.__name__
 
         if distribution_strategy is None:
             self.distribution_strategy = tf.distribute.get_strategy()
@@ -152,7 +158,8 @@ class BaseModel(ABC):
         plots_outputdir.mkdir(parents=True, exist_ok=True)
 
         filename = plots_outputdir / f"{self.name}{suffix}"
-        keras.utils.plot_model(self.model, filename,
+        keras.utils.plot_model(model=self.model,
+                               to_file=str(filename),
                                show_shapes=True,
                                expand_nested=True)
         return filename
@@ -189,7 +196,7 @@ class BaseModel(ABC):
             # check https://keras.io/api/callbacks/ for available callbacks
             checkpoint_filepath = self.checkpoints_dir / CHECKPOINT_BEST
             # https://www.tensorflow.org/tensorboard/get_started
-            tensorboard_cb = keras.callbacks.TensorBoard(log_dir=self.model_dir / "logs",
+            tensorboard_cb = keras.callbacks.TensorBoard(log_dir=str(self.model_dir / "logs"),
                                                          histogram_freq=1
                                                          )
             model_checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
@@ -223,10 +230,10 @@ class BaseModel(ABC):
                                           **kwargs
                                           )
         except Exception as e:
-            raise RuntimeError(f"Training of {self.name} failed - {e}")
+            raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
 
         # Save the history
-        if save_history is True:
+        if save_history:
             history: DataFrame = vaex.from_dict(self.history.history)
             history.export_csv(f"{self.model_dir / HISTORY_FILENAME}")
 
@@ -265,8 +272,7 @@ class BaseModel(ABC):
         """
         # Load the best weight
         checkpoint_best = self.checkpoints_dir / CHECKPOINT_BEST
-        checkpoint_best_files = glob.glob(f"{checkpoint_best}*")
-        if len(checkpoint_best_files) > 0:
+        if glob.glob(f"{checkpoint_best}*"):
             self.load_weights(checkpoint_filepath=checkpoint_best)
         else:
             raise RuntimeError(f"{self.__class__}.evaluate: could not find the checkpoint data"
@@ -281,7 +287,7 @@ class BaseModel(ABC):
                                                            **kwargs)
 
         evaluation_column_names = ["dataset"]
-        evaluation_results = [label]
+        evaluation_results: List[Any] = [label]
         for name, value in evaluation.items():
             evaluation_column_names.append(name)
             evaluation_results.append(value)
@@ -316,10 +322,7 @@ class ModelInstanceDescription(NamedTuple):
 
         model = getattr(m_module, class_name)
 
-        parameters = {}
-        if "parameters" in data:
-            parameters = data["parameters"]
-
+        parameters = data.get("parameters", {})
         return ModelInstanceDescription(model=model,
                                         parameters=parameters)
 

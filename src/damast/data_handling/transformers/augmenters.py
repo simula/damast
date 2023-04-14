@@ -86,13 +86,11 @@ class JoinDataFrameByColumn(PipelineElement):
             raise RuntimeError(f"Vessel type information not accessible. File {file_path} not found")
 
         if file_path.suffix == ".csv":
-            dataframe = vaex.from_csv(file_path, sep=sep)
-        elif file_path.suffix in [".hdf5", ".h5"]:
-            dataframe = vaex.open(file_path)
-        else:
-            raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
+            return vaex.from_csv(file_path, sep=sep)
+        elif file_path.suffix in {".hdf5", ".h5"}:
+            return vaex.open(file_path)
 
-        return dataframe
+        raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
 
     @damast.core.input({"x": {}})
     @damast.core.output({"out": {}})
