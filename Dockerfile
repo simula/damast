@@ -32,3 +32,4 @@ RUN damast --help
 
 # Use login shell (-l) in case we update .bashrc
 SHELL ["/bin/bash", "-l", "-c"]
+ENTRYPOINT ["/bin/bash"]
