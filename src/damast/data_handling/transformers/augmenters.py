@@ -3,6 +3,7 @@ Module which collects transformers that add / augment the existing data
 """
 import datetime
 import logging
+from logging import getLogger, Logger
 from pathlib import Path
 from typing import Any, Union
 
@@ -24,6 +25,8 @@ __all__ = [
     "JoinDataFrameByColumn",
     "MultiplyValue"
 ]
+
+_log: Logger = getLogger(__name__)
 
 
 class JoinDataFrameByColumn(PipelineElement):
@@ -215,25 +218,60 @@ class AddLocalIndex(PipelineElement):
         local_index = np.empty(len(dataframe), dtype=int)
         reverse_local_index = np.empty(len(dataframe), dtype=int)
 
-        # Identify groups by selecting the indices
-        groups = {}
-        for i1, i2, chunk in dataframe.evaluate_iterator(df[self.get_name("group")], chunk_size=500):
-            for index in range(i1, i2):
-                group_id = chunk[index - i1]
-                if group_id not in groups:
-                    groups[group_id] = [index]
-                else:
-                    groups[group_id].append(index)
-
         # Identify the column index of the sort field
-        local_sort_index = df.get_column_names().index(self.get_name("sort"))
-        for _, indices in groups.items():
+        def update_indexes(indices):
             group_size = len(indices)
-            sorted_indices = sorted(indices, key=lambda x: df[x][local_sort_index])
+            sorted_indices = sorted(indices, key=lambda x: x[1])
 
             for index, idx, in enumerate(sorted_indices):
-                local_index[idx] = index
-                reverse_local_index[idx] = group_size - 1 - index
+                local_index[idx[0]] = index
+                reverse_local_index[idx[0]] = group_size - 1 - index
+
+
+        # Identify the min and max index of a group, as well as the total length
+        groups_properties = {}
+        # Identify groups by selecting the indices
+        groups = {}
+        group_column = self.get_name("group")
+        sort_column = self.get_name("sort")
+
+        _log.info("AddLocalIndex: getting group properties")
+        # First identify first and last occurence of the items and keep count of the length of the trajectory
+        # that will allow us to update the local index earyl, and keep the memory footprint smaller
+        for i1, i2, chunk in dataframe.evaluate_iterator(group_column, chunk_size=500):
+            for index in range(i1, i2):
+                group_id = chunk[index - i1]
+                if group_id not in groups_properties:
+                    groups_properties[group_id] = [index, None, 1]
+                else:
+                    groups_properties[group_id][1] = index
+                    groups_properties[group_id][2] += 1
+
+        _log.info("AddLocalIndex: updating local index - no parallel execution")
+        # Now reiterate over the chunks to identify the full index list per MMSI
+        # update the local index as soon as the last item for a group has been encountered
+        for i1, i2, chunks in dataframe.evaluate_iterator([group_column, sort_column], chunk_size=500, parallel=False):
+            chunk_dict = dict(zip([group_column, sort_column], chunks))
+            for index in range(i1, i2):
+                group_id = chunk_dict[group_column][index - i1]
+                sort_criteria = chunk_dict[sort_column][index - i1]
+
+                if group_id not in groups:
+                    groups[group_id] = [[index, sort_criteria]]
+                else:
+                    groups[group_id].append([index, sort_criteria])
+
+                # check if the maximum index has been found, and if so, update the local index
+                # and clean up
+                max_index = groups_properties[group_id][1]
+                length = groups_properties[group_id][2]
+                if length == 1 or max_index == index:
+                    # perform a local update of the index
+                    update_indexes(groups[group_id])
+                    del groups[group_id]
+
+        if groups != {}:
+            raise RuntimeError(f"{self.__class__.__name__}.transform: update index failed - remaining groups {groups}")
 
         # Assign global arrays to dataframe
         dataframe[self.get_name("local_index")] = local_index

@@ -265,6 +265,7 @@ def test_add_distance_closest_anchorage(tmp_path):
 def test_message_index(tmp_path):
     mmsi_a = 400000000
     mmsi_b = 500000000
+    mmsi_c = 600000000
     timestamp = dt.datetime.utcnow()
 
     lat = 0.0
@@ -273,11 +274,13 @@ def test_message_index(tmp_path):
     data = []
     num_messages_A = 90
     num_messages_B = num_messages_A - 2
+    num_messages_C = 1
 
     # Insert last message first to validate time-based sorting
     data.append([mmsi_a, timestamp + dt.timedelta(seconds=num_messages_A), lat, lon, num_messages_A-1, 0])
     # Next insert first message
     data.append([mmsi_a, timestamp - dt.timedelta(seconds=1), lat, lon, 0, num_messages_A-1])
+    data.append([mmsi_c, timestamp - dt.timedelta(seconds=1), lat, lon, 0, 0])
 
     for i in range(num_messages_B):
         data.append([mmsi_a, timestamp + dt.timedelta(seconds=i * 1), lat + i * 1.0, lon + i * 1.0,
