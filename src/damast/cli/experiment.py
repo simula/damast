@@ -21,12 +21,9 @@ class ExperimentParser(BaseParser):
                             required=True
                             )
         parser.add_argument("-o", "--output-dir", dest="output_dir",
-                            default=str(Path() / "output").resolve(),
+                            default=str((Path() / "output").resolve()),
                             help="Absolute path to output folder",
                             required=True)
-        parser.add_argument("--loglevel", dest="loglevel", type=int,
-                            default=10,
-                            help="Set loglevel to display")
 
     def execute(self, args):
         super().execute(args)
