@@ -869,21 +869,23 @@ class MetaData:
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
 
-    def to_str(self, indent: int = 0, default_indent: str = ' ' * 4) -> str:
-        hspace = ' ' * indent
-        repr = [f"{hspace}Annotations:"]
+    def to_str(self, indent: int = 0, default_indent: str = " " * 4) -> str:
+        hspace = " " * indent
+        txt_repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
-            repr.append(hspace + default_indent + f"{name}: {annotation.value}")
+            txt_repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
         for spec in self.columns:
-            spec_dict = spec.to_dict()
-            repr.append(hspace + default_indent + f"{spec_dict['name']}:")
+            spec_dict = dict(spec)
+            txt_repr.append(hspace + default_indent + f"{spec_dict['name']}:")
             for field_name, value in spec_dict.items():
                 if field_name == "name":
                     continue
-                repr.append(hspace + default_indent + default_indent + f"{field_name}: {value}")
+                txt_repr.append(
+                    hspace + default_indent + default_indent + f"{field_name}: {value}"
+                )
 
-        return '\n'.join(repr)
+        return "\n".join(txt_repr)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> MetaData:
