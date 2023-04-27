@@ -7,14 +7,13 @@ from __future__ import annotations
 import json
 import select
 import socket
+import tempfile
 from enum import Enum
+from logging import INFO, Logger, getLogger
 from pathlib import Path
 from threading import Thread
 from time import sleep
-from typing import List, Any, Dict, Tuple, Callable, Optional, Union
-
-from logging import getLogger, Logger, INFO
-import tempfile
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 PREDICT_FILE_SOCKET = str(Path(tempfile.gettempdir()) / ".damast-predict")
 _log: Logger = getLogger(__name__)

@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 import vaex
 from astropy import units
@@ -7,8 +7,12 @@ from vaex.ml import CycleTransformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement, DECORATED_INPUT_SPECS, \
-    DECORATED_OUTPUT_SPECS
+from damast.core.dataprocessing import (
+    DECORATED_INPUT_SPECS,
+    DECORATED_OUTPUT_SPECS,
+    DataProcessingPipeline,
+    PipelineElement,
+    )
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 

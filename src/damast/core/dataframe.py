@@ -5,18 +5,18 @@ from __future__ import annotations
 
 import gc
 import logging
-from tempfile import TemporaryDirectory
+from logging import INFO, Logger, getLogger
 from pathlib import Path
-from typing import List, Union, Any, Callable, Optional
+from tempfile import TemporaryDirectory
+from typing import Any, Callable, List, Optional, Union
 
+import h5py
+import numpy as np
 import vaex
 from vaex import DataFrame
-import numpy as np
-import h5py
-from logging import getLogger, Logger, INFO
 
-from .metadata import DataSpecification, MetaData, ValidationMode
 from .annotations import Annotation
+from .metadata import DataSpecification, MetaData, ValidationMode
 
 __all__ = ["AnnotatedDataFrame", "replace_na"]
 

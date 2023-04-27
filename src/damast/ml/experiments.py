@@ -3,24 +3,24 @@ Module containing functionality to setup up an Machine-Learning Experiment
 """
 from __future__ import annotations
 
+import datetime
 import importlib
 import os
-import datetime
-import yaml
 import random
 import tempfile
-from logging import getLogger, Logger, basicConfig, INFO
+from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
-from typing import Union, Dict, List, Any, Sequence, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Union
 
 import keras
 import numpy as np
 import vaex
+import yaml
 
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.data_handling.accessors import GroupSequenceAccessor
-from damast.ml.models.base import ModelInstanceDescription, BaseModel
+from damast.ml.models.base import BaseModel, ModelInstanceDescription
 
 basicConfig()
 _log: Logger = getLogger(__name__)
@@ -337,6 +337,7 @@ class Experiment:
         models = {}
 
         import keras.models
+
         from damast.ml.models.base import MODEL_TF_HDF5
 
         # Load available models

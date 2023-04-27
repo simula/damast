@@ -1,22 +1,21 @@
 """
 Module containing the worker functionality to perform a learning task
 """
+import datetime as dt
 import select
 import socket
-from logging import getLogger, Logger, basicConfig, INFO
+from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
-from typing import List, Callable, Dict, Optional
-import datetime as dt
+from threading import Event, Thread
+from typing import Callable, Dict, List, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import vaex
 
 from damast.data_handling.accessors import SequenceIterator
 from damast.ml.experiments import Experiment
-from damast.ml.scheduler import Job, ControlCommand, PREDICT_FILE_SOCKET
-
-from threading import Thread, Event
+from damast.ml.scheduler import PREDICT_FILE_SOCKET, ControlCommand, Job
 
 _log: Logger = getLogger(__name__)
 

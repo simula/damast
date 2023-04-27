@@ -5,11 +5,7 @@ from pathlib import Path
 from typing import Union
 
 from damast.core.units import units
-from damast.data_handling.exploration import (
-    PLOT_DPI,
-    plot_histograms,
-    plot_lat_lon
-)
+from damast.data_handling.exploration import PLOT_DPI, plot_histograms, plot_lat_lon
 
 __all__ = [
     "BaseVisualiser",
@@ -17,8 +13,8 @@ __all__ = [
     "PlotLatLon",
 ]
 
-from damast.core.dataprocessing import PipelineElement, AnnotatedDataFrame
 import damast.core
+from damast.core.dataprocessing import AnnotatedDataFrame, PipelineElement
 
 
 class BaseVisualiser(PipelineElement):

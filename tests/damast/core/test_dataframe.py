@@ -1,8 +1,8 @@
-import numpy as np
-from pathlib import Path
 import copy
+from pathlib import Path
 
 import astropy.units as units
+import numpy as np
 import pandas as pd
 import pytest
 import vaex
@@ -11,7 +11,12 @@ from vaex.dataframe import astropy
 from damast.core.annotations import Annotation
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.datarange import MinMax
-from damast.core.metadata import DataCategory, DataSpecification, MetaData, ValidationMode
+from damast.core.metadata import (
+    DataCategory,
+    DataSpecification,
+    MetaData,
+    ValidationMode,
+    )
 
 
 @pytest.fixture()

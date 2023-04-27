@@ -14,7 +14,7 @@ from .dataprocessing import (
     describe,
     input,
     output,
-)
+    )
 from .datarange import DataRange, MinMax
 from .metadata import (
     ArtifactSpecification,
@@ -22,7 +22,7 @@ from .metadata import (
     History,
     MetaData,
     ValidationMode,
-)
+    )
 
 __all__ = [
     "AnnotatedDataFrame",

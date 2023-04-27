@@ -13,8 +13,8 @@ from damast.core.metadata import (
     DataSpecification,
     MetaData,
     Status,
-    ValidationMode
-)
+    ValidationMode,
+    )
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",

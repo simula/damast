@@ -4,7 +4,7 @@ from damast.domains.maritime.ais.vessel_types import (
     DriftingLonglines,
     Fishing,
     PotsAndTraps,
-    VesselType
+    VesselType,
     )
 
 

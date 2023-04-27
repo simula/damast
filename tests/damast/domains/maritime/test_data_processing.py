@@ -9,10 +9,7 @@ import vaex
 import damast.core
 from damast.core import units
 from damast.domains.maritime.ais.data_generator import AISTestData
-from damast.domains.maritime.data_processing import (
-    CleanseAndSanitise,
-    DataProcessing
-)
+from damast.domains.maritime.data_processing import CleanseAndSanitise, DataProcessing
 from damast.domains.maritime.data_specification import ColumnName
 
 logging.basicConfig(level=logging.INFO)

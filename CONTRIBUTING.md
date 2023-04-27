@@ -51,7 +51,7 @@ Please fork the repository and push your code change into a branch.
 Then create a [new merge request](https://gitlab.com/simula-srl/damast/-/merge_requests/new) from this branch.
 
 Generally, read through the documentation first to understand the main ideas and some underlying assumptions of this project.
-If you intend to change some of the behavior, please try to validate by reading the documentation or opening an issue whether 
+If you intend to change some of the behavior, please try to validate by reading the documentation or opening an issue whether
 there are reasons for a particular setup.
 Some change might have minor or major and sometimes unforeseen side-effects.
 So make sure, that in all cases you describe your intentions and arguments of a change in the merge request.

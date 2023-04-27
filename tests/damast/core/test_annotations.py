@@ -1,5 +1,6 @@
-import pytest
 from datetime import datetime as dt
+
+import pytest
 
 from damast.core.annotations import Annotation, Change, History
 

@@ -3,7 +3,7 @@ Module which collects transformers that add / augment the existing data
 """
 import datetime
 import logging
-from logging import getLogger, Logger
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Union
 

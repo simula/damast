@@ -1,8 +1,4 @@
-from .augmenters import (
-    AddMissingAISStatus,
-    AddVesselType,
-    ComputeClosestAnchorage,
-)
+from .augmenters import AddMissingAISStatus, AddVesselType, ComputeClosestAnchorage
 from .features import DeltaDistance
 
 __all__ = [

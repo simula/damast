@@ -1,23 +1,28 @@
-import keras
-import tensorflow
-import pytest
 from collections import OrderedDict
 from pathlib import Path
+from typing import List, Optional, Union
+
+import keras
+import pytest
+import tensorflow
+import tensorflow as tf
+import vaex
 
 import damast
-from damast.core.units import units
-from damast.core.datarange import CyclicMinMax, MinMax
-import tensorflow as tf
-
-import vaex
-from typing import List, Optional, Union
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.metadata import MetaData
-from damast.ml.models.base import BaseModel
-from damast.ml.experiments import Experiment, LearningTask, ForecastTask, ModelInstanceDescription, TrainingParameters
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
-
+from damast.core.datarange import CyclicMinMax, MinMax
+from damast.core.metadata import MetaData
+from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
+from damast.ml.experiments import (
+    Experiment,
+    ForecastTask,
+    LearningTask,
+    ModelInstanceDescription,
+    TrainingParameters,
+    )
+from damast.ml.models.base import BaseModel
 
 
 class ModelA(BaseModel):

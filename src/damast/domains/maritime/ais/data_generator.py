@@ -4,21 +4,19 @@ from logging import INFO, Logger, getLogger
 from random import choice, randint, random
 from typing import Any, List
 
+import pandas as pd
 import vaex
 from pyais.ais_types import AISType
-import pandas as pd
 
 from damast.core.metadata import DataCategory
 from damast.domains.maritime.ais import vessel_types
-from damast.domains.maritime.ais.navigational_status import (
-    AISNavigationalStatus
-)
+from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.data_specification import (
     MMSI,
     ColumnName,
     CourseOverGround,
-    SpeedOverGround
-)
+    SpeedOverGround,
+    )
 
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)

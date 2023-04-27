@@ -2,8 +2,9 @@
 Module to encode the class hierarchy of the global fishing watch
 """
 from __future__ import annotations
+
 import re
-from typing import List, Union, Optional, Dict
+from typing import Dict, List, Optional, Union
 
 
 class VesselType:

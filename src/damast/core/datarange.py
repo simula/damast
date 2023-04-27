@@ -5,9 +5,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
-import vaex
-import damast.core.datarange
 
+import vaex
+
+import damast.core.datarange
 
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 

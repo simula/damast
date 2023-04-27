@@ -65,7 +65,7 @@ jupyter-build:
 pages:
   stage: deploy
   image: busybox:latest
-  needs: 
+  needs:
     - job: jupyter-build
       artifacts: true
   script:

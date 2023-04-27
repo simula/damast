@@ -1,6 +1,5 @@
 from damast import cli, core, data_handling, domains
-
-from damast.core import describe, artifacts, input, output
+from damast.core import artifacts, describe, input, output
 
 __all__ = [
     "artifacts",

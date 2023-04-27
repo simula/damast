@@ -6,28 +6,25 @@ Contains AIS-specific pipelines for filtering and augmenting data
 
 
 from pathlib import Path
-from typing import Any, Dict, Union
-from typing import List
+from typing import Any, Dict, List, Union
+
 import vaex
 
-from damast.data_handling.exploration import plot_lat_lon
-from damast.data_handling.transformers.augmenters import (
-    AddLocalIndex,
-)
-from damast.domains.maritime.ais import vessel_types
-from damast.domains.maritime.transformers import ComputeClosestAnchorage
-from damast.data_handling.transformers import (
-    AddUndefinedValue,
-    RemoveValueRows,
-    FilterWithin,
-    DropMissing,
-    AddTimestamp,
-    ChangeTypeColumn
-)
-from damast.domains.maritime.transformers import AddVesselType
-
-from damast.data_handling.transformers.visualisers import PlotLatLon
 from damast.core import DataProcessingPipeline
+from damast.data_handling.exploration import plot_lat_lon
+from damast.data_handling.transformers import (
+    AddTimestamp,
+    AddUndefinedValue,
+    ChangeTypeColumn,
+    DropMissing,
+    FilterWithin,
+    RemoveValueRows,
+    )
+from damast.data_handling.transformers.augmenters import AddLocalIndex
+from damast.data_handling.transformers.visualisers import PlotLatLon
+from damast.domains.maritime.ais import vessel_types
+from damast.domains.maritime.transformers import AddVesselType, ComputeClosestAnchorage
+
 from .data_specification import ColumnName
 
 __all__ = ["CleanseAndSanitise", "DataProcessing"]

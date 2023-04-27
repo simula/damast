@@ -3,10 +3,7 @@ import pandas as pd
 import pytest
 import vaex
 
-from damast.data_handling.accessors import (
-    GroupSequenceAccessor,
-    SequenceIterator
-)
+from damast.data_handling.accessors import GroupSequenceAccessor, SequenceIterator
 
 
 @pytest.fixture()

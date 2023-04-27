@@ -5,9 +5,9 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from damast.cli.base import BaseParser
-from damast.cli.data_processing import DataProcessingParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
+from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
 
 

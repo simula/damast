@@ -7,9 +7,9 @@ from .augmenters import (
     BallTreeAugmenter,
     ChangeTypeColumn,
     JoinDataFrameByColumn,
-    MultiplyValue
-)
-from .filters import RemoveValueRows, FilterWithin, DropMissing
+    MultiplyValue,
+    )
+from .filters import DropMissing, FilterWithin, RemoveValueRows
 from .normalizers import normalize
 
 __all__ = [

@@ -13,9 +13,7 @@ import damast.core
 import damast.data_handling.transformers.augmenters as augmenters
 from damast.core.dataprocessing import PipelineElement
 from damast.data_handling.transformers.augmenters import BallTreeAugmenter
-from damast.domains.maritime.ais.navigational_status import (
-    AISNavigationalStatus
-)
+from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.math.spatial import EARTH_RADIUS
 

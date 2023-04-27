@@ -1,15 +1,16 @@
+import subprocess
+from functools import partial
 from pathlib import Path
 from time import sleep
-from functools import partial
-import psutil
 
 import numpy as np
 import pandas as pd
+import psutil
 import pytest
 import vaex
-import subprocess
 
-from damast.ml.scheduler import JobScheduler, Job
+from damast.ml.scheduler import Job, JobScheduler
+
 
 @pytest.fixture()
 def job(tmp_path):

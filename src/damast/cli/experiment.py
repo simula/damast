@@ -1,5 +1,5 @@
-from pathlib import Path
 from argparse import ArgumentParser
+from pathlib import Path
 
 from damast.cli.base import BaseParser
 from damast.ml.experiments import Experiment

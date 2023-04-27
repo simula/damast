@@ -6,16 +6,15 @@ import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, Dict, List, Union, ClassVar, OrderedDict, NamedTuple, Optional
+from typing import Any, ClassVar, Dict, List, NamedTuple, Optional, OrderedDict, Union
 
 import keras
 import keras.callbacks
 import keras.utils
-
 import pandas as pd
+import tensorflow as tf
 import vaex
 from vaex import DataFrame
-import tensorflow as tf
 
 from damast.core import DataSpecification
 

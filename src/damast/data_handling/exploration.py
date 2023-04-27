@@ -3,6 +3,7 @@ Module containing the functionality to explore and visualise data
 """
 from pathlib import Path
 from typing import List, Optional
+
 import vaex
 from matplotlib import pyplot as plt
 

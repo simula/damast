@@ -1,9 +1,11 @@
+from pathlib import Path
+
+import pytest
+
+import damast.core
+import damast.data_handling.transformers.filters
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
 from damast.domains.maritime.data_specification import ColumnName
-import damast.data_handling.transformers.filters
-import damast.core
-from pathlib import Path
-import pytest
 
 
 @pytest.fixture()

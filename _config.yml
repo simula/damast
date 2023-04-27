@@ -34,10 +34,10 @@ sphinx:
   - 'sphinx.ext.autodoc'
   - 'sphinx.ext.napoleon'
   - 'autoapi.extension'
-  
+
   config:
     html_last_updated_fmt: "%b %d, %Y"
     todo_include_todos: True
-    autoapi_dirs: ['src']    
+    autoapi_dirs: ['src']
     # Ref: https://github.com/executablebooks/sphinx-external-toc/issues/36
     suppress_warnings: ["etoc.toctree"]

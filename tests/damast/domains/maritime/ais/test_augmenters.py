@@ -10,8 +10,8 @@ from astropy import units
 import damast.core
 from damast.data_handling.transformers.augmenters import (
     AddLocalIndex,
-    AddUndefinedValue
-)
+    AddUndefinedValue,
+    )
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.data_specification import ColumnName
@@ -20,8 +20,8 @@ from damast.domains.maritime.transformers import (
     AddMissingAISStatus,
     AddVesselType,
     ComputeClosestAnchorage,
-    DeltaDistance
-)
+    DeltaDistance,
+    )
 
 
 def test_add_missing_ais_status(tmp_path):

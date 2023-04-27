@@ -79,12 +79,12 @@ if __name__ == "__main__":
 | s:<string>                                                      | source                                                                                                                                                                                                                         |
 | d:<string>                                                      | destination                                                                                                                                                                                                                    |
 |||
-| i: <information>                                                | as documented in the following                                                                                                                                                                                                 | 
+| i: <information>                                                | as documented in the following                                                                                                                                                                                                 |
 | \<S>S\</S>                                                      | Enumerated list to identify system generating the information<br/>Content:<br/>S - Satellite AIS<br/>A - Terrestial AIS<br/>...                                                                                                     |
 | \<O>XNS\</O>                                                    | Providing information on the data originator Format, RCC.SUB.SUB, where<br/> RCC Region or Country Code,<br/> XNS -> North Sea                                                                                                 |
 | \<T>A:1559529703 F:-2484000\</T>                                | Values separated by a space, Ground station aquisition timestamp (A:<timestamp>),<br/> data centre ingestion timestamp (I:<timestamp>)<br/>Data Centre delivery timestamp (D:<timestamp>),<br/> Satellite ID (L:<string>)<br/> |
 |                                                                 | Ground station ID (G:), frequency shift of arrival with respect to the centre of the AIS channel in MHz (F:)                                                                                                                   |                                                                         |
-|                                                                 | precise time of arrival within detection second given after (C:<microsecs>)                                                                                                                                                    |                                                                         | 
+|                                                                 | precise time of arrival within detection second given after (C:<microsecs>)                                                                                                                                                    |                                                                         |
 | \<E>\<E/>                                                       | Specify basic enrichment (only if, status in I: must be "valid")                                                                                                                                                               |                                                                                                                                                              |
 | \<I>\<string>\<I/>                                              | Status <V or T or N>; IMO<7chars>; MMSI<9chars>;...                                                                                                                                                                            |                                                                                                                                                                                                                      |
 | \<N> \</N>                                                      | Accuracy of the accuracy/reliability of a position                                                                                                                                                                             |
@@ -125,7 +125,7 @@ Similar AIS datasets can be downloaded [here](https://kartkatalog.geonorge.no/me
 - columns: mmsi;lon;lat;date_time_utc;sog;cog;true_heading;nav_status;rot;message_nr;source
 - MMSI, LON, LAT, SOG, COG, Heading, Status, timestamp, rot, MessageType, source
 
-See references: 
+See references:
 - [marinetraffic.com](https://help.marinetraffic.com/hc/en-us/articles/205426887-What-kind-of-information-is-AIS-transmitted-)
 - [fleetmon.com](https://help.fleetmon.com/en/articles/4476744-ais-navigational-status)
 - [Mapping of MID to Country ISO Codes](https://raw.githubusercontent.com/michaeljfazio/MIDs/master/mids.json)
@@ -159,12 +159,12 @@ Requires:
 - renamed columns:
    - mmsi: MMSI
    - vessel_class_gfw: fishing_type
-  
+
 
 ## Usage
 Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-1. Get the datasets and put them into the data folder so that is looks as follows: 
+1. Get the datasets and put them into the data folder so that is looks as follows:
 ```
     data/<month>/<day>.zip
 ```
@@ -186,7 +186,7 @@ Use examples liberally, and show the expected output if you can. It's helpful to
 
 4. Run the "datasets example creation", which requires the data of month 1 (hardcoded):
 ```
-    python -m ais_anomaly_detection.data_handling.datasets_examples_creation 
+    python -m ais_anomaly_detection.data_handling.datasets_examples_creation
 ```
 
 5. Run the training, e.g. for GCAE
@@ -208,9 +208,9 @@ Use examples liberally, and show the expected output if you can. It's helpful to
     | -R 50_000         | do reduce overrepresented labels                                                                                   |
     | --prefix          | number of epochs                                                                                                   |
     | -WgW              | do sample weight (-W), do training GCAE                                                                            |
-   
 
-  
+
+
 ## Authors and Acknowledgment
 The basis of the domain-specific operation has been laid by:
 Pierre Bernabé<sup>1</sup><sup>2</sup>, Antoine Chevrot<sup>2</sup>, Helge Spieker<sup>1</sup>, Arnaud Gotlieb<sup>1</sup> and Bruno Legeard<sup>2</sup>

@@ -1,8 +1,7 @@
+import select
+import socket
 from time import sleep
 from typing import Iterable
-
-import socket
-import select
 
 from damast.ml.scheduler import Job, ResponseCollector
 

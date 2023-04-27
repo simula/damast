@@ -1,10 +1,12 @@
 """
 Module to provide a test worker instance, which provides predefined sequence predictions
 """
+from typing import Dict, List
+
+import numpy as np
+
 from damast.ml.experiments import Experiment
 from damast.ml.worker import Worker
-import numpy as np
-from typing import List, Dict
 
 predicted_sequence = np.array([[0, 0]])
 
