@@ -54,15 +54,16 @@ repository = "https://gitlab.com/simula-srl/damast"
 
 [project.optional-dependencies]
 dev = [
-    "tox",
     "flake8-gl-codeclimate",
-    "jupyter-book",
     "isort",
-    "sphinx-autoapi"
+    "jupyter-book",
+    "pre-commit",
+    "sphinx-autoapi",
+    "tox"
 ]
 test = [
-    "pytest",
     "coverage",
+    "pytest",
     "pytest-cov"
 ]
 
