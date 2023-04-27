@@ -68,7 +68,7 @@ class ComputeClosestAnchorage(PipelineElement):
     @damast.core.describe("Compute distance from dataset to closest anchorage")
     @damast.core.input({"x": {"representation_type": float, "unit": damast.core.units.units.deg},
                         "y": {"representation_type": float, "unit": damast.core.units.units.deg}})
-    @damast.core.output({"distance": {"representation_type": float}})
+    @damast.core.output({"distance": {"representation_type": float, "unit": damast.core.units.units.km}})
     def transform(self, df:  damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
 
@@ -88,8 +88,6 @@ class ComputeClosestAnchorage(PipelineElement):
         # Multiply distance column by earth radius
         dataframe[self.get_name("distance")] *= EARTH_RADIUS
         dataframe.units[self.get_name("distance")] = damast.core.units.units.km
-        new_spec = damast.core.DataSpecification(self.get_name("out"), unit=damast.core.units.units.km)
-        df._metadata.columns.append(new_spec)
         return df
 
 
