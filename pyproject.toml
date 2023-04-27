@@ -75,8 +75,9 @@ ignore_missing_imports = true
 [tools.setuptools]
 package-dir = "src"
 
-[tool.pytest.ini_options]
-addopts = "--cov --cov-report html:doc/ --cov-report term-missing"
+# Disable to be able to debug in IDE
+#[tool.pytest.ini_options]
+#addopts = "--cov --cov-report html:doc/ --cov-report term-missing"
 
 [tool.coverage.run]
 source = ["src"]
