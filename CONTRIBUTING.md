@@ -14,12 +14,29 @@ hesitate to ask or [open an issue](https://gitlab.com/simula-srl/damast/-/issues
 
 ## Code and development style
 
-Please adhere to the existing code style.
-To run a lint checking on the project:
+In order to ensure correct format and linting, the repository uses a pre-commit hook.
+The 'pre-commit' package is installed as part of the 'dev' dependencies and the configuration of the
+package sits in [.pre-commit-config.yaml](.pre-commit-config.yaml). For supported hooks
+visit [https://pre-commit.com/hooks.html](https://pre-commit.com/hooks.html).
+
+To enable the pre-commit hooks execute the following command once:
 
 ```
-    tox -e lint
+    pre-commit install
 ```
+
+Afterwards run the following commands to find issue an fix them:
+
+```
+   pre-commit run --all-files
+```
+
+Alternatively run:
+```
+  tox -e validate
+```
+
+In general please adhere to the existing code style and folder structuring.
 
 Have a look at the existing module structure and consider where to put your additions to the project.
 Are they domain specific, are there general changes? Will your change affect existing code.
