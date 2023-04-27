@@ -68,9 +68,9 @@ class ComputeClosestAnchorage(PipelineElement):
         return vessel_types
 
     @damast.core.describe("Compute distance from dataset to closest anchorage")
-    @damast.core.input({"x": {"representation_type": np.float64, "unit": damast.core.units.units.deg},
-                        "y": {"representation_type": np.float64, "unit": damast.core.units.units.deg}})
-    @damast.core.output({"distance": {"representation_type": np.float64}})
+    @damast.core.input({"x": {"representation_type": float, "unit": damast.core.units.units.deg},
+                        "y": {"representation_type": float, "unit": damast.core.units.units.deg}})
+    @damast.core.output({"distance": {"representation_type": float}})
     def transform(self, df:  damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
 

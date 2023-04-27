@@ -598,23 +598,41 @@ class DataSpecification:
         fulfillment = DataSpecification.Fulfillment()
 
         for key in DataSpecification.Key:
+            expected_value = getattr(self, key.value)
+            # Nothing expected so status is OK
+            if expected_value is None:
+                fulfillment.status[key] = {"status": Status.OK}
+                continue
+
+            # Value expected, but no value available in the tested spec so FAIL
+            spec_value = getattr(data_spec, key.name)
+            if spec_value is None:
+                fulfillment.status[key] = {
+                    "status": Status.FAIL,
+                    "message": "column has no precision defined",
+                }
+
             # some special handling is required for individual keys
             if key == DataSpecification.Key.precision:
-                if self.precision is not None:
-                    if data_spec.precision is None:
-                        fulfillment.status[key] = {
-                            "status": Status.FAIL,
-                            "message": "column has no precision defined",
-                        }
-                    elif self.precision < data_spec.precision:
+                    if expected_value < spec_value:
                         fulfillment.status[key] = {
                             "status": Status.FAIL,
                             "message": "'data has insufficient precision: "
-                            f" required '{self.precision}',"
-                            f" available '#{data_spec.precision}'",
+                            f" required '{expected_value}',"
+                            f" available '{spec_value}'",
                         }
                     else:
                         fulfillment.status[key] = {"status": Status.OK}
+            elif key == DataSpecification.Key.representation_type:
+                if not issubclass(spec_value, expected_value):
+                    fulfillment.status[key] = {
+                        "status": Status.FAIL,
+                        "message": "'representation type is not a subclass of the expected:"
+                        f" required '{expected_value}',"
+                        f" available '{spec_value}'",
+                    }
+                else:
+                    fulfillment.status[key] = {"status": Status.OK}
             else:
                 expected_value = getattr(self, key.value)
                 if expected_value is not None:
