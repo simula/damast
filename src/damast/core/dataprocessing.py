@@ -9,13 +9,14 @@ import importlib
 import inspect
 import re
 import tempfile
-import yaml
-from logging import Logger, getLogger
+from abc import abstractmethod
 from datetime import datetime, timezone
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import vaex.ml
+import yaml
 from vaex.ml.transformations import Transformer
 
 from .dataframe import AnnotatedDataFrame
@@ -125,10 +126,10 @@ def input(requirements: Dict[str, Any]):
                     getattr(pipeline_element, "parent_pipeline").on_transform_start(step=pipeline_element,
                                                                                     adf=_df)
                 return func(*args, **kwargs)
-            else:
-                raise RuntimeError(
-                    "Input requirements are not fulfilled:" f" -- {fulfillment}"
-                )
+
+            raise RuntimeError(
+                "Input requirements are not fulfilled:" f" -- {fulfillment}"
+            )
 
         return check
 
@@ -169,7 +170,8 @@ def output(requirements: Dict[str, Any]):
                     f"output: decorated function {func} must return 'AnnotatedDataFrame',"
                     f" but was 'None'"
                 )
-            elif not isinstance(adf, AnnotatedDataFrame):
+
+            if not isinstance(adf, AnnotatedDataFrame):
                 raise RuntimeError(
                     f"output: decorated function {func} must return 'AnnotatedDataFrame', but was '"
                     f"{type(adf)}"
@@ -186,11 +188,21 @@ def output(requirements: Dict[str, Any]):
             assert isinstance(args[0], PipelineElement)
             pipeline_element = args[0]
 
-            # Ensure that metadata is up to date with the dataframe
-            adf.update(expectations=pipeline_element.output_specs)
-
+            parent_pipeline = None
             if hasattr(pipeline_element, "parent_pipeline"):
                 parent_pipeline = getattr(pipeline_element, "parent_pipeline")
+
+            try:
+                # Ensure that metadata is up to date with the dataframe
+                adf.update(expectations=pipeline_element.output_specs)
+            except RuntimeError as e:
+                txt = f"Failed to update metadata in pipeline element: {pipeline_element}"
+                if parent_pipeline:
+                    txt += f" in pipeline '{parent_pipeline.name}' ({type(parent_pipeline)})"
+
+                raise RuntimeError(txt) from e
+
+            if parent_pipeline:
                 parent_pipeline.on_transform_end(step=pipeline_element,
                                                  adf=adf)
 
@@ -248,8 +260,7 @@ def artifacts(requirements: Dict[str, Any]):
                 raise RuntimeError(
                     f"artifacts: {func} is expected to generate an artifact. "
                     f" Pipeline element ran as part of pipeline: '{instance.parent_pipeline.name}'"
-                    f" -- {e}"
-                )
+                ) from e
 
             return result
 
@@ -278,7 +289,10 @@ class PipelineElement(Transformer):
         self.parent_pipeline = pipeline
 
     @property
-    def name_mappings(self):
+    def name_mappings(self) -> Dict[str, str]:
+        """
+        Get current name mappings for this instance
+        """
         if not hasattr(self, "_name_mappings"):
             self._name_mappings = {}
         return self._name_mappings
@@ -297,8 +311,8 @@ class PipelineElement(Transformer):
             mapped_name = self.name_mappings[name]
             if mapped_name == name:
                 return name
-            else:
-                return self.get_name(mapped_name)
+
+            return self.get_name(mapped_name)
 
         # Allow to use patterns, so that an existing input
         # reference can be reused for dynamic labelling
@@ -310,6 +324,12 @@ class PipelineElement(Transformer):
 
                 name = name.replace(match.group(), resolved_name)
         return name
+
+    @abstractmethod
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Default transform implementation
+        """
 
     @property
     def input_specs(self) -> List[DataSpecification]:
@@ -345,12 +365,23 @@ class PipelineElement(Transformer):
     def create_new(cls,
                    module_name: str,
                    class_name: str,
-                   name_mappings: Dict[str, Any] = {}):
+                   name_mappings: Optional[Dict[str, Any]] = None) -> PipelineElement:
+        """
+        Create a new PipelineElement Subclass instance dynamically
+
+        :param module_name: Name of the module for the PipelineElement class
+        :param class_name: Name of the PipelineElement subclass
+        :param name_mappings: Dictionary of name mappings that should apply
+        :return: Instance for the PipelineElement instance
+
+        :raise ValueError: If module or class with given name is not specified
+        :raise ImportError: If class could not be loaded
+        """
         if module_name is None:
             raise ValueError(f"{cls.__name__}.create_new: missing 'module_name'")
 
         if class_name is None:
-            raise KeyError(f"{cls.__name__}.create_new: missing 'class_name'")
+            raise ValueError(f"{cls.__name__}.create_new: missing 'class_name'")
 
         p_module = importlib.import_module(module_name)
         if hasattr(p_module, class_name):
@@ -359,6 +390,9 @@ class PipelineElement(Transformer):
             raise ImportError(f"{cls.__name__}.create_new: could not load '{class_name}' from '{p_module}'")
 
         instance = klass()
+
+        if name_mappings is None:
+            name_mappings = {}
         instance._name_mappings = name_mappings
         return instance
 
@@ -399,7 +433,7 @@ class PipelineElement(Transformer):
         """
         Generate the documentation for all subclasses of ::class::`PipelineElement`
         """
-        implementations = sorted(cls.get_types(), key=lambda x: str(x))
+        implementations = sorted(cls.get_types(), key=str)
         txt = ""
         for k in implementations:
             txt += "=" * 80
@@ -452,10 +486,12 @@ class DataProcessingPipeline(PipelineElement):
                  inplace_transformation: bool = False,
                  name_mappings: Dict[str, str] = {},
                  ):
+        super().__init__()
+
         self.name = name
         self.base_dir = Path(base_dir)
 
-        self._output_specs = None
+        self._output_specs = []
         self._inplace_transformation = inplace_transformation
 
         self._name_mappings = name_mappings
@@ -476,6 +512,7 @@ class DataProcessingPipeline(PipelineElement):
                 raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate PipelineElement"
                                  f" from {type(step)}")
         self.is_ready = False
+
 
     @property
     def output_specs(self):
@@ -678,7 +715,7 @@ class DataProcessingPipeline(PipelineElement):
                 f" {','.join([x.name for x in files])}"
             )
 
-        df._dataframe.state_load(file=filename)
+        df.dataframe.state_load(file=filename)
         return df
 
     def prepare(self, df: AnnotatedDataFrame) -> DataProcessingPipeline:
@@ -715,7 +752,7 @@ class DataProcessingPipeline(PipelineElement):
                     if x == k:
                         pipeline_element.name_mappings[x] = v
 
-        validation_result = self.validate(steps=self.steps, metadata=df._metadata)
+        validation_result = self.validate(steps=self.steps, metadata=df.metadata)
         self.is_ready = True
 
         self.steps: List[Tuple[str, PipelineElement]] = validation_result["steps"]
@@ -761,7 +798,7 @@ class DataProcessingPipeline(PipelineElement):
         assert isinstance(adf, AnnotatedDataFrame)
 
         # Remove all rows that have been filtered from the data-frame
-        adf._dataframe = adf._dataframe.extract()
+        adf._dataframe = adf.dataframe.extract()
         return adf
 
     def on_transform_start(self,

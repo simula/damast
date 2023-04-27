@@ -104,7 +104,8 @@ class AnnotatedDataFrame:
         return self._dataframe
 
     @property
-    def metadata(self):
+    def metadata(self) -> MetaData:
+        """Get the metadata for this dataframe"""
         return self._metadata
 
     def validate_metadata(
@@ -146,18 +147,19 @@ class AnnotatedDataFrame:
         """
         for expected_data_spec in expectations:
             column_name = expected_data_spec.name
-            if column_name not in self._metadata:
+            if column_name not in self.metadata:
                 # Column name description is not yet part of the metadata
                 # Verify that is it part of the data frame
-                if column_name not in self._dataframe.column_names:
+                if column_name in self.dataframe.column_names:
+                    self._metadata.columns.append(
+                        DataSpecification.from_dict(data=dict(expected_data_spec))
+                    )
+                else:
                     raise RuntimeError(
                         f"{self.__class__.__name__}.update:"
                         f" required output '{column_name}' is not"
-                        f" present in the result dataframe"
-                    )
-                else:
-                    self._metadata.columns.append(
-                        DataSpecification.from_dict(data=dict(expected_data_spec))
+                        f" present in the result dataframe - available columns are:"
+                        f" {','.join(self.dataframe.column_names)}"
                     )
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
@@ -198,7 +200,7 @@ class AnnotatedDataFrame:
 
         h5f = h5py.File(filename, "r+")
         # Add annotations to main group
-        for key in dict_annotations.keys():
+        for key in dict_annotations:
             if (
                 key in h5f[VAEX_HDF5_ROOT].attrs.keys()
                 and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
@@ -208,8 +210,8 @@ class AnnotatedDataFrame:
                     f" attribute '{key}' present"
                     f" in vaex dataframe but different from user-defined"
                 )
-            else:
-                h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
+
+            h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
 
         # Add attributes for columns
         for attrs in list_attrs:

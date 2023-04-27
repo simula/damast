@@ -6,6 +6,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 import vaex
+import damast.core.datarange
+
 
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 
@@ -17,6 +19,12 @@ class DataElement:
 
     @classmethod
     def create(cls, value, dtype):
+        """
+        Create a DataElement from a given value and d(ata)type
+
+        :param value: value of the DataElement
+        :param dtype: datatype of the value
+        """
         if isinstance(dtype, vaex.datatype.DataType):
             df = vaex.from_arrays(x=[value])
             value = df.x.astype(dtype).evaluate()
@@ -40,7 +48,6 @@ class DataRange(ABC):
         :param value: Value to check
         :return: True if value lies in range, False otherwise
         """
-        pass
 
     def __contains__(self, value) -> bool:
         """
@@ -89,13 +96,11 @@ class DataRange(ABC):
         :param data: dictionary data
         :param dtype: the value type to use for initialisation,
         :return: The newly created class
-        :raise ValueError: Raises if the requrested range type is not known
+        :raise ValueError: Raises if the requested range type is not known
         """
         assert len(data.keys()) == 1
         klass, values = data.popitem()
         try:
-            import damast.core.datarange
-
             datarange_subclass = getattr(damast.core.datarange, klass)
             return datarange_subclass.from_data(data=values, dtype=dtype)
         except AttributeError as e:
@@ -188,9 +193,9 @@ class MinMax(DataRange):
     """
 
     #: Minimum / Lower Bound of range
-    min: Any = None
+    min: Any = None # noqa
     #: Maximum / Upper Bound of range
-    max: Any = None
+    max: Any = None # noqa
 
     def __init__(self, min: Any, max: Any):
         """
@@ -214,8 +219,8 @@ class MinMax(DataRange):
         # To make masked/missing values work
         if value is None:
             return False
-        else:
-            return self.min <= value <= self.max
+
+        return self.min <= value <= self.max
 
     @classmethod
     def from_data(cls, data: Dict[str, Any], dtype: Any) -> MinMax:
@@ -295,5 +300,3 @@ class CyclicMinMax(MinMax):
     """
     Define a cyclic min max range
     """
-
-    pass

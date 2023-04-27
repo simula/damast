@@ -9,7 +9,6 @@ from typing import Any, List, Optional, Union
 
 import keras.utils
 import numpy as np
-import pandas
 import pandas as pd
 import vaex
 import vaex.ml.generate
@@ -235,7 +234,7 @@ class GroupSequenceAccessor:
                 chunk = []
                 target_chunk = []
                 for i in range(chunk_size):
-                    sequence: pandas.DataFrame = None
+                    sequence: pd.DataFrame = None
                     start_time = time.perf_counter()
                     sample_count = 0
                     sample_length = 0
@@ -420,7 +419,7 @@ class SequenceIterator:
                                f" 'Sequence length' plus 'forecast length' ({sequence_length + sequence_forecast})"
                                f" larger than dataframe of size ({len_sequence})")
 
-        def _generator(sequence: pandas.DataFrame,
+        def _generator(sequence: pd.DataFrame,
                        features: List[str],
                        target: Optional[List[str]],
                        sequence_length: int,

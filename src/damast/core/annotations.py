@@ -197,7 +197,7 @@ class History(Annotation):
         if changes is None:
             self.changes = []
         else:
-            self.changes = sorted(changes, key=lambda x: str(x))
+            self.changes = sorted(changes, key=str)
 
     def __eq__(self, other) -> bool:
         """
@@ -217,7 +217,7 @@ class History(Annotation):
         :param change: The change
         """
         changes = self.changes + [change]
-        self.changes = sorted(changes, key=lambda x: str(x))
+        self.changes = sorted(changes, key=str)
 
     def __iter__(self):
         yield Annotation.Key.History.value, [dict(c) for c in self.changes]

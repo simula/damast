@@ -152,12 +152,13 @@ class DataSpecification:
             self.status = {}
 
         def is_met(self) -> bool:
-            """Check if fulfillment is met
+            """
+            Check the status property to see if the fulfillment is considered as met.
 
             :raises KeyError: If `self.status` does not have the key ``"status"``
             :return: ``True`` if fulfillment is met, else ``False``.
             """
-            for k, v in self.status.items():
+            for _, v in self.status.items():
                 if "status" not in v:
                     raise KeyError(
                         f"{self.__class__.__name__}: internal error. Status misses key 'status'"
@@ -188,9 +189,7 @@ class DataSpecification:
         missing_column: str
         known_columns: List[str]
 
-        def __init__(self,
-                     missing_column: str,
-                     known_columns: List[str]):
+        def __init__(self, missing_column: str, known_columns: List[str]):
             super().__init__()
 
             self.missing_column = missing_column
@@ -303,7 +302,7 @@ class DataSpecification:
             )
 
         if self.value_meanings:
-            for k, v in self.value_meanings.items():
+            for k, _ in self.value_meanings.items():
                 if k not in self.value_range:
                     raise ValueError(
                         f"{self.__class__.__name__}.validate: "
@@ -347,14 +346,6 @@ class DataSpecification:
             f"It does not exist in builtins, nor "
             f" is this a known vaex.dtype -- {exceptions}"
         )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Create a dictionary to represent the meta-data of the data-specification.
-
-        :return: dictionary
-        """
-        return dict(self)
 
     def __iter__(self):
         yield "name", self.name
@@ -754,7 +745,7 @@ class MetaData:
     class Key(str, Enum):
         """
         The two allowed objects in the :class:`MetaData` and their string representation.
-        This is used for the dictionary representation :func:`MetaData.to_dict`, :func:`MetaData.__iter__`,
+        This is used for the dictionary representation dict(<MetaData>), :func:`MetaData.__iter__`,
         :func:`MetaData.from_dict`.
         """
 
@@ -827,7 +818,8 @@ class MetaData:
             self._annotations = {an.name: an for an in annotations}
 
     @property
-    def annotations(self):
+    def annotations(self) -> Dict[str, Annotation]:
+        """Get dictionary of annotations"""
         return self._annotations
 
     def __eq__(self, other) -> bool:
@@ -849,9 +841,6 @@ class MetaData:
             return False
 
         return True
-
-    def to_dict(self) -> Dict[str, Any]:
-        return dict(self)
 
     def __iter__(self):
         columns = [dict(ds) for ds in self.columns]
@@ -962,7 +951,7 @@ class MetaData:
         with open(filename, "w") as f:
             # Do not sort the keys, but keep the entry order the way
             # the dictionary has been constructed
-            yaml.dump(self.to_dict(), f, sort_keys=False)
+            yaml.dump(dict(self), f, sort_keys=False)
 
     def apply(
         self,
@@ -1011,7 +1000,7 @@ class MetaData:
         Get the fulfillment of the metadata with represent to the given data specification
 
         :param expected_specs: A list of data specifications
-        :return: The fullfillment object
+        :return: The fulfillment object
         """
         md_fulfillment = MetaData.Fulfillment()
 
