@@ -238,9 +238,9 @@ def test_add_distance_closest_anchorage(tmp_path):
     df = vaex.from_pandas(df_pd)
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg,
-                                               representation_type=np.float64),
+                                               representation_type=float),
                  damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg,
-                                               representation_type=np.float64)])
+                                               representation_type=float)])
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     transformer = ComputeClosestAnchorage(dataset, [columns[1], columns[2]])

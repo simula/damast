@@ -235,7 +235,7 @@ def test_data_processor_output_fail(lat_lon_dataframe, lat_lon_metadata):
                              metadata=lat_lon_metadata)
 
     a_fail = DataProcessorAFail()
-    with pytest.raises(RuntimeError, match="is not present"):
+    with pytest.raises(RuntimeError, match="Failed to update metadata"):
         a_fail.transform(df=adf)
 
     a_remove_col = DataProcessorARemoveCol()
