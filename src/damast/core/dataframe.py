@@ -196,7 +196,8 @@ class AnnotatedDataFrame:
         columns = self._metadata.Key.columns.value
         list_attrs = metadata[columns]
         dict_annotations = metadata[annotations]
-        list_columns = list(self.columns)
+        # Include virtual column names as well
+        list_columns = self.get_column_names(virtual=True)
 
         h5f = h5py.File(filename, "r+")
         # Add annotations to main group

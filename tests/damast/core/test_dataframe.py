@@ -31,8 +31,7 @@ def metadata():
     comment = Annotation(name=Annotation.Key.Comment, value="test dataframe")
     annotations = [license, comment]
 
-    metadata = MetaData(columns=[column_spec], annotations=annotations)
-    return metadata
+    return MetaData(columns=[column_spec], annotations=annotations)
 
 
 @pytest.fixture()
@@ -96,6 +95,27 @@ def test_annotated_dataframe_export_hdf5(metadata, vaex_dataframe, tmp_path):
     with pytest.raises(ValueError, match="no dataframe to save"):
         adf._dataframe = None
         adf.save(filename=test_file)
+
+    loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
+    assert all(loaded_adf.dataframe.values == vaex_dataframe.values)
+    #assert metadata == loaded_adf.metadata
+
+    # Test the manipulation of metadata for import and export
+    test_file = tmp_path / "test_dataframe_reload.hdf5"
+
+    # Write updated dataframe (with virtual column)
+    extra_column = "extra_column"
+    loaded_adf.metadata.columns.append(DataSpecification(name=extra_column))
+    from_column = loaded_adf._dataframe.get_column_names()[0]
+    loaded_adf._dataframe[extra_column] = from_column
+    loaded_adf.save(filename=test_file)
+
+    # Check updated dataframe (with virtual column)
+    loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
+    assert any(loaded_adf.dataframe[extra_column].values == vaex_dataframe[from_column].values)
+    assert extra_column in loaded_adf.dataframe.get_column_names()
+    assert extra_column in loaded_adf.metadata
+
 
 
 def test_annotated_dataframe_export_csv(metadata, vaex_dataframe, tmp_path):

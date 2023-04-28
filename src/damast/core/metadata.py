@@ -856,7 +856,12 @@ class MetaData:
         if self.columns != other.columns:
             return False
 
-        if self.annotations != other.annotations:
+        if len(self.annotations) != len(other.annotations):
+            return False
+
+        for k,v in self.annotations.items():
+            if k in other.annotations and other.annotations[k] == v:
+                continue
             return False
 
         return True
