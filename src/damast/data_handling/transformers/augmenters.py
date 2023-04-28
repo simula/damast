@@ -15,7 +15,7 @@ from sklearn.neighbors import BallTree
 
 import damast.core
 from damast.core import AnnotatedDataFrame
-from damast.core.dataprocessing import DataSpecification, PipelineElement
+from damast.core.dataprocessing import PipelineElement
 
 __all__ = [
     "AddLocalIndex",
@@ -112,8 +112,6 @@ class JoinDataFrameByColumn(PipelineElement):
         if self._right_on != self.get_name("x"):
             dataframe.drop(self._right_on, inplace=True)
         dataframe.rename(self._dataset_column, self.get_name("out"))
-        new_spec = DataSpecification(self.get_name("out"))
-        df._metadata.columns.append(new_spec)
         return df
 
 
@@ -277,10 +275,6 @@ class AddLocalIndex(PipelineElement):
 
         # Drop temporary index columns
         del local_index, reverse_local_index
-        new_specs = [damast.core.DataSpecification(self.get_name("local_index"), representation_type=int),
-                     damast.core.DataSpecification(self.get_name("reverse_{{local_index}}"), representation_type=int)]
-
-        [df._metadata.columns.append(new_spec) for new_spec in new_specs]
         return df
 
 
