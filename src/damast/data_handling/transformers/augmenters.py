@@ -314,9 +314,7 @@ class AddTimestamp(PipelineElement):
         to_mapped_name = self.get_name("to")
 
         dataframe[to_mapped_name] = dataframe[from_mapped_name].apply(convert_to_datetime)
-
-        new_spec = damast.core.DataSpecification(self.get_name("to"), representation_type=float)
-        df._metadata.columns.append(new_spec)
+        dataframe.materialize(to_mapped_name)
         return df
 
 
