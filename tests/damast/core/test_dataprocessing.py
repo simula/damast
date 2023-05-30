@@ -343,8 +343,8 @@ def test_single_element_pipeline(tmp_path):
 
     pipeline.transform(df=adf)
 
-
-def test_decorator_renaming(tmp_path):
+@pytest.mark.parametrize("varname",["x","xyz"])
+def test_decorator_renaming(varname, tmp_path):
     data = [["10000000", 0]]
     column_names = ["mmsi", "status"]
 
@@ -360,31 +360,31 @@ def test_decorator_renaming(tmp_path):
     class TransformX(PipelineElement):
 
         @damast.core.describe("Generic transform of x")
-        @damast.core.input({"x": {"unit": units.deg}})
-        @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
+        @damast.core.input({f"{varname}": {"unit": units.deg}})
+        @damast.core.output({"{{" + varname + "}}_suffix": {"unit": units.deg}})
         def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
+            df[f"{self.get_name(varname)}_suffix"] = df[self.get_name(varname)]
             return df
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
-    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
     with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
         pipeline = DataProcessingPipeline(name="TransformStatus",
                                           base_dir=tmp_path)
         pipeline.add("Transform status",
                      TransformX(),
-                     name_mappings={"x": "extra_status"})
+                     name_mappings={varname: "extra_status"})
         pipeline.transform(df=adf)
 
     pipeline = DataProcessingPipeline(name="TransformStatus",
                                       base_dir=tmp_path)
     pipeline.add("Transform status",
                  TransformX(),
-                 name_mappings={"x": "status"})
+                 name_mappings={varname: "status"})
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
-    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
     name, transformer = pipeline.steps[0]
     assert transformer.input_specs[0].name == "status"
@@ -395,8 +395,8 @@ def test_decorator_renaming(tmp_path):
     repr_after = pipeline.to_str()
     assert repr_before == repr_after
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == "x"
-    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{x}}_suffix"
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
 
 def test_toplevel_decorators(tmp_path):
