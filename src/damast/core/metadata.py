@@ -439,12 +439,10 @@ class DataSpecification:
         if cls.Key.unit.value in data:
             # Check if unit is part of the default definitions
             unit_value = data[cls.Key.unit.value]
+            unit = None
             if isinstance(unit_value, str):
-                try:
-                    unit = getattr(units, unit_value)
-                except Exception:
-                    # Check if unit part of definition in 'damast.core.units'
-                    unit = unit_registry[unit_value]
+                # This will include astropy and custom (damast) units
+                unit = Unit(unit_value)
             elif isinstance(unit_value, Unit):
                 unit = unit_value
             else:
@@ -523,12 +521,12 @@ class DataSpecification:
                 if not self.value_range.is_in_range(min_value):
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
-                        f" lies outside of range {self.value_range}"
+                        f" lies outside of range {self.value_range} for column '{column_name}'"
                     )
                 if not self.value_range.is_in_range(max_value):
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
-                        f" lies outside of range {self.value_range}"
+                        f" lies outside of range {self.value_range} for column '{column_name}'"
                     )
             return
 
