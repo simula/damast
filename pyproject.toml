@@ -9,7 +9,7 @@ requires = ["setuptools >= 61.0.0",
 name = "damast"
 version = "0.1"
 description = "Package to improve the development of transparent, replicable data processing pipelines"
-#license = "BSD-3-Clause"
+license = { file="LICENSE" }
 readme = "README.md"
 keywords = ["data processing", "pipeline", "machine learning"]
 authors = [
@@ -31,6 +31,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Operating System :: OS Independent",
     "Programming Lanugage :: Python :: 3.10",
+    "License :: OSI Approved :: BSD License",
 ]
 
 dependencies = [
