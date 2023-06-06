@@ -274,8 +274,7 @@ class DataSpecification:
         self.precision = precision
         self.value_range = value_range
         self.value_meanings = value_meanings
-        if description is None:
-            self.description = ""
+        self.description = "" if description is None else description
         self._validate()
 
     def __eq__(self, other):
@@ -385,6 +384,9 @@ class DataSpecification:
         if self.value_meanings is not None:
             yield "value_meanings", self.value_meanings
 
+        if self.description is not None:
+            yield "description", self.description
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> DataSpecification:
         """
@@ -421,6 +423,9 @@ class DataSpecification:
             is_optional=bool(data[cls.Key.is_optional]),
             abbreviation=abbreviation,
         )
+
+        if cls.Key.description in data:
+            spec.description = data[cls.Key.description]
 
         if cls.Key.representation_type.value in data:
             spec.representation_type = cls.resolve_representation_type(

@@ -20,33 +20,35 @@ from damast.core.metadata import (
 @pytest.mark.parametrize(["name", "category", "is_optional",
                           "abbreviation", "representation_type",
                           "missing_value", "unit", "precision",
+                          "description",
                           "value_range", "value_meanings",
                           "raises"],
                          [
                              ["test-data-spec", DataCategory.STATIC, False,
-                              "tds", int, -1, units.m, 0.01,
+                              "tds", int, -1, units.m, 0.01, "test-data-spec description",
                               MinMax(0, 100), {0: 'min value', 100: 'max value'},
                               False],
                              ["test-data-spec-out-of-range", DataCategory.STATIC, False,
-                              "tds", int, -1, units.m, 0.01,
+                              "tds", int, -1, units.m, 0.01, "test-data-sepc-out-of-range description",
                               MinMax(0, 100), {-10: 'min value', 100: 'max value'},
                               True],
                              ["latitude-in-range", DataCategory.DYNAMIC, False,
-                              "lat", float, None, units.deg, 0.01,
+                              "lat", float, None, units.deg, 0.01, "latitude-in-range description",
                               CyclicMinMax(-90, 90), {-90.0: 'min value', 90.0: 'max value'},
                               False],
                              ["latitude-out-of-range", DataCategory.DYNAMIC, False,
-                              "lat", float, None, units.deg, 0.01,
+                              "lat", float, None, units.deg, 0.01, "latitude-out-of-range description",
                               CyclicMinMax(-90, 90), {-91.0: 'min value', 90.0: 'max value'},
                               True],
                              ["longitude-in-range", DataCategory.DYNAMIC, False,
-                              "lon", float, None, units.deg, 0.01,
+                              "lon", float, None, units.deg, 0.01, "latitude-in-range description",
                               CyclicMinMax(-180.0, 180.0), {-180.0: 'min value', 180.0: 'max value'},
                               False]
 ])
 def test_data_specification(name, category, is_optional,
                             abbreviation, representation_type,
                             missing_value, unit, precision,
+                            description,
                             value_range, value_meanings,
                             raises):
     exception = None
@@ -56,6 +58,7 @@ def test_data_specification(name, category, is_optional,
                                is_optional=is_optional,
                                abbreviation=abbreviation,
                                representation_type=representation_type,
+                               description=description,
                                missing_value=missing_value,
                                unit=unit,
                                precision=precision,
@@ -67,6 +70,7 @@ def test_data_specification(name, category, is_optional,
         assert ds.category == category
         assert ds.abbreviation == abbreviation
         assert ds.representation_type == representation_type
+        assert ds.description == description
         assert ds.missing_value == missing_value
         assert ds.unit == unit
         assert ds.precision == precision
@@ -83,16 +87,18 @@ def test_data_specification(name, category, is_optional,
 @pytest.mark.parametrize(["name", "category", "is_optional",
                           "abbreviation", "representation_type",
                           "missing_value", "unit", "precision",
+                          "description",
                           "value_range", "value_meanings"
                           ],
                          [
                              ["test-data-spec", DataCategory.DYNAMIC, False,
-                              "tds", float, -1, units.m, 0.01,
+                              "tds", float, -1, units.m, 0.01, "test-data-spec description",
                               MinMax(0.0, 100.0), {0.0: "minimum", 100.0: "maximum"}]
 ])
 def test_data_specification_read_write(name, category, is_optional,
                                        abbreviation, representation_type,
                                        missing_value, unit, precision,
+                                       description,
                                        value_range, value_meanings, tmp_path):
     ds = DataSpecification(name=name,
                            category=category,
@@ -102,6 +108,7 @@ def test_data_specification_read_write(name, category, is_optional,
                            missing_value=missing_value,
                            unit=unit,
                            precision=precision,
+                           description=description,
                            value_range=value_range,
                            value_meanings=value_meanings)
 
