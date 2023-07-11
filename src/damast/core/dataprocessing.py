@@ -319,7 +319,7 @@ class PipelineElement(Transformer):
 
         # Allow to use patterns, so that an existing input
         # reference can be reused for dynamic labelling
-        while re.match("{{\\w+}}", name):
+        while re.search("{{\\w+}}", name):
             for match in re.finditer("{{\\w+}}", name):
                 resolved_name = match.group()[2:-2]
                 if resolved_name in self.name_mappings:
