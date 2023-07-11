@@ -57,7 +57,8 @@ class DropMissing(PipelineElement):
         """
         mapped_name = self.get_name("x")
         dataframe = df._dataframe
-        new_dataframe = dataframe.dropmissing(column_names=[mapped_name])
+        nonnan_dataframe = dataframe.dropnan(column_names=[mapped_name])
+        new_dataframe = nonnan_dataframe.dropmissing(column_names=[mapped_name])
         df._dataframe = new_dataframe
         return df
 
