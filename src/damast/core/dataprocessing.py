@@ -305,6 +305,9 @@ class PipelineElement(Transformer):
                      output based an existing and renameable input
         :return: Name for this input after resolving name mappings and references
         """
+        if not isinstance(name, str):
+            raise TypeError(f"{self.__class__.__name__}.get_name: provided transformer label is not a string: {name}")
+
         if name in self.name_mappings:
             # allow multiple levels of name resolution, e.g.,
             # x -> y, y -> z --> x -> z
