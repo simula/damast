@@ -440,7 +440,7 @@ class Experiment:
                                     group_column=group)
         if isinstance(self.learning_task, ForecastTask):
             return sta.to_keras_generator(features=self.learning_task.features,
-                                          target=self.learning_task.features,
+                                          target=self.learning_task.targets,
                                           sequence_length=self.learning_task.sequence_length,
                                           sequence_forecast=self.learning_task.forecast_length,
                                           groups=group_ids,
