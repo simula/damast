@@ -45,7 +45,7 @@ class RemoveValueRows(PipelineElement):
 
 class DropMissing(PipelineElement):
     """
-    DropMissing rows that do not have a defined value for a given column.
+    DropMissing rows that do not have a defined value or NaN for a given column.
     """
 
     @damast.core.describe("Drop rows where a column has a missing value")
