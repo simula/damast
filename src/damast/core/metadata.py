@@ -274,7 +274,7 @@ class DataSpecification:
         self.precision = precision
         self.value_range = value_range
         self.value_meanings = value_meanings
-        self.description = "" if description is None else description
+        self.description = description
         self._validate()
 
     def __eq__(self, other):
