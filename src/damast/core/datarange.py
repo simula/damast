@@ -164,7 +164,7 @@ class ListOfValues:
         :return: instance
         :raise ValueError: If dtype is given, but does not match the value type in the given list of values
         """
-        if len(data) > 0 and dtype is not None:
+        if data and dtype is not None:
             actual_dtype = type(data[0])
             if actual_dtype != dtype:
                 raise ValueError(
@@ -205,7 +205,7 @@ class MinMax(DataRange):
         super().__init__()
 
         if not min < max:
-            raise RuntimeError(f"DataRange.__init__: invalid - min: {min} max: max")
+            raise RuntimeError(f"DataRange.__init__: invalid range - min: {min} max: {max}")
 
         self.min = min
         self.max = max
