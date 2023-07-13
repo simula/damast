@@ -6,6 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+import numpy as np
 import vaex
 
 import damast.core.datarange
@@ -194,32 +195,44 @@ class MinMax(DataRange):
     """
 
     #: Minimum / Lower Bound of range
-    min: Any = None # noqa
+    min: Any
     #: Maximum / Upper Bound of range
-    max: Any = None # noqa
+    max: Any
 
-    def __init__(self, min: Any, max: Any):
+    #: Allow missing values for this data range
+    allow_missing: bool
+
+    def __init__(self, min: Any, max: Any, allow_missing: bool = True):
         """
         Constructor
         """
         super().__init__()
 
-        if not min < max:
+        if not min <= max:
             raise RuntimeError(f"DataRange.__init__: invalid range - min: {min} max: {max}")
 
         self.min = min
         self.max = max
+
+        self.allow_missing = allow_missing
 
     def is_in_range(self, value: Any) -> bool:
         """
         Check if a value is in the defined range.
 
         :param value: data value
+
         :return: `True` if value is in the set range, `False` otherwise
         """
         # To make masked/missing values work
-        if value is None:
-            return False
+        try:
+            if value is None:
+                return self.allow_missing
+
+            if np.isnan(value) or np.isnat(value):
+                return self.allow_missing
+        except Exception:
+            pass
 
         return self.min <= value <= self.max
 
@@ -242,13 +255,22 @@ class MinMax(DataRange):
             if required_key not in data:
                 raise KeyError(f"{cls.__name__}.from_data: missing '{required_key}'")
 
-        if dtype is not None:
-            return cls(
-                min=DataElement.create(data["min"], dtype),
-                max=DataElement.create(data["max"], dtype),
-            )
+        min_value = data["min"]
+        max_value = data["max"]
 
-        return cls(min=data["min"], max=data["max"])
+        if dtype is not None:
+            min_value = DataElement.create(data["min"], dtype)
+            max_value = DataElement.create(data["max"], dtype)
+
+        keys = {
+            'min': min_value,
+            'max': max_value
+        }
+
+        if "allow_missing" in data:
+            keys['allow_missing'] = data['allow_missing']
+
+        return cls(**keys)
 
     def __eq__(self, other) -> bool:
         """
@@ -280,10 +302,17 @@ class MinMax(DataRange):
         """
         Extend the range based on another range definition.
 
+        If any of the DataRange instances does not allow missing value, the resulting instance
+        will as not allow missing values.
+
         :param other: MinMax object to extend the bound of the current one
         """
         self.min = min(self.min, other.min)
         self.max = max(self.max, other.max)
+
+        # Since allow missing is by default true - explicitly disabling it should
+        # be propagated when merging
+        self.allow_missing = self.allow_missing and other.allow_missing
 
     def to_dict(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -294,7 +323,7 @@ class MinMax(DataRange):
         return dict(self)
 
     def __iter__(self):
-        yield self.__class__.__name__, {"min": self.min, "max": self.max}
+        yield self.__class__.__name__, {"min": self.min, "max": self.max, "allow_missing": self.allow_missing}
 
 
 class CyclicMinMax(MinMax):

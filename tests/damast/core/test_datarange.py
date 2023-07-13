@@ -1,32 +1,38 @@
+import numpy as np
 import pytest
 
 from damast.core.datarange import CyclicMinMax, DataRange, ListOfValues, MinMax
 
 
-@pytest.mark.parametrize(["min", "max", "value", "is_in_range"],
+@pytest.mark.parametrize(["min", "max", "value", "is_in_range", "allow_missing"],
                          [
-                             [0, 1, 0, True],
-                             [0, 1, 1, True],
-                             [0, 1, -1, False],
-                             [-1.2, 2.7, -1.2, True],
-                             [-1.2, 2.7, 2.7, True],
-                             [-1.2, 2.7, -2.7, False],
-                             [-1.2, 2.7, 2.71, False],
-                             [-1, 2, 1.5, True],
-                             [-1, 2, -1.0, True],
-                             [-1, 2, 2.0, True],
-                             [-1, 2, 2.5, False]
+                             [10, 10, 10, True, True],
+                             [0, 1, 0, True, True],
+                             [0, 1, 1, True, True],
+                             [0, 1, -1, False, True],
+                             [-1.2, 2.7, -1.2, True, True],
+                             [-1.2, 2.7, 2.7, True, True],
+                             [-1.2, 2.7, -2.7, False, True],
+                             [-1.2, 2.7, 2.71, False, True],
+                             [-1, 2, 1.5, True, True],
+                             [-1, 2, -1.0, True, True],
+                             [-1, 2, 2.0, True, True],
+                             [-1, 2, 2.5, False, True],
+                             [0, 1, None, True, True],
+                             [0, 1, None, False, False],
+                             [np.timedelta64(0), np.timedelta64(10), np.timedelta64("NaT"), True, True],
+                             [np.timedelta64(0), np.timedelta64(10), np.timedelta64("NaT"), False, False]
 ])
-def test_min_max(min, max, value, is_in_range):
-    mm = MinMax(min=min, max=max)
-    assert mm.is_in_range(value) == is_in_range
+def test_min_max(min, max, value, is_in_range, allow_missing):
+    mm = MinMax(min=min, max=max, allow_missing=allow_missing)
+    assert mm.is_in_range(value=value) == is_in_range
     if is_in_range:
         assert value in mm
     else:
         assert value not in mm
 
-    cm = CyclicMinMax(min=min, max=max)
-    assert cm.is_in_range(value) == is_in_range
+    cm = CyclicMinMax(min=min, max=max, allow_missing=allow_missing)
+    assert cm.is_in_range(value=value) == is_in_range
     if is_in_range:
         assert value in cm
     else:
