@@ -577,14 +577,22 @@ class DataSpecification:
 
             try:
                 min_value, max_value = df.minmax(column_name)
+
+                # Handle time issue since NaT can be returned as 'min' value
+                if isinstance(min_value, np.datetime64) or isinstance(min_value, np.timedelta64):
+                    if np.isnat(min_value):
+                        min_value = df[~df[column_name].isin([min_value])].min(column_name)
+                    if np.isnat(max_value):
+                        max_value = df[~df[column_name].isin([max_value])].max(column_name)
+
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
-                        self.value_range.merge(MinMax(min_value, max_value))
+                        self.value_range.merge(MinMax(float(min_value), float(max_value)))
                 else:
                     warnings.warn(
                         f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
                     )
-                    self.value_range = MinMax(min_value, max_value)
+                    self.value_range = MinMax(float(min_value), float(max_value))
             except ValueError:
                 # Type might not be numeric
                 pass
