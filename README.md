@@ -29,7 +29,7 @@ Create your venv and activate it:
 Clone the repo and install:
 
 ```
-    git clone https://gitlab.com/simula-srl/damast
+    git clone https://github.com/simula/damast
     cd damast
     pip install -e ".[test,dev]"
 
