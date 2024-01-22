@@ -2,6 +2,9 @@ name: Test python package
 
 on:
   push:
+    paths:
+      - tests/**
+      - src/**
   pull_request:
   workflow_dispatch:
 
