@@ -1,4 +1,4 @@
-name: gh-pages
+name: Deploy github pages
 
 on:
   # Runs on pushes targeting the default branch
@@ -44,14 +44,14 @@ jobs:
       - name: Generate page content
         run: |
           tox -e build_docs;
-          cd _build/html;
-          tar czf ../../github-pages.tar.gz .
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: _build/html
 
       - name: Deploy to GitHub Pages
         id: deployment
