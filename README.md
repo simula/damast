@@ -1,6 +1,6 @@
 # damast: Creation of reproducible data processing pipelines
 
-Documentation at: https://simula-srl.gitlab.io/damast
+Documentation at: https://simula.github.io/damast
 
 ## Installation and Development Setup
 
