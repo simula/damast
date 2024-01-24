@@ -1,3 +1,5 @@
+"""Main module"""
+
 from damast import cli, core, data_handling, domains
 from damast.core import artifacts, describe, input, output
 

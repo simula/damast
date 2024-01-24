@@ -4,7 +4,7 @@ Great see that you are interested in contributing to 'damast'.
 
 To make the process as smooth as possible for all involed parties, you will find some instructions
 below.  In case there is some information missing, or you feel lost, do not
-hesitate to ask or [open an issue](https://gitlab.com/simula-srl/damast/-/issues/new)
+hesitate to ask or [open an issue](https://github.com/simula/damast/issues/new)
  on this project.
 
  ## Installation
@@ -65,7 +65,7 @@ to run a particular test case (-k) and redirecting the output to stdout (-s).
 ## Merge Requests
 
 Please fork the repository and push your code change into a branch.
-Then create a [new merge request](https://gitlab.com/simula-srl/damast/-/merge_requests/new) from this branch.
+Then create a new merge request from this branch.
 
 Generally, read through the documentation first to understand the main ideas and some underlying assumptions of this project.
 If you intend to change some of the behavior, please try to validate by reading the documentation or opening an issue whether

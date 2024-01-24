@@ -1,6 +1,6 @@
 # damast: Creation of reproducible data processing pipelines
 
-Documentation at: https://simula-srl.gitlab.io/damast
+Documentation at: https://simula.github.io/damast
 
 ## Installation and Development Setup
 
@@ -29,7 +29,7 @@ Create your venv and activate it:
 Clone the repo and install:
 
 ```
-    git clone https://gitlab.com/simula-srl/damast
+    git clone https://github.com/simula/damast
     cd damast
     pip install -e ".[test,dev]"
 

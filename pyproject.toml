@@ -56,6 +56,7 @@ repository = "https://gitlab.com/simula-srl/damast"
 
 [project.optional-dependencies]
 dev = [
+    "astroid<3",
     "flake8-gl-codeclimate",
     "isort",
     "jupyter-book",
@@ -66,7 +67,8 @@ dev = [
 test = [
     "coverage",
     "pytest",
-    "pytest-cov"
+    "pytest-cov",
+    "pydot"
 ]
 
 [project.scripts]

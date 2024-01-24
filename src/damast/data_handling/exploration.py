@@ -35,8 +35,14 @@ def plot_lat_lon(*,
     :return: Path to the file
     """
 
-    plt.scatter(x=df[longitude_name].evaluate(),
-                y=df[latitude_name].evaluate(),
+    longitude = df[longitude_name].evaluate()
+    latitude = df[latitude_name].evaluate()
+
+    # .copy() to address ValueError: assignment destination is read-only
+    # raised in numpy/ma/core.py:3528: in mask
+    #      self.__setmask__(value)
+    plt.scatter(x=longitude.copy(),
+                y=latitude.copy(),
                 alpha=1)
     plt.xlim(-180, 180)
     plt.ylim(-90, 90)
