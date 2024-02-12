@@ -5,6 +5,7 @@ on:
     paths:
       - tests/**
       - src/**
+      - .github/workflows/test.yml
   pull_request:
   workflow_dispatch:
 
@@ -24,18 +25,17 @@ jobs:
       - name: Install package
         run: python -m pip install -e .[dev,test]
 
-      - name: Install tox
-        run: python -m pip install tox
-
       - name: Install os dependencies
         run: sudo apt install -y graphviz
 
       # Run keras backend specific tests (for keras>=3)
+      # Due to space issues avoid creating too many venvs (via tox)
+      #     see https://github.com/actions/runner-images/issues/709
       - name: Run tests - tensorflow backend
-        run: tox -e backend_tensorflow
+        run: KERAS_BACKEND=tensorflow pytest -v --cov=damast --cov-report=term tests
 
       - name: Run tests - torch backend
-        run: tox -e backend_torch
+        run: KERAS_BACKEND=torch pytest -v --cov=damast --cov-report=term tests
 
       - name: Run tests - jax backend
-        run: tox -e backend_jax
+        run: KERAS_BACKEND=jax pytest -v --cov=damast --cov-report=term tests
