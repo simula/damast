@@ -380,7 +380,7 @@ class SequenceIterator:
         # Check that all features have the same data-type
         datatypes = self.df[features].dtypes
         for dtype in datatypes:
-            if dtype != datatypes[0]:
+            if dtype != datatypes.iloc[0]:
                 raise ValueError(f"{self.__class__.__name__}:"
                                  f" Features {features} do not have a consistent (single) datatype,"
                                  f" got {datatypes.to_list()}")
@@ -389,7 +389,7 @@ class SequenceIterator:
         if use_target:
             datatypes = self.df[target].dtypes
             for dtype in datatypes:
-                if dtype != datatypes[0]:
+                if dtype != datatypes.iloc[0]:
                     raise ValueError(f"{self.__class__.__name__}:"
                                      f" Targets {target} do not have a consistent (single) datatype,"
                                      f" got {datatypes.to_list()}")
