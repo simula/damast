@@ -30,5 +30,12 @@ jobs:
       - name: Install os dependencies
         run: sudo apt install -y graphviz
 
-      - name: Run tests
-        run: tox -e py
+      # Run keras backend specific tests (for keras>=3)
+      - name: Run tests - tensorflow backend
+        run: tox -e backend_tensorflow
+
+      - name: Run tests - torch backend
+        run: tox -e backend_torch
+
+      - name: Run tests - jax backend
+        run: tox -e backend_jax

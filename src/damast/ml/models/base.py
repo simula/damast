@@ -6,13 +6,12 @@ import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, ClassVar, Dict, List, NamedTuple, Optional, OrderedDict, Union
+from typing import ClassVar, NamedTuple, OrderedDict
 
 import keras
 import keras.callbacks
 import keras.utils
 import pandas as pd
-import tensorflow as tf
 import vaex
 from vaex import DataFrame
 
@@ -24,7 +23,7 @@ __all__ = [
 ]
 
 HISTORY_FILENAME = 'training-history.csv'
-CHECKPOINT_BEST = "checkpoint.best"
+CHECKPOINT_BEST = "checkpoint.best.weights.h5"
 MODEL_TF_HDF5 = "model.tf.hdf5"
 
 
@@ -42,11 +41,11 @@ class BaseModel(ABC):
 
     #: Input specification for this model
     input_specs: ClassVar[OrderedDict[str, DataSpecification]]
-    features: List[str]
+    features: list[str]
 
     #: Output specification for this model
     output_specs: ClassVar[OrderedDict[str, DataSpecification]]
-    targets: List[str]
+    targets: list[str]
 
     #: Name of this model
     name: str
@@ -54,7 +53,7 @@ class BaseModel(ABC):
     model: keras.Model
 
     # Computation
-    distribution_strategy: tf.distribute.Strategy
+    distribution_strategy: object | None
 
     #: The directory where all the model output will be stored
     model_dir: Path
@@ -63,10 +62,10 @@ class BaseModel(ABC):
     history: keras.callbacks.History
 
     def __init__(self,
-                 features: List[str],
-                 targets: Optional[List[str]] = None,
-                 name: Optional[str] = None,
-                 distribution_strategy: Optional[tf.distribute.Strategy] = None,
+                 features: list[str],
+                 targets: list[str] | None = None,
+                 name: str | None = None,
+                 distribution_strategy = None,
                  output_dir: Path = Path(gettempdir())
                  ):
         if not hasattr(self, "input_specs"):
@@ -79,7 +78,11 @@ class BaseModel(ABC):
             self.name = self.__class__.__name__
 
         if distribution_strategy is None:
-            self.distribution_strategy = tf.distribute.get_strategy()
+            if keras.backend.backend() == "tensorflow":
+                import tensorflow as tf
+                self.distribution_strategy = tf.distribute.get_strategy()
+            else:
+                self.distribution_strategy = None
 
         if name is None:
             name = self.__class__.__name__
@@ -105,7 +108,7 @@ class BaseModel(ABC):
         pass
 
     def load_weights(self,
-                     checkpoint_filepath: Union[str, Path]):
+                     checkpoint_filepath: str | Path):
         """
         Load the model weight from an existing checkpoint named by the checkpoint_filepath
 
@@ -118,19 +121,19 @@ class BaseModel(ABC):
         self.model.load_weights(checkpoint_filepath)
 
     def build(self,
-              optimizer: Union[str, tf.keras.optimizers.Optimizer] = tf.keras.optimizers.Adam(0.001),
-              loss_function: Union[str, tf.keras.losses.Loss] = "mse",
-              metrics: Union[List[str], List[tf.keras.metrics.Metric]] = ["mse"],
+              optimizer: str | keras.optimizers.Optimizer = keras.optimizers.Adam(0.001),
+              loss_function: str | keras.losses.Loss = "mse",
+              metrics: list[str] | list[keras.metrics.Metric] = ["mse"],
               **kwargs):
         """
         Build / Compile the actual model
 
-        :param optimizer: Name of the optimizer or an instance of tf.keras.optimizers.Optimizer
-        :param loss_function:  Name of the loss function or an instance of tf.keras.losses.Loss
-        :param metrics: List of names of the metrics that shall be used, or list of instance of tf.keras.metrics.Metrics
+        :param optimizer: Name of the optimizer or an instance of keras.optimizers.Optimizer
+        :param loss_function:  Name of the loss function or an instance of keras.losses.Loss
+        :param metrics: List of names of the metrics that shall be used, or list of instance of keras.metrics.Metrics
         :param kwargs: additional arguments that can be forwarded to keras.engine.training.Model.compile
         """
-        with self.distribution_strategy.scope():
+        def _build_impl():
             # Plotting of the model
             self.plot()
 
@@ -143,6 +146,12 @@ class BaseModel(ABC):
                 **kwargs
             )
             self.model.summary()
+
+        if self.distribution_strategy and keras.backend.backend() == "tensorflow":
+            with self.distribution_strategy.scope():
+                _build_impl()
+        else:
+            _build_impl()
 
     def plot(self,
              suffix=".png") -> Path:
@@ -190,23 +199,31 @@ class BaseModel(ABC):
               initial_epoch: int = 0,
               save_history: bool = True,
               **kwargs) -> None:
+        if True:
+        #try:
 
-        try:
+            callbacks = []
             # check https://keras.io/api/callbacks/ for available callbacks
             checkpoint_filepath = self.checkpoints_dir / CHECKPOINT_BEST
-            # https://www.tensorflow.org/tensorboard/get_started
-            tensorboard_cb = keras.callbacks.TensorBoard(log_dir=str(self.model_dir / "logs"),
-                                                         histogram_freq=1
-                                                         )
-            model_checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+            if keras.backend.backend() == "tensorflow":
+                # https://www.tensorflow.org/tensorboard/get_started
+                tensorboard_cb = keras.callbacks.TensorBoard(log_dir=str(self.model_dir / "logs"),
+                                                             histogram_freq=1
+                                                             )
+                callbacks.append(tensorboard_cb)
+
+            model_checkpoint_cb = keras.callbacks.ModelCheckpoint(
                 filepath=checkpoint_filepath,
                 save_weights_only=True,
                 monitor=monitor,
                 mode=mode,
                 save_best_only=True)
+            callbacks.append(model_checkpoint_cb)
 
             early_stopping_cb = keras.callbacks.EarlyStopping(patience=10,
                                                               restore_best_weights=True)
+            callbacks.append(early_stopping_cb)
+
             # log_hyperparams_cb = hp.KerasCallback(logdir=self.model_dir / "logs",
             #                                       hparams)
 
@@ -214,22 +231,18 @@ class BaseModel(ABC):
                 def on_train_batch_begin(self, epoch, logs=None):
                     gc.collect()
             cleanup_cb = CleanupCallback()
+            callbacks.append(cleanup_cb)
 
             # Allow to checkpoint per epoch
             self.history = self.model.fit(training_data,
                                           validation_data=validation_data,
                                           epochs=epochs,
                                           initial_epoch=initial_epoch,
-                                          callbacks=[
-                                              cleanup_cb,
-                                              model_checkpoint_cb,
-                                              early_stopping_cb,
-                                              tensorboard_cb,
-                                          ],
+                                          callbacks=callbacks,
                                           **kwargs
                                           )
-        except Exception as e:
-            raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
+        #except Exception as e:
+        #    raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
 
         # Save the history
         if save_history:
@@ -261,7 +274,7 @@ class BaseModel(ABC):
     def evaluate(self,
                  label: str,
                  evaluation_data: tf.data.Dataset,
-                 **kwargs) -> Dict[str, Any]:
+                 **kwargs) -> dict[str, any]:
         """
         Evaluate this model.
 
@@ -279,14 +292,13 @@ class BaseModel(ABC):
 
         # Evaluate the model against the provided data using the weights/checkpoint
         # with the (so far) best performance
-        evaluation: Dict[str, float] = self.model.evaluate(evaluation_data,
+        evaluation: dict[str, float] = self.model.evaluate(evaluation_data,
                                                            return_dict=True,
-                                                           use_multiprocessing=False,
                                                            verbose=0,
                                                            **kwargs)
 
         evaluation_column_names = ["dataset"]
-        evaluation_results: List[Any] = [label]
+        evaluation_results: list[any] = [label]
         for name, value in evaluation.items():
             evaluation_column_names.append(name)
             evaluation_results.append(value)
@@ -303,10 +315,10 @@ class ModelInstanceDescription(NamedTuple):
     Provide a description of a model instance to allow serialization.
     """
     model: BaseModel
-    parameters: Dict[str, str]
+    parameters: dict[str, str]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> ModelInstanceDescription:
+    def from_dict(cls, data: dict[str, any]) -> ModelInstanceDescription:
         if "module_name" not in data:
             raise ValueError(f"{cls.__name__}.from_dict: missing 'module' specification")
         if "class_name" not in data:

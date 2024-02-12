@@ -36,15 +36,20 @@ classifiers = [
 
 dependencies = [
     "astropy",
+    "keras>=3.0",
     "matplotlib",
     "numba",
     "numpy",
-    "vaex",
+    "psutil",
     "pyais",
-    "pydantic<2.0",
+    "pydantic",
     "scikit-learn",
-    "tensorflow",
-    "keras"
+    "vaex",
+    # BEGIN keras backends
+    "jax[cpu]",
+    "tf-nightly",
+    "torch",
+    # END backends
 ]
 
 [project.urls]
@@ -61,9 +66,11 @@ dev = [
     "isort",
     "jupyter-book",
     "pre-commit",
+    "pydot",
     "sphinx-autoapi",
     "tox"
 ]
+
 test = [
     "coverage",
     "pytest",

@@ -4,8 +4,6 @@ from typing import List, Optional, Union
 
 import keras
 import pytest
-import tensorflow
-import tensorflow as tf
 import vaex
 
 import damast
@@ -82,7 +80,7 @@ class SimpleModel(BaseModel):
     def _init_model(self):
         inputs = keras.Input(shape=(4,),
                              name="input",
-                             dtype=tensorflow.float32)
+                             dtype=float)
         outputs = keras.layers.Dense(4)(inputs)
 
         self.model = keras.Model(inputs=inputs,
@@ -130,7 +128,7 @@ class Baseline(BaseModel):
         features_width = len(self.features)
         targets_width = len(self.targets)
 
-        self.model = tf.keras.models.Sequential([
+        self.model = keras.models.Sequential([
             keras.layers.Flatten(input_shape=[self.timeline_length, features_width]),
             keras.layers.Dense(targets_width)
         ])
@@ -325,8 +323,9 @@ def test_to_and_from_file(tmp_path):
 
     assert loaded_e == experiment
 
-
 def test_experiment_run(tmp_path):
+    print(f"Keras running with backend: {keras.backend.backend()}")
+
     pipeline = DataProcessingPipeline(name="ais_preparation",
                                       base_dir=tmp_path) \
         .add("cyclic", LatLonTransformer())
