@@ -331,13 +331,13 @@ class AnnotatedDataFrame:
         csv_sep: str = ";",
     ):
         """
-        Convert a csv file toa an annotated dataframe
+        Convert a csv file to an annotated dataframe
 
         :param csv_filenames: The input csv file that shall be converted
         :param metadata_filename: The metadata specification
         :param output_filename: The output file that will be generated
         :param validation_mode: how to validate / enforce the conformity of the metadata and the data
-        :param progress: Callable to set for the dataframe consversion
+        :param progress: Callable to set for the dataframe conversion
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)

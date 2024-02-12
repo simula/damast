@@ -559,7 +559,7 @@ class DataSpecification:
 
             if self.value_range:
                 warnings.warn(
-                    f"Replacing values in {column_name} that are out of range."
+                    f"Replacing values in column '{column_name}' that are out of range."
                 )
                 mask = ~df[column_name].apply(self.value_range.is_in_range)
                 df[column_name] = np.ma.masked_array(

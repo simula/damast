@@ -17,7 +17,7 @@ __all__ = ["Annotation", "Change", "History"]
 
 class Annotation:
     """
-    Create an annotation
+    Annotation class
 
     :param name: Name / Type of the annotation (see also :class:`Key`)
     :param value: Value of the annotation
