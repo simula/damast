@@ -44,7 +44,8 @@ dependencies = [
     "pyais",
     "pydantic",
     "scikit-learn",
-    "vaex",
+    #"vaex",
+    "git+https://github.com/2maz/vaex.git@numpy-v2",
     # BEGIN keras backends
     "jax[cpu]",
     "tf-nightly",
