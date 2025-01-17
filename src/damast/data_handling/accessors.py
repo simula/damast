@@ -286,7 +286,10 @@ class GroupSequenceAccessor:
 
                 X = np.array(chunk)
                 if use_target:
-                    y = np.array(target_chunk, copy=False)
+                    if np.lib.NumpyVersion(np.__version__) >= '2.0.0':
+                        y = np.array(target_chunk, copy=False)
+                    else:
+                        y = np.array(target_chunk)
                     yield (X, y)
                 else:
                     yield (X,)
