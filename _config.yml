@@ -2,7 +2,9 @@
 # Learn more at https://jupyterbook.org/customize/config.html
 
 title: DAMAST - documentation
-author: Jørgen S. Dokken
+author:
+- Jørgen S. Dokken
+- Thomas Roehr
 
 # Force re-execution of notebooks on each build.
 # See https://jupyterbook.org/content/execute.html
@@ -16,7 +18,7 @@ execute:
 
 # Information about where the book exists on the web
 repository:
-  url: https://gitlab.com/simula-srl/damast  # Online location of your book
+  url: https://github.com.com/simula/damast  # Online location of your book
   path_to_book: "." # Optional path to your book, relative to the repository root
   branch: main  # Which branch of the repository should be used when creating links (optional)
 
