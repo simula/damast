@@ -199,9 +199,7 @@ class BaseModel(ABC):
               initial_epoch: int = 0,
               save_history: bool = True,
               **kwargs) -> None:
-        if True:
-        #try:
-
+        try:
             callbacks = []
             # check https://keras.io/api/callbacks/ for available callbacks
             checkpoint_filepath = self.checkpoints_dir / CHECKPOINT_BEST
@@ -241,8 +239,8 @@ class BaseModel(ABC):
                                           callbacks=callbacks,
                                           **kwargs
                                           )
-        #except Exception as e:
-        #    raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
+        except Exception as e:
+            raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
 
         # Save the history
         if save_history:
