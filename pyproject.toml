@@ -44,8 +44,7 @@ dependencies = [
     "pyais",
     "pydantic",
     "scikit-learn",
-    #"vaex",
-    "git+https://github.com/2maz/vaex.git@numpy-v2",
+    "vaex-meta @ git+https://github.com/2maz/vaex.git@numpy-v2",
     # BEGIN keras backends
     "jax[cpu]",
     "tf-nightly",
@@ -84,9 +83,6 @@ damast = "damast.cli.main:run"
 
 [tool.mypy]
 ignore_missing_imports = true
-
-[tools.setuptools]
-package-dir = "src"
 
 # Disable to be able to debug in IDE
 #[tool.pytest.ini_options]
