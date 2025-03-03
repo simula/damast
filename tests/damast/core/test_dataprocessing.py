@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
+import polars
 import pytest
-import vaex
 from astropy import units
-from vaex.ml import CycleTransformer
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
@@ -15,6 +14,8 @@ from damast.core.dataprocessing import (
     )
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
+from damast.core.polars_dataframe import PolarsDataFrame
+from damast.core.transformations import CycleTransformer, Transformer
 
 
 class DataProcessorA(PipelineElement):
@@ -36,9 +37,8 @@ class DataProcessorA(PipelineElement):
         lat_cyclic_transformer = CycleTransformer(features=[self.get_name("latitude")], n=180.0)
         lon_cyclic_transformer = CycleTransformer(features=[self.get_name("longitude")], n=360.0)
 
-        _df = lat_cyclic_transformer.fit_transform(df=df)
-        _df = lon_cyclic_transformer.fit_transform(df=_df)
-        df._dataframe = _df
+        df = lat_cyclic_transformer.fit_transform(df=df)
+        df = lon_cyclic_transformer.fit_transform(df=df)
         return df
 
 
@@ -54,9 +54,8 @@ class DataProcessorAFail(PipelineElement):
         "latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        transformer = CycleTransformer(features=["latitude", "longitude"])
-        df._dataframe = transformer.fit_transform(df._dataframe)
-        return df
+        transformer = CycleTransformer(features=["latitude", "longitude"], n=360)
+        return transformer.fit_transform(df)
 
 
 class DataProcessorARemoveCol(PipelineElement):
@@ -68,8 +67,7 @@ class DataProcessorARemoveCol(PipelineElement):
         "longitude": {"unit": units.deg}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        df._dataframe.drop(columns=["latitude"], inplace=True)
-        return df
+        return df.drop(columns=["latitude"])
 
 
 class TransformerA(PipelineElement):
@@ -85,12 +83,11 @@ class TransformerA(PipelineElement):
         "longitude_y": {"unit": units.deg}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        lat_cyclic_transformer = vaex.ml.CycleTransformer(features=["latitude"], n=180.0)
-        lon_cyclic_transformer = vaex.ml.CycleTransformer(features=["longitude"], n=360.0)
+        lat_cyclic_transformer = CycleTransformer(features=["latitude"], n=180.0)
+        lon_cyclic_transformer = CycleTransformer(features=["longitude"], n=360.0)
 
-        _df = lat_cyclic_transformer.fit_transform(df=df)
-        _df = lon_cyclic_transformer.fit_transform(df=_df)
-        df._dataframe = _df
+        df = lat_cyclic_transformer.fit_transform(df=df)
+        df = lon_cyclic_transformer.fit_transform(df=df)
         return df
 
 
@@ -109,8 +106,12 @@ class TransformerB(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         # This operation is does not really make sense, but acts as a placeholder to generate
         # the desired output columns
-        df["delta_longitude"] = df["longitude_x"] - df["longitude_y"]
-        df["delta_latitude"] = df["latitude_x"] - df["latitude_y"]
+        df._dataframe = df.with_columns(
+                (polars.col("longitude_x") - polars.col("longitude_y")).alias("delta_longitude")
+            )
+        df._dataframe = df.with_columns(
+                (polars.col("latitude_x") - polars.col("latitude_y")).alias("delta_latitude")
+            )
         return df
 
 
@@ -126,7 +127,9 @@ class TransformerC(PipelineElement):
         "label": {}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        df["label"] = "data-label"
+        df._dataframe = df._dataframe.with_columns(
+                polars.lit("data-label").alias("label")
+        )
         return df
 
 
@@ -150,8 +153,7 @@ def height_dataframe():
     columns = [
         "height", "letter"
     ]
-    pandas_df = pd.DataFrame(data, columns=columns)
-    return vaex.from_pandas(pandas_df)
+    return polars.LazyFrame(data, columns)
 
 
 @pytest.fixture()
@@ -179,8 +181,7 @@ def lat_lon_dataframe():
     columns = [
         "latitude", "longitude"
     ]
-    pandas_df = pd.DataFrame(data, columns=columns)
-    return vaex.from_pandas(pandas_df)
+    return polars.LazyFrame(data, columns)
 
 
 @pytest.fixture()
@@ -322,8 +323,7 @@ def test_single_element_pipeline(tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df_pd = pd.DataFrame(data, columns=column_names)
-    df = vaex.from_pandas(df_pd)
+    df = polars.LazyFrame(data, column_names)
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):
@@ -353,8 +353,7 @@ def test_decorator_renaming(varname, tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df_pd = pd.DataFrame(data, columns=column_names)
-    df = vaex.from_pandas(df_pd)
+    df = polars.LazyFrame(data, column_names)
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):
@@ -408,8 +407,7 @@ def test_toplevel_decorators(tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df_pd = pd.DataFrame(data, columns=column_names)
-    df = vaex.from_pandas(df_pd)
+    df = polars.LazyFrame(data, column_names)
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):
@@ -459,5 +457,6 @@ def test_save_load_state(lat_lon_annotated_dataframe, lat_lon_metadata, tmp_path
 
     loaded_adf = pipeline.load_state(df=lat_lon_annotated_dataframe, dir=tmp_path)
 
-    for i in range(len(df_transformed)):
-        assert np.array_equiv(df_transformed[i], loaded_adf[i])
+    #for i in range(len(df_transformed)):
+        #assert np.array_equiv(df_transformed[i], loaded_adf[i])
+    assert PolarsDataFrame(df_transformed).equals(PolarsDataFrame(loaded_adf))

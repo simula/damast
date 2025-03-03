@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import vaex
+import polars as pl
 import yaml
-from vaex.datatype import DataType
 
 from .annotations import Annotation, History
 from .datarange import DataElement, DataRange, MinMax
 from .formatting import DEFAULT_INDENT
+from .polars_dataframe import PolarsDataFrame
 from .units import Unit, unit_registry, units
 
 __all__ = [
@@ -322,7 +322,7 @@ class DataSpecification:
 
         :param type_name: Name of the type
         :return: Instance of the type object
-        :raise ValueError: Raises if ``type_name`` cannot be resolved to a known type (in builtins or :mod:`vaex`)
+        :raise ValueError: Raises if ``type_name`` cannot be resolved to a known type (in builtins or :mod:`polars`)
         """
         exceptions: List[Any] = []
         try:
@@ -335,7 +335,7 @@ class DataSpecification:
             exceptions.append(e)
 
         try:
-            dtype = vaex.dtype(type_name)
+            dtype = getattr(pl.datatypes, type_name)
             return dtype
         except TypeError as e:
             exceptions.append(e)
@@ -344,7 +344,7 @@ class DataSpecification:
             f"{cls.__name__}.resolve_representation_type: "
             f" could not find type '{type_name}'."
             f"It does not exist in builtins, nor "
-            f" is this a known vaex.dtype -- {exceptions}"
+            f" is this a known polar datatype -- {exceptions}"
         )
 
     def __iter__(self):
@@ -495,8 +495,11 @@ class DataSpecification:
         return data
 
     def apply(
-        self, df: vaex.DataFrame, column_name: str, validation_mode: ValidationMode
-    ):
+        self,
+        df: pl.LazyFrame,
+        column_name: str,
+        validation_mode: ValidationMode
+    ) -> pl.LazyFrame:
         """
         Apply the metadata object to the dataframe
 
@@ -505,24 +508,28 @@ class DataSpecification:
         :param validation_mode: Mode which shall apply to updating either data or
             metadata, when encountering inconsistencies
         """
+
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
+            pdf = PolarsDataFrame(df)
             if self.representation_type is not None:
-                if df[column_name].dtype != self.representation_type:
+                dtype = pdf.dtype(column_name)
+                if dtype.from_python(self.representation_type) != self.representation_type and \
+                    dtype.to_python() != self.representation_type:
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: column '{column_name}':"
                         f" expected representation type: {self.representation_type},"
-                        f" but got '{df[column_name].dtype}'"
+                        f" but got '{dtype}'"
                     )
 
-            if self.unit is not None:
-                if column_name not in df.units:
-                    df.units[column_name] = self.unit
-                else:
-                    assert df.units[column_name] == self.unit
+            #if self.unit is not None:
+            #    if column_name not in df.units:
+            #        df.units[column_name] = self.unit
+            #    else:
+            #        assert df.units[column_name] == self.unit
 
             if self.value_range:
-                min_value, max_value = df.minmax(column_name)
+                min_value, max_value = pdf.minmax(column_name)
                 if not self.value_range.is_in_range(min_value):
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
@@ -533,70 +540,81 @@ class DataSpecification:
                         f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
                         f" lies outside of range {self.value_range} for column '{column_name}'"
                     )
-            return
+            return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
+            pdf = PolarsDataFrame(df)
             if self.representation_type is not None:
-                if df[column_name].dtype != self.representation_type:
+                dtype = pdf.dtype(column_name)
+                if dtype != self.representation_type:
                     warnings.warn(
                         f"{self.__class__.__name__}.apply: column '{column_name}':"
                         f" expected representation type: {self.representation_type},"
-                        f" but got '{df[column_name].dtype}'"
+                        f" but got '{dtype}'"
                     )
-                    df[column_name].dtype = self.representation_type
+                    pdf.set_dtype(column_name, self.representation_type)
 
-            if self.unit is not None:
-                if column_name not in df.units:
-                    df.units[column_name] = self.unit
-                else:
-                    if df.units[column_name] != self.unit:
-                        warnings.warn(
-                            f"{self.__class__.__name__}.apply: column '{column_name}:"
-                            f" expected unit type: {self.unit},"
-                            f" but got '{df.units[column_name]}'"
-                        )
-                        df[column_name].dtype = self.unit
+            #if self.unit is not None:
+            #    if column_name not in df.units:
+            #        df.units[column_name] = self.unit
+            #    else:
+            #        if df.units[column_name] != self.unit:
+            #            warnings.warn(
+            #                f"{self.__class__.__name__}.apply: column '{column_name}:"
+            #                f" expected unit type: {self.unit},"
+            #                f" but got '{df.units[column_name]}'"
+            #            )
+            #            df[column_name].dtype = self.unit
 
             if self.value_range:
-                warnings.warn(
-                    f"Replacing values in column '{column_name}' that are out of range."
-                )
-                mask = ~df[column_name].apply(self.value_range.is_in_range)
-                df[column_name] = np.ma.masked_array(
-                    df[column_name].evaluate(),
-                    mask.evaluate(),
-                    dtype=self.representation_type,
-                )
-            return
+                if self.missing_value is None:
+                    warnings.warn(
+                        f"Filtering out for column '{column_name}' values that are out of range."
+                    )
+                    pdf._dataframe = pdf._dataframe.filter(
+                            (pl.col(column_name) >= self.value_range.min) &
+                            (pl.col(column_name) <= self.value_range.max)
+                        )
+                else:
+                    pdf._dataframe = pdf._dataframe.with_columns(
+                                pl.when(
+                                    (pl.col(column_name) < self.value_range.min) |
+                                    (pl.col(column_name) > self.value_range.max)
+                                ).then(self.missing_value)
+                                .otherwise(pl.col(column_name))
+                                .alias(column_name)
+                              )
+            return pdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
-            self.representation_type = df[column_name].dtype
+            pdf = PolarsDataFrame(df)
+            self.representation_type = pdf.dtype(column_name)
 
-            if column_name in df.units:
-                self.unit = df.units[column_name]
+            #if column_name in df.units:
+            #    self.unit = df.units[column_name]
 
             try:
-                min_value, max_value = df.minmax(column_name)
+                min_value, max_value = pdf.minmax(column_name)
 
-                # Handle time issue since NaT can be returned as 'min' value
-                if isinstance(min_value, np.datetime64) or isinstance(min_value, np.timedelta64):
-                    if np.isnat(min_value):
-                        min_value = df[~df[column_name].isin([min_value])].min(column_name)
-                    if np.isnat(max_value):
-                        max_value = df[~df[column_name].isin([max_value])].max(column_name)
+               # # Handle time issue since NaT can be returned as 'min' value
+               # if isinstance(min_value, np.datetime64) or isinstance(min_value, np.timedelta64):
+               #     if np.isnat(min_value):
+               #         min_value = df[~df[column_name].isin([min_value])].min(column_name)
+               #     if np.isnat(max_value):
+               #         max_value = df[~df[column_name].isin([max_value])].max(column_name)
 
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
                         self.value_range.merge(MinMax(float(min_value), float(max_value)))
                 else:
-                    warnings.warn(
-                        f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
-                    )
-                    self.value_range = MinMax(float(min_value), float(max_value))
+                     warnings.warn(
+                         f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
+                     )
+                     self.value_range = MinMax(float(min_value), float(max_value))
             except ValueError:
                 # Type might not be numeric
                 pass
-            return
+            return pdf._dataframe
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
@@ -763,7 +781,7 @@ class DataSpecification:
 
 class MetaData:
     """
-    The representation for metadata that can be associated with a :class:`DataFrame`.
+    The representation for metadata that can be associated with a :class:`polary.LazyFrame`.
 
     :param columns: (Ordered) list of column specifications
     :param annotations:  List of annotations for this dataframe.
@@ -992,10 +1010,10 @@ class MetaData:
 
     def apply(
         self,
-        df: vaex.DataFrame,
+        df: pl.LazyFrame,
         validation_mode: ValidationMode = ValidationMode.READONLY,
-    ):
-        """Check that each column in the :class:`vaex.DataFrame` fulfills the
+    ) -> pl.LazyFrame:
+        """Check that each column in the :class:`polar.LazyFrame` fulfills the
         data-specifications.
 
         :param df: The dataframe
@@ -1003,22 +1021,30 @@ class MetaData:
             for a given range specification, map data within range.
         :raises: ValueError: If data-frame is missing a column in the Data-specification
         """
-        assert isinstance(df, vaex.DataFrame)
+        assert isinstance(df, pl.LazyFrame)
 
         for column_spec in self.columns:
-            if column_spec.name in df.column_names:
-                column_spec.apply(
+            if column_spec.name in PolarsDataFrame(df).column_names:
+                df = column_spec.apply(
                     df=df, column_name=column_spec.name, validation_mode=validation_mode
                 )
             else:
                 raise ValueError(
                     f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
-                    f" Found {len(df.column_names)} column(s): {','.join(df.column_names)}"
+                    f" Found {len(df.columns)} column(s): {','.join(df.columns)}"
                 )
+        return df
 
     def __contains__(self, column_name: str):
         """"""
         return any(colum_spec.name == column_name for colum_spec in self.columns)
+
+    def drop(self, columns: str | list[str]):
+        """
+        Drop specification by column name
+        """
+        columns = [columns] if type(columns) == str else columns
+        self.columns = [x for x in self.columns if x.name not in columns]
 
     def __getitem__(self, column_name: str) -> DataSpecification:
         """

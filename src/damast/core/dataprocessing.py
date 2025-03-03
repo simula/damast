@@ -15,9 +15,10 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import vaex.ml
 import yaml
-from vaex.ml.transformations import Transformer
+
+from damast.core.pipeline import Pipeline
+from damast.core.transformations import Transformer
 
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT
@@ -178,7 +179,7 @@ def output(requirements: Dict[str, Any]):
                 )
 
             for c in input_columns:
-                if c not in adf._dataframe.column_names:
+                if c not in adf.column_names:
                     raise RuntimeError(
                         f"output: column '{c}' was removed by decorated function."
                         f" Only adding of columns is permitted."
@@ -650,7 +651,8 @@ class DataProcessingPipeline(PipelineElement):
         :param dir: directory where to save this pipeline
         """
         filename = Path(dir) / f"{self.name}{VAEX_STATE_SUFFIX}"
-        df._dataframe.state_write(file=filename)
+        #df._dataframe.state_write(file=filename)
+        df._dataframe.serialize(filename)
         return filename
 
     @classmethod
@@ -718,7 +720,8 @@ class DataProcessingPipeline(PipelineElement):
                 f" {','.join([x.name for x in files])}"
             )
 
-        df.dataframe.state_load(file=filename)
+        #df.dataframe.state_load(file=filename)
+        df._dataframe = df.dataframe.deserialize(filename)
         return df
 
     def prepare(self, df: AnnotatedDataFrame) -> DataProcessingPipeline:
@@ -790,18 +793,15 @@ class DataProcessingPipeline(PipelineElement):
             in_df = copy.deepcopy(df)
 
         steps = [t for _, t in self.steps]
-        pipeline = vaex.ml.Pipeline(steps)
+        pipeline = Pipeline(steps)
 
         if df.is_empty():
             raise RuntimeError(
                 f"{self.__class__.__name__}.transform: there is no data available to transform"
             )
 
-        adf = pipeline.transform(dataframe=in_df)
+        adf = pipeline.transform(df=in_df)
         assert isinstance(adf, AnnotatedDataFrame)
-
-        # Remove all rows that have been filtered from the data-frame
-        adf._dataframe = adf.dataframe.extract()
         return adf
 
     def on_transform_start(self,

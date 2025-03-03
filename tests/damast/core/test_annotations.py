@@ -1,3 +1,4 @@
+import time
 from datetime import datetime as dt
 
 import pytest
@@ -30,18 +31,18 @@ def test_annotation():
                            value=a.value)
 
 def test_change():
-    now = dt.utcnow()
-    timestamp_txt = now.strftime(Change.TIMESTAMP_FORMAT)
+    created = dt.fromisoformat("2024-01-01 00:00:01")
+    timestamp_txt = created.strftime(Change.TIMESTAMP_FORMAT)
     timestamp = dt.strptime(timestamp_txt, Change.TIMESTAMP_FORMAT)
 
     c = Change(title="a-change-name",
                description="a-change-description",
-               timestamp=now
+               timestamp=created
                )
 
     equal_c = Change(title="a-change-name",
                description="a-change-description",
-               timestamp=now
+               timestamp=created
                )
 
     assert c.timestamp == timestamp
@@ -50,8 +51,9 @@ def test_change():
     assert timestamp_txt in str(c)
 
     assert c != 0
-    assert c != Change(title="new-title", description=c.description, timestamp=now)
-    assert c != Change(title=c.title, description="other-description", timestamp=now)
+    assert c != Change(title="new-title", description=c.description, timestamp=created)
+    assert c != Change(title=c.title, description="other-description", timestamp=created)
+
     assert c != Change(title=c.title, description=c.description)
 
 

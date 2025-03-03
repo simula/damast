@@ -36,15 +36,17 @@ classifiers = [
 
 dependencies = [
     "astropy",
+    "cloudpickle",
     "keras>=3.0",
     "matplotlib",
     "numba",
     "numpy",
+    "polars",
     "psutil",
     "pyais",
+    "pyarrow",
     "pydantic",
     "scikit-learn",
-    "vaex-meta @ git+https://github.com/2maz/vaex.git@numpy-v2",
     # BEGIN keras backends
     "jax[cpu]",
     "tf-nightly",
@@ -53,9 +55,9 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://gitlab.com/simula-srl/damast"
-documentation = "https://gitlab.com/simula-srl/damast"
-repository = "https://gitlab.com/simula-srl/damast"
+homepage = "https://github.com/simula/damast"
+documentation = "https://github.com/simula/damast"
+repository = "https://github.com/simula/damast"
 
 #[project.entry-points]
 
@@ -71,8 +73,14 @@ dev = [
     "tox"
 ]
 
+cuda = [
+    "cudf",
+    "polars[gpu]"
+]
+
 test = [
     "coverage",
+    "pandas",
     "pytest",
     "pytest-cov",
     "pydot"

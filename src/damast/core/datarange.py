@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 import numpy as np
-import vaex
 
 import damast.core.datarange
 
@@ -27,11 +26,6 @@ class DataElement:
         :param value: value of the DataElement
         :param dtype: datatype of the value
         """
-        if isinstance(dtype, vaex.datatype.DataType):
-            df = vaex.from_arrays(x=[value])
-            value = df.x.astype(dtype).evaluate()
-            return value[0]
-
         return dtype(value)
 
 
@@ -50,6 +44,9 @@ class DataRange(ABC):
         :param value: Value to check
         :return: True if value lies in range, False otherwise
         """
+
+    def is_not_in_range(self, value) -> bool:
+        return not self.is_in_range(value)
 
     def __contains__(self, value) -> bool:
         """
@@ -139,6 +136,9 @@ class ListOfValues:
         :return: True if value is in the list, false otherwise
         """
         return value in self.values
+
+    def is_not_in_range(self, value) -> bool:
+        return not self.is_in_range(value)
 
     def __eq__(self, other) -> bool:
         """

@@ -2,8 +2,8 @@ import datetime
 
 import astropy.units as units
 import numpy as np
+import polars
 import pytest
-import vaex
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
@@ -15,6 +15,7 @@ from damast.core.metadata import (
     Status,
     ValidationMode,
     )
+from damast.core.polars_dataframe import PolarsDataFrame
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -241,8 +242,7 @@ def test_unique_annotations():
         MetaData([column_spec], annotations=ants)
 
 
-def test_apply_update():
-
+def test_apply_update_with_row_drop():
     x_spec = DataSpecification(name="x",
                                     category=DataCategory.STATIC,
                                     value_range=MinMax(0, 3))
@@ -252,11 +252,32 @@ def test_apply_update():
 
     metadata = MetaData([x_spec, y_spec])
 
-    df = vaex.from_arrays(x=np.arange(6), y=np.arange(6)+2)
-    valid_x = (df["x"].evaluate() <= 3) & (df["x"].evaluate() >= 0)
-    valid_y = (df["y"].evaluate() >= 8) & (df["y"].evaluate() <= 15)
+    df = polars.LazyFrame({ 'x' : np.arange(6), 'y': np.arange(6)+8 })
+    valid = df.filter(
+                (polars.col("x") <= 3) &
+                (polars.col("x") >= 0) &
+                (polars.col("y") >= 8) &
+                (polars.col("y") <= 15)
+            ).collect()
 
-    metadata.apply(df, ValidationMode.UPDATE_DATA)
+    df = metadata.apply(df, ValidationMode.UPDATE_DATA)
+    assert PolarsDataFrame(valid).equals(PolarsDataFrame(df))
 
-    assert np.allclose(valid_x, ~df["x"].evaluate().mask)
-    assert np.allclose(valid_y, ~df["y"].evaluate().mask)
+def test_apply_update_with_setting_default_value():
+    x_spec = DataSpecification(name="x",
+                                    category=DataCategory.STATIC,
+                                    value_range=MinMax(0, 3),
+                                    missing_value=3
+                                )
+    y_spec = DataSpecification(name="y",
+                                    category=DataCategory.DYNAMIC,
+                                    value_range=MinMax(8, 15),
+                                    missing_value=15
+                              )
+
+    metadata = MetaData([x_spec, y_spec])
+
+    df = polars.LazyFrame({ 'x' : np.arange(6), 'y': np.arange(6)+8 })
+    df = metadata.apply(df, ValidationMode.UPDATE_DATA)
+
+    df = metadata.apply(df, ValidationMode.READONLY)

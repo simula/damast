@@ -3,7 +3,9 @@ Module to define an annotated dataframe, i.e. the combination of data and metada
 """
 from __future__ import annotations
 
+import copy
 import gc
+import json
 import logging
 from logging import INFO, Logger, getLogger
 from pathlib import Path
@@ -12,11 +14,14 @@ from typing import Any, Callable, List, Optional, Union
 
 import h5py
 import numpy as np
-import vaex
-from vaex import DataFrame
+import polars
+import pyarrow
+import pyarrow.parquet as pq
+from polars import LazyFrame as DataFrame
 
 from .annotations import Annotation
 from .metadata import DataSpecification, MetaData, ValidationMode
+from .polars_dataframe import PolarsDataFrame
 
 __all__ = ["AnnotatedDataFrame", "replace_na"]
 
@@ -43,15 +48,15 @@ def replace_na(df: DataFrame, dtype: str, column_names: Optional[List[str]] = No
     for column in column_names:
         mask = df[column].isnan() or df[column].isna()
         df[column] = np.ma.masked_array(
-            df[column].evaluate(), mask.evaluate(), dtype=dtype
+            df[column].collect(), mask.collect(), dtype=dtype
         )
 
 
-class AnnotatedDataFrame:
+class AnnotatedDataFrame(PolarsDataFrame):
     """
     A dataframe that is associated with metadata.
 
-    :param dataframe: The vaex dataframe holding the data
+    :param dataframe: The polars dataframe holding the data
     :param metadata: The metadata for the dataframe
     :param validation_mode:
         - If :attr:`damast.core.ValidationMode.UPDATE_DATA` replace values outside of
@@ -68,11 +73,14 @@ class AnnotatedDataFrame:
 
     def __init__(
         self,
-        dataframe: DataFrame,
+        dataframe: polars.DataFrame | polars.LazyFrame,
         metadata: MetaData,
         validation_mode: ValidationMode = ValidationMode.READONLY,
     ):
-        if not isinstance(dataframe, DataFrame):
+        if isinstance(dataframe, polars.DataFrame):
+            dataframe = dataframe.lazy()
+
+        if not isinstance(dataframe, polars.LazyFrame):
             raise ValueError(
                 f"{self.__class__.__name__}.__init__: dataframe must be"
                 f" of type 'DataFrame', but was '{type(dataframe)}"
@@ -84,24 +92,12 @@ class AnnotatedDataFrame:
                 f" of type 'MetaData', but was '{type(metadata)}"
             )
 
-        self._dataframe = dataframe
+        super().__init__(df=dataframe)
+
         self._metadata = metadata
 
         # Ensure conformity of the metadata with the dataframe
         self.validate_metadata(validation_mode=validation_mode)
-
-    @property
-    def dataframe(self) -> vaex.DataFrame:
-        """
-        Allows to access the underlying dataframe directly.
-
-        .. note::
-            AnnotatedDataFrame behaves like a ``vaex.DataFrame``, so typically you will not need to access the
-            dataframe through this property.
-
-        :return: The underlying dataframe
-        """
-        return self._dataframe
 
     @property
     def metadata(self) -> MetaData:
@@ -118,7 +114,7 @@ class AnnotatedDataFrame:
         :raise RuntimeError: Dependending on the validation mode an exception will be raise to ensure the data spec
                conformance
         """
-        self._metadata.apply(df=self._dataframe, validation_mode=validation_mode)
+        self._dataframe = self._metadata.apply(df=self._dataframe, validation_mode=validation_mode)
 
     def is_empty(self) -> bool:
         """
@@ -190,45 +186,51 @@ class AnnotatedDataFrame:
         # First save the hdf5 file in order to add then the metadata to it
         self.export_hdf5(filename)
 
-        # Add metadata
-        metadata = dict(self._metadata)
-        annotations = self._metadata.Key.annotations.value
-        columns = self._metadata.Key.columns.value
-        list_attrs = metadata[columns]
-        dict_annotations = metadata[annotations]
-        # Include virtual column names as well
-        list_columns = self.get_column_names(virtual=True)
+        ## Add metadata
+        #metadata = dict(self._metadata)
+        #annotations = self._metadata.Key.annotations.value
+        #columns = self._metadata.Key.columns.value
+        #list_attrs = metadata[columns]
+        #dict_annotations = metadata[annotations]
+        ## Include virtual column names as well
+        #list_columns = self.get_column_names(virtual=True)
 
-        h5f = h5py.File(filename, "r+")
-        # Add annotations to main group
-        for key in dict_annotations:
-            if (
-                key in h5f[VAEX_HDF5_ROOT].attrs.keys()
-                and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
-            ):
-                raise RuntimeError(
-                    f"{self.__class__.__name__}.save:"
-                    f" attribute '{key}' present"
-                    f" in vaex dataframe but different from user-defined"
-                )
+        #h5f = h5py.File(filename, "r+")
+        ## Add annotations to main group
+        #for key in dict_annotations:
+        #    if (
+        #        key in h5f[VAEX_HDF5_ROOT].attrs.keys()
+        #        and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
+        #    ):
+        #        raise RuntimeError(
+        #            f"{self.__class__.__name__}.save:"
+        #            f" attribute '{key}' present"
+        #            f" in vaex dataframe but different from user-defined"
+        #        )
 
-            h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
+        #    h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
 
-        # Add attributes for columns
-        for attrs in list_attrs:
-            if (
-                DataSpecification.Key.name.value in attrs.keys()
-                and attrs[DataSpecification.Key.name.value] in list_columns
-            ):
-                group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
-                if group_name in h5f:
-                    for key in attrs.keys():
-                        if isinstance(attrs[key], dict):
-                            h5f[group_name].attrs[key] = str(attrs[key])
-                        else:
-                            h5f[group_name].attrs[key] = attrs[key]
-        h5f.close()
+        ## Add attributes for columns
+        #for attrs in list_attrs:
+        #    if (
+        #        DataSpecification.Key.name.value in attrs.keys()
+        #        and attrs[DataSpecification.Key.name.value] in list_columns
+        #    ):
+        #        group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
+        #        if group_name in h5f:
+        #            for key in attrs.keys():
+        #                if isinstance(attrs[key], dict):
+        #                    h5f[group_name].attrs[key] = str(attrs[key])
+        #                else:
+        #                    h5f[group_name].attrs[key] = attrs[key]
+        #h5f.close()
         return self
+
+    def export(self, filename: str | Path):
+        arrow_table = self._dataframe.collect().to_arrow()
+        new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata)).encode('UTF-8')})
+        arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
+        pq.write_table(arrow_table, filename)
 
     @classmethod
     def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:
@@ -238,35 +240,20 @@ class AnnotatedDataFrame:
         :param filename: Filename to use for importing and creating the annotated dataframe
 
         """
-        df = vaex.open(filename)
         metadata = None
-        annotations = []
-        list_attrs = []
-        list_columns = list(df.columns)
-        if Path(filename).suffix in [".hdf5", ".h5"]:
-            # Read metadata
-            h5f = h5py.File(filename, "r")
-            for key in h5f[VAEX_HDF5_ROOT].attrs.keys():
-                annotations.append(
-                    Annotation(name=key, value=h5f[VAEX_HDF5_ROOT].attrs[key])
-                )
+        if Path(filename).suffix in [ ".pq", ".parquet"]:
+            df = polars.scan_parquet(filename)
+            schema = pq.read_schema(filename)
 
-            # Read attributes for columns
-            for colname in list_columns:
-                group_name = f"/{VAEX_HDF5_COLUMNS}/{colname}"
-                if group_name not in h5f:
-                    continue
-                ds_dict = {}
+            data = schema.metadata[b"annotated_dataframe"]
+            metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
+        elif Path(filename).suffix in [ ".csv", ".parquet"]:
+            df = polars.scan_csv(filename)
+        else:
+            raise RuntimeError(f"Could not load {filename} - please use parquet files")
 
-                for key in h5f[group_name].attrs.keys():
-                    ds_dict[key] = h5f[group_name].attrs[key]
 
-                if ds_dict:
-                    column_spec = DataSpecification.from_dict(data=ds_dict)
-                    list_attrs.append(column_spec)
-            h5f.close()
-
-        if not list_attrs:
+        if not metadata:
             metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)
             if metadata_filename.exists():
                 metadata = MetaData.load_yaml(filename=metadata_filename)
@@ -280,45 +267,8 @@ class AnnotatedDataFrame:
 
         if not metadata:
             metadata = MetaData(columns=list_attrs, annotations=annotations)
+
         return cls(dataframe=df, metadata=metadata)
-
-    def __getattr__(self, item):
-        """
-        Ensure that this object behaves like a :class:`vaex.DataFrame`.
-
-        :param item: Name of column
-        :return: The column data
-        """
-        if item in ["__setstate__", "__getstate__"]:
-            raise AttributeError(f"{self.__class__.__name__}.__getattr__: {item} does not exist")
-
-        return getattr(self._dataframe, item)
-
-    def __getitem__(self, item) -> Any:
-        """
-        Make dataframe subscriptable and behave like the :class:`vaex.DataFrame`.
-
-        :param item: Name of the key when using [] operators
-        :return: item/column from the underlying vaex.dataframe
-        """
-        return self._dataframe[item]
-
-    def __setitem__(self, key, value):
-        """
-        Set the column for the annotated dataframe, and allow to behave like the vaex.dataframe.
-
-        :param key: Column name
-        :param value: Value to set the column to
-        """
-        self._dataframe[key] = value
-
-    def __len__(self) -> int:
-        """
-        Get the length of the (underlying) dataframe.
-
-        :return: Length of the dataframe
-        """
-        return len(self._dataframe)
 
     @classmethod
     def convert_csv_to_adf(
@@ -341,32 +291,26 @@ class AnnotatedDataFrame:
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
-        with TemporaryDirectory() as tmpdirname:
-            hdf_filenames = []
-            for filename in sorted(csv_filenames):
-                _log.info(f"Loading csv file: {filename}")
-                # Ensure that temporary dataframe conversion
-                # will not accidentally exhaust memory
-                gc.collect()
+        df = polars.scan_csv(sorted(csv_filenames), separator=csv_sep)
+        adf = cls(dataframe=df, metadata=metadata)
 
-                tmp_hdf5 = Path(tmpdirname) / f"{Path(filename).stem}.hdf5"
-                df = vaex.from_csv(
-                    filename, convert=str(tmp_hdf5), progress=progress, sep=csv_sep
-                )
+        _log.info(f"Metadata: {dict(metadata)}")
+        _log.info(f"Saving dataframe into {output_filename}")
 
-                # validate the data
-                AnnotatedDataFrame(
-                    metadata=metadata, dataframe=df, validation_mode=validation_mode
-                )
+        adf.save(filename=output_filename)
 
-                hdf_filenames.append(str(tmp_hdf5))
+    def drop(self, columns, strict: bool = True) -> AnnotatedDataFrame:
+        self._dataframe = self._dataframe.drop(columns, strict=strict)
+        self._metadata.drop(columns)
+        return self
 
-            _log.info(f"Concatenating files: {hdf_filenames}")
-            df = vaex.concat([vaex.open(x) for x in hdf_filenames])
+    def copy(self):
+        return copy.deepcopy(self)
 
-            adf = cls(dataframe=df, metadata=metadata)
+    @property
+    def shape(self):
+        return self._dataframe.collect().shape
 
-            _log.info(f"Metadata: {dict(metadata)}")
-            _log.info(f"Saving dataframe into {output_filename}")
 
-            adf.save(filename=output_filename)
+    def __deepcopy__(self, memo=None):
+        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata))
