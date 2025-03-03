@@ -17,7 +17,7 @@ from damast.core.metadata import (
     MetaData,
     ValidationMode,
     )
-from damast.core.polars_dataframe import PolarsDataFrame
+from damast.core.types import XDataFrame
 
 
 @pytest.fixture()
@@ -167,7 +167,7 @@ def test_annotated_dataframe_import_csv():
 
     adf = AnnotatedDataFrame.from_file(csv_path)
     assert adf.column_names == ["height", "letter"]
-    assert PolarsDataFrame(adf._dataframe).equals(PolarsDataFrame(polars.scan_csv(csv_path)))
+    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path)))
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
@@ -196,7 +196,7 @@ def test_01_dataframe_composition():
                              metadata=md)
 
     assert adf._metadata == md
-    assert PolarsDataFrame(adf._dataframe).equals(PolarsDataFrame(df))
+    assert XDataFrame(adf._dataframe).equals(XDataFrame(df))
 
     assert adf.column_names == df.columns
 
@@ -228,7 +228,7 @@ def test_force_range():
             validation_mode=ValidationMode.UPDATE_DATA
           )
 
-    assert PolarsDataFrame(adf._dataframe).equals(PolarsDataFrame(df_filtered))
+    assert XDataFrame(adf._dataframe).equals(XDataFrame(df_filtered))
 
 def test_convert_csv_to_adf(tmp_path):
     output_filename =  tmp_path / "test-convert-csv.pq" #hdf5"

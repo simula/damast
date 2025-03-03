@@ -10,11 +10,9 @@ from typing import Any, List, Optional, Union
 import keras.utils
 import numpy as np
 import pandas as pd
-import vaex
-import vaex.ml.generate
-import vaex.ml.state
-import vaex.serialize
-from vaex import DataFrame
+import polars as pl
+
+from damast.core.types import DataFrame, XDataFrame
 
 __all__ = [
     "GroupSequenceAccessor",
@@ -59,12 +57,13 @@ class GroupSequenceAccessor:
         self.df = df
 
         self.group_column = group_column
-        self.groups = df.unique(getattr(df, group_column))
+        self.groups = df.unique(group_column)
+
         if sort_columns is not None:
-            sc = vaex.utils._ensure_list(sort_columns)
-            self.sort_columns = vaex.utils._ensure_strings_from_expressions(sc)
+            self.sort_columns = sort_columns if type(sort_columns) == list else [sort_columns]
         else:
             self.sort_columns = sort_columns
+
         self.timeout_in_s = timeout_in_s
 
     def split_random(self, ratios: List[float]) -> List[List[Any]]:
@@ -77,10 +76,11 @@ class GroupSequenceAccessor:
         :return: Following the ratios, returns lists of randomly sampled values from the id/group column
         """
         scaled_ratios = np.asarray(ratios) / sum(ratios)
+        groups = self.groups[self.group_column].to_numpy().copy()
 
-        groups = self.groups.copy()
         random.shuffle(groups)
         number_of_groups = len(groups)
+
         partition_sizes = np.asarray(np.round(number_of_groups*scaled_ratios), dtype=int)
         assert (len(groups) == sum(partition_sizes))
         from_idx = 0
@@ -163,23 +163,23 @@ class GroupSequenceAccessor:
         # Check that all features have the same data-type
         datatypes = self.df[features].dtypes
         for dtype in datatypes:
-            if dtype != datatypes.iloc[0]:
+            if dtype != datatypes[0]:
                 raise ValueError(f"{self.__class__.__name__}:"
                                  f" Features {features} do not have a consistent (single) datatype,"
-                                 f" got {datatypes.to_list()}")
+                                 f" got {datatypes}")
 
         use_target = target is not None
         if use_target:
             datatypes = self.df[target].dtypes
             for dtype in datatypes:
-                if dtype != datatypes.iloc[0]:
+                if dtype != datatypes[0]:
                     raise ValueError(f"{self.__class__.__name__}:"
                                      f" Targets {target} do not have a consistent (single) datatype,"
-                                     f" got {datatypes.to_list()}")
+                                     f" got {datatypes}")
 
         if use_target:
-            target = vaex.utils._ensure_list(target)
-            target = vaex.utils._ensure_strings_from_expressions(target)
+            target = target if type(target) == list else [target]
+
             if sequence_forecast < 0:
                 raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
             if sequence_forecast == 0:
@@ -219,8 +219,7 @@ class GroupSequenceAccessor:
                 all_columns += self.sort_columns
             use_target = target is not None
             if use_target:
-                target = vaex.utils._ensure_list(target)
-                target = vaex.utils._ensure_strings_from_expressions(target)
+                target = target if type(target) == list else target
                 all_columns += target
             else:
                 # If no target, we are not forecasting
@@ -234,7 +233,7 @@ class GroupSequenceAccessor:
                 chunk = []
                 target_chunk = []
                 for i in range(chunk_size):
-                    sequence: pd.DataFrame = None
+                    sequence: DataFrame = None
                     start_time = time.perf_counter()
                     sample_count = 0
                     sample_length = 0
@@ -243,14 +242,16 @@ class GroupSequenceAccessor:
                     while not (time.perf_counter() - start_time) > self.timeout_in_s:
                         group = random.choice(groups)
                         # Since we will need the timeline later - we further deal with pandas DataFrame
-                        # directly - thus, we do not use a copy of the vaex DataFrame (only used columns)
-                        sequence = self.df[getattr(self.df, self.group_column) == group][all_columns].to_pandas_df()
+                        # directly - thus, we do not use a copy of the DataFrame (only used columns)
+                        sequence = self.df\
+                                    .filter(pl.col(self.group_column) == group[self.group_column])\
+                                    .select(all_columns)
 
                         # If sort columns are set, then ensure that the sorting is done
                         if self.sort_columns is not None:
-                            sequence.sort_values(by=self.sort_columns, inplace=True, ignore_index=True)
+                            sequence = sequence.sort(by=self.sort_columns)
                         elif shuffle:
-                            sequence = sequence.sample(frac=1)
+                            sequence = sequence.sample(fraction=1)
 
                         len_sequence = sequence.shape[0]
                         if len_sequence >= (sequence_length + sequence_forecast):
@@ -279,7 +280,7 @@ class GroupSequenceAccessor:
 
                         target_window = sequence[target_start_idx:target_end_idx][target]
                         if sequence_forecast == 1:
-                            target_window = target_window.iloc[0]
+                            target_window = target_window[0]
 
                         # target it the last step in the timeline, so the last
                         target_chunk.append(target_window.to_numpy())
@@ -325,12 +326,15 @@ class SequenceIterator:
                  sort_columns: List[str] = None):
         if sort_columns is not None:
             if isinstance(df, DataFrame):
+                df = df.collect()
+
+            if isinstance(df, pl.dataframe.DataFrame):
                 self.df = df.sort(by=sort_columns)
             elif isinstance(df, pd.DataFrame):
                 self.df = df.sort_values(by=sort_columns)
             else:
-                raise RuntimeError(f"{self.__class__.__name__}.__init__: df must be"
-                                   f"either vaex.DataFrame or pandas.DataFrame")
+                raise RuntimeError(f"{self.__class__.__name__}.__init__: df was {type(df)}, but must be "
+                                   f"either polars.dataframe.DataFrame or pandas.DataFrame")
         else:
             self.df = df
 
@@ -383,26 +387,25 @@ class SequenceIterator:
         # Check that all features have the same data-type
         datatypes = self.df[features].dtypes
         for dtype in datatypes:
-            if dtype != datatypes.iloc[0]:
+            if dtype != datatypes[0]:
                 raise ValueError(f"{self.__class__.__name__}:"
                                  f" Features {features} do not have a consistent (single) datatype,"
-                                 f" got {datatypes.to_list()}")
+                                 f" got {datatypes}")
 
         use_target = target is not None
         if use_target:
             datatypes = self.df[target].dtypes
             for dtype in datatypes:
-                if dtype != datatypes.iloc[0]:
+                if dtype != datatypes[0]:
                     raise ValueError(f"{self.__class__.__name__}:"
                                      f" Targets {target} do not have a consistent (single) datatype,"
-                                     f" got {datatypes.to_list()}")
+                                     f" got {datatypes}")
 
         if sequence_forecast < 0:
             raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
 
         if use_target:
-            target = vaex.utils._ensure_list(target)
-            target = vaex.utils._ensure_strings_from_expressions(target)
+            target = target if type(target) == list else target
             if sequence_forecast == 0:
                 raise ValueError(f"{self.__class__.__name__}: Cannot do extract targets with no sequence forecast")
         else:
@@ -411,10 +414,10 @@ class SequenceIterator:
 
         sequence = self.df
 
-        # Since we will need the timeline later - we further deal with pandas DataFrame
-        # directly - thus, we do not use a copy of the vaex DataFrame
-        if not isinstance(sequence, pd.DataFrame):
-            sequence = sequence.to_pandas_df()
+        # Since we will need the timeline later - we further deal with
+        # the actual data
+        if not isinstance(sequence, pl.dataframe.DataFrame):
+            sequence = sequence.collect()
 
         len_sequence = len(sequence)  # Equivalent to sequence.shape[0]
         if len_sequence < (sequence_length + sequence_forecast):
@@ -422,7 +425,7 @@ class SequenceIterator:
                                f" 'Sequence length' plus 'forecast length' ({sequence_length + sequence_forecast})"
                                f" larger than dataframe of size ({len_sequence})")
 
-        def _generator(sequence: pd.DataFrame,
+        def _generator(sequence: pl.dataframe.DataFrame,
                        features: List[str],
                        target: Optional[List[str]],
                        sequence_length: int,
@@ -448,10 +451,11 @@ class SequenceIterator:
             """
             max_start_idx = len_sequence - (sequence_length + sequence_forecast) + 1
             use_target = target is not None
+
             # (Num_batches=1, Length of Sequences, Number of features)
-            X = np.empty((sequence_length, len(features)), dtype=sequence.dtypes[features[0]])
+            X = np.empty((sequence_length, len(features)), dtype=XDataFrame(sequence).dtype(features[0]).to_python())
             if target is not None:
-                y = np.empty((sequence_forecast, len(target)), dtype=sequence.dtypes[target[0]])
+                y = np.empty((sequence_forecast, len(target)), dtype=XDataFrame(sequence).dtype(target[0]).to_python())
 
             # Iterate through the windowed sequences until the index is exhausted
             for start_idx in range(max_start_idx):

@@ -17,11 +17,10 @@ import numpy as np
 import polars
 import pyarrow
 import pyarrow.parquet as pq
-from polars import LazyFrame as DataFrame
 
 from .annotations import Annotation
 from .metadata import DataSpecification, MetaData, ValidationMode
-from .polars_dataframe import PolarsDataFrame
+from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame", "replace_na"]
 
@@ -52,7 +51,7 @@ def replace_na(df: DataFrame, dtype: str, column_names: Optional[List[str]] = No
         )
 
 
-class AnnotatedDataFrame(PolarsDataFrame):
+class AnnotatedDataFrame(XDataFrame):
     """
     A dataframe that is associated with metadata.
 

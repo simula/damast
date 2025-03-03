@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 import damast.core
@@ -24,21 +25,28 @@ def test_remove_values(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: boo
         base_dir=Path(tmpdir),
         inplace_transformation=inplace
     )
+
     pipeline.add("Remove rows with ground as source", damast.data_handling.transformers.filters.RemoveValueRows("g"),
                  name_mappings={"x": ColumnName.SOURCE})
+
+    original_sources = adf[ColumnName.SOURCE].collect()
+    num_sources = len(original_sources)
+    num_invalid_sources = len(original_sources.filter(pl.col(ColumnName.SOURCE) == "g"))
+    num_valid_sources = num_sources - num_invalid_sources
+
     new_adf = pipeline.transform(adf)
 
-    original_sources = adf[ColumnName.SOURCE].evaluate().to_numpy(zero_copy_only=False)
-    num_sources = len(original_sources)
-    num_invalid_sources = sum(original_sources == "g")
-    num_valid_sources = num_sources - num_invalid_sources
-    filtered_sources = new_adf[ColumnName.SOURCE].evaluate().to_numpy(zero_copy_only=False)
+    filtered_sources = new_adf[ColumnName.SOURCE].collect()
     assert len(filtered_sources) == num_valid_sources
-    assert (filtered_sources == "s").all()
+    assert len(filtered_sources.filter(pl.col(ColumnName.SOURCE) != "s")) == 0
+
+    original_df_length = len(adf.filter(pl.col(ColumnName.SOURCE) == "g").collect())
     if inplace:
-        assert len(adf[adf["source"] == "g"]) == 0
+        # frame has been updated, so no invalid entries should be left
+        assert original_df_length == 0
     else:
-        assert len(adf[adf["source"] == "g"]) == num_invalid_sources
+        # frame has been not been updated inplace, so invalid entries should be still left
+        assert original_df_length == num_invalid_sources
 
 
 @pytest.mark.parametrize("inplace", [True, False])
@@ -50,16 +58,20 @@ def test_drop_missing(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: boo
         inplace_transformation=inplace
     )
     pipeline.add("Remove rows with ground as source",
-                 damast.data_handling.transformers.filters.DropMissing(),
+                 damast.data_handling.transformers.filters.DropMissingOrNan(),
                  name_mappings={"x": ColumnName.DATE_TIME_UTC})
 
-    num_missing = adf.dataframe[ColumnName.DATE_TIME_UTC].countmissing()
+
+    num_missing = adf.dataframe.select(ColumnName.DATE_TIME_UTC).null_count().collect()[0,0]
+
     assert num_missing > 0
     new_adf = pipeline.transform(adf)
-    new_num_missing = new_adf.dataframe[ColumnName.DATE_TIME_UTC].countmissing()
+
+    new_num_missing = new_adf.dataframe.select(ColumnName.DATE_TIME_UTC).null_count().collect()[0,0]
 
     assert new_num_missing == 0
-    num_missing_post = adf.dataframe[ColumnName.DATE_TIME_UTC].countmissing()
+    num_missing_post = adf.dataframe.select(ColumnName.DATE_TIME_UTC).null_count().collect()[0,0]
+
     if inplace:
         assert num_missing_post == 0
     else:
@@ -74,17 +86,20 @@ def test_filter_within(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: bo
         base_dir=Path(tmpdir),
         inplace_transformation=inplace
     )
-    unique_values = adf["message_nr"].unique()
+    unique_values = adf.select("message_nr").unique().collect().to_numpy().flatten()
     assert len(unique_values) > 1
+
     pipeline.add("Filter rows within message types",
                  damast.data_handling.transformers.filters.FilterWithin(unique_values[:1]),
                  name_mappings={"x": "message_nr"})
+
     num_all = len(adf.dataframe)
-    num_eq = len(adf[adf["message_nr"] == unique_values[0]])
+    num_eq = len(adf.filter(pl.col("message_nr") == unique_values[[0]]).collect())
     new_adf = pipeline.transform(adf)
+
     assert len(new_adf.dataframe) == num_eq
-    assert len(new_adf[new_adf["message_nr"] == unique_values[0]]) == num_eq
+    assert len(new_adf.filter(pl.col("message_nr") == unique_values[[0]]).collect()) == num_eq
     if inplace:
-        assert len(adf.dataframe) == len(new_adf.dataframe)
+        assert len(adf.dataframe.collect()) == len(new_adf.dataframe.collect())
     else:
-        assert len(adf.dataframe) == num_all
+        assert len(adf.dataframe.collect()) == num_all

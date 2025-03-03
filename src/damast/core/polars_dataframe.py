@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
+import numpy as np
 import polars
 from polars import LazyFrame
 
-import numpy as np
 
-class PolarsDataFrame():
+class Meta(type):
+    _base_impl: ClassVar["str"] = "polars"
+
+    def __getattr__(cls, attr_name):
+        if cls._base_impl == 'polars':
+            return getattr(polars, attr_name)
+
+        raise AttributeError(f"'{cls.__name__}' has not attribute '{attr_name}'")
+
+
+class PolarsDataFrame(metaclass=Meta):
     _dataframe: LazyFrame
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
@@ -71,7 +83,7 @@ class PolarsDataFrame():
 
         if attr_name in ["__setstate__", "__getstate__"]:
             raise AttributeError(f"{self.__class__.__name__}.__getattr__: {attr_name} does not exist")
-        
+
         """ Called for failed attribute accesses so forwarding to underlying polars frame """
         return getattr(self._dataframe, attr_name)
 
@@ -87,7 +99,7 @@ class PolarsDataFrame():
 
         self._dataframe = self._dataframe.with_columns(
                     polars.Series(
-                        name=key, 
+                        name=key,
                         values=values
                     )
                 )
@@ -102,5 +114,12 @@ class PolarsDataFrame():
 
     def equals(self, other: PolarsDataFrame) -> bool:
         return self._dataframe.collect().equals(other._dataframe.collect())
+
+    def open(filename: str | Path, sep = ',') -> DataFrame:
+        if file_path.suffix == ".csv":
+            return polars.scan_csv(file_path, sep=sep)
+
+        raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
+
 
 

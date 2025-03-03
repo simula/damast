@@ -3,6 +3,7 @@ Module which collects transformers that add / augment the existing data
 """
 import datetime
 import logging
+from enum import Enum
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Union
@@ -10,12 +11,13 @@ from typing import Any, Union
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-import vaex
+import polars as pl
 from sklearn.neighbors import BallTree
 
 import damast.core
 from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
+from damast.core.types import DataFrame, XDataFrame
 
 __all__ = [
     "AddLocalIndex",
@@ -33,7 +35,7 @@ class JoinDataFrameByColumn(PipelineElement):
     """
     Add a column to an input dataframe by merging it with another dataset.
 
-    :param dataset: Path to `.csv/.hdf5`-file or a `vaex.DataFrame`.
+    :param dataset: Path to `.csv/.hdf5`-file or a `polars.dataframe.LazyFrame`.
     :param right_on: Column from `dataset` to use for joining data
     :param dataset_column: Name of column in `dataset` to
     :param col_name: Name of augmented column
@@ -42,19 +44,33 @@ class JoinDataFrameByColumn(PipelineElement):
     .. note::
         :code:`right_on` will not be added as a new column in the transformed dataset
     """
+
+    class JoinHowType(str, Enum):
+        INNER = 'inner'
+        LEFT = 'left'
+        RIGHT = 'right'
+        FULL = 'full'
+        SEMI = 'semi'
+        ANTI = 'anti'
+        CROSS = 'cross'
+
     _right_on: str
-    _dataset: pd.DataFrame
+    _dataset: DataFrame
     _dataset_column: str
+    _join_how: JoinHowType
 
     def __init__(self,
-                 dataset: Union[str, Path, vaex.DataFrame],
+                 dataset: Union[str, Path, XDataFrame],
                  right_on: str,
                  dataset_col: str,
+                 how: JoinHowType = JoinHowType.LEFT,
                  sep: str = ";"):
         self._right_on: str = right_on
         self._dataset_column = dataset_col
+        self._join_how = how
+
         # Load vessel type map
-        if not isinstance(dataset, vaex.DataFrame):
+        if not isinstance(dataset, XDataFrame):
             dataset = self.load_data(filename=dataset, sep=sep)
 
         # Check that the columns exist in dataset
@@ -63,7 +79,7 @@ class JoinDataFrameByColumn(PipelineElement):
                 raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{dataset.head()}'"
                                " - available are {','.join(vessel_type_data.columns)}")
 
-        column_dtype = dataset[self._dataset_column].dtype
+        column_dtype = XDataFrame(dataset).dtype(self._dataset_column)
         if column_dtype != int:
             raise ValueError(f"{self.__class__.__name__}.__init__:"
                              f" column '{self._dataset_column}' must be of type int, "
@@ -73,24 +89,18 @@ class JoinDataFrameByColumn(PipelineElement):
 
     @classmethod
     def load_data(cls,
-                  filename: Union[str, Path], sep: str) -> vaex.DataFrame:
+                  filename: Union[str, Path], sep: str) -> DataFrame:
         """
         Load dataset from file
 
         :param filename: The input file (or path)
         :param sep: Separator in csv
-        :return: A `vaex.DataFrame` with the data
+        :return: A `DataFrame` with the data
         """
-        file_path = Path(filename)
-        if not file_path.exists():
-            raise RuntimeError(f"Vessel type information not accessible. File {file_path} not found")
-
-        if file_path.suffix == ".csv":
-            return vaex.from_csv(file_path, sep=sep)
-        elif file_path.suffix in {".hdf5", ".h5"}:
-            return vaex.open(file_path)
-
-        raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
+        try:
+            return XDataFrame.open(file_path, sep=sep)
+        except FileNotFoundError as e:
+            raise RuntimeError(f"{cls}: Vessel type information not accessible -- {e}")
 
     @damast.core.input({"x": {}})
     @damast.core.output({"out": {}})
@@ -101,12 +111,15 @@ class JoinDataFrameByColumn(PipelineElement):
 
         :returns: DataFrame with added column
         """
-        dataframe = df._dataframe
-        dataframe.join(
-            self._dataset[[self._right_on, self._dataset_column]],
-            left_on=self.get_name("x"),
-            right_on=self._right_on,
-            inplace=True)
+        dataframe = df._dataframe.join(
+                other=self._dataset,
+                left_on=self.get_name("x"),
+                right_on=self._right_on,
+                validate='1:1',
+                #https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html
+                how=self.join_how.value
+            )
+
         # If left_on and right_on are not equal, join adds right_on as a new column, adding
         # duplicate data
         if self._right_on != self.get_name("x"):
@@ -121,7 +134,7 @@ class BallTreeAugmenter():
 
     Uses the `sklearn.neighbours.BallTree` to compute the distance for any n-dimensional
     feature. The BallTree is created prior to being passed in as the lambda function of a
-    `vaex.DataFrame.add_virtual_column`. The object can later be depickled from the state,
+    `DataFrame.add_virtual_column`. The object can later be depickled from the state,
     and one can retrieve any meta-data added to the class after construction.
 
     :param x: The points to use in the BallTree
@@ -191,8 +204,10 @@ class AddUndefinedValue(PipelineElement):
         Fill in values for NA and missing entries
         """
         mapped_name = self.get_name("x")
-        df._dataframe[mapped_name] = df._dataframe[mapped_name].fillna(self._fill_value)
-        df._dataframe[mapped_name] = df._dataframe[mapped_name].fillmissing(self._fill_value)
+        df._dataframe = df._dataframe.with_columns(
+            pl.col(mapped_name).fill_null(self.fill_value).alias(mapped_name),
+            pl.col(mapped_name).fill_nan(self.fill_value).alias(mapped_name)
+        )
         return df
 
 
@@ -308,13 +323,12 @@ class AddTimestamp(PipelineElement):
         """
         Add Timestamp from datetimeUTC
         """
-        dataframe = df._dataframe
-
         from_mapped_name = self.get_name("from")
         to_mapped_name = self.get_name("to")
 
-        dataframe[to_mapped_name] = dataframe[from_mapped_name].apply(convert_to_datetime)
-        dataframe.materialize(to_mapped_name)
+        df._dataframe = df._dataframe.with_columns(
+                pl.col(from_mapped_name).map_elements(convert_to_datetime, return_dtype=float).alias(to_mapped_name)
+        )
         return df
 
 
@@ -342,7 +356,9 @@ class MultiplyValue(PipelineElement):
         Multiply a column by a given value
         """
         mapped_name = self.get_name("x")
-        df._dataframe[mapped_name] *= self._mul_value
+        df._dataframe = df._dataframe.with_columns(
+            (pl.col(mapped_name)*self.mul_value).alias(mapped_name)
+        )
         return df
 
 
@@ -374,5 +390,8 @@ class ChangeTypeColumn(PipelineElement):
         """
         input_mapped_name = self.get_name("x")
         output_mapped_name = self.get_name("y")
-        df._dataframe[output_mapped_name] = df._dataframe[input_mapped_name].astype(self._new_type)
+
+        df._dataframe = df._dataframe.with_columns(
+            pl.col(input_mapped_name).cast(self._new_type).alias(output_mapped_name)
+        )
         return df

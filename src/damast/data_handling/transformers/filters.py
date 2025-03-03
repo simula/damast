@@ -4,9 +4,13 @@ Module which collect all filters that filter the existing data.
 
 from typing import Any
 
+import polars as pl
+import polars.selectors as cs
+
 import damast.core
 from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
+from damast.core.types import XDataFrame
 
 __all__ = [
     "FilterWithin",
@@ -38,17 +42,19 @@ class RemoveValueRows(PipelineElement):
         Delete rows with remove_values
         """
         mapped_name = self.get_name("x")
-        new_dataframe = df._dataframe[(df._dataframe[mapped_name] != self._remove_value)]
-        df._dataframe = new_dataframe
+
+        df._dataframe = df._dataframe.filter(
+            pl.col(mapped_name) != self._remove_value
+        )
         return df
 
 
-class DropMissing(PipelineElement):
+class DropMissingOrNan(PipelineElement):
     """
-    DropMissing rows that do not have a defined value or NaN for a given column.
+    Drop rows that do not have a defined value or NaN for a given column.
     """
 
-    @damast.core.describe("Drop rows where a column has a missing value")
+    @damast.core.describe("Drop rows where this column has a missing (or nan) value")
     @damast.core.input({"x": {}})
     @damast.core.output({"x": {}})
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
@@ -57,8 +63,12 @@ class DropMissing(PipelineElement):
         """
         mapped_name = self.get_name("x")
         dataframe = df._dataframe
-        nonnan_dataframe = dataframe.dropnan(column_names=[mapped_name])
-        new_dataframe = nonnan_dataframe.dropmissing(column_names=[mapped_name])
+
+        new_dataframe = dataframe.drop_nulls(subset=mapped_name).collect()
+        dtype = XDataFrame(new_dataframe).dtype(mapped_name)
+        if dtype not in [str, pl.String]:
+            new_dataframe = new_dataframe.drop_nans(subset=mapped_name).collect()
+
         df._dataframe = new_dataframe
         return df
 
@@ -88,6 +98,8 @@ class FilterWithin(PipelineElement):
         """
         mapped_name = self.get_name("x")
         dataframe = df._dataframe
-        new_dataframe = dataframe[dataframe[mapped_name].isin(self._within_values)]
+        new_dataframe = dataframe.filter(
+            pl.col(mapped_name).is_in(self._within_values)
+        )
         df._dataframe = new_dataframe
         return df

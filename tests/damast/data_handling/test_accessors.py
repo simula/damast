@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
+import polars
+import polars as pl
 import pytest
-import vaex
 
 from damast.data_handling.accessors import GroupSequenceAccessor, SequenceIterator
 
@@ -16,7 +17,7 @@ def dataframe():
     df_pandas = pd.DataFrame(data, columns=columns)
     df_pandas = df_pandas.sample(frac=1)
 
-    return vaex.from_pandas(df_pandas)
+    return polars.from_pandas(df_pandas)
 
 
 @pytest.fixture()
@@ -31,7 +32,7 @@ def invalid_dataframe():
     df_pandas = pd.DataFrame(data, columns=columns)
     df_pandas = df_pandas.sample(frac=1)
 
-    return vaex.from_pandas(df_pandas)
+    return polars.from_pandas(df_pandas)
 
 
 def test_yield_one_generator(dataframe):
@@ -69,10 +70,7 @@ def test_group_sequence_accessor(dataframe, target, sequence_forecast, sort_colu
             # have one feature. I am not sure this is what we want.
             assert batch[0].shape == (batch_size, sequence_length, len(features))
             if target is not None:
-                if sequence_forecast == 1:
-                    assert batch[1].shape == (batch_size, len(target))
-                else:
-                    assert batch[1].shape == (batch_size, sequence_forecast, len(target))
+                assert batch[1].shape == (batch_size, sequence_forecast, len(target))
             else:
                 assert len(batch) == 1
             for group in batch[0]:
@@ -105,7 +103,7 @@ def test_short_sequence(invalid_dataframe):
                           (None, 2)])
 def test_invalid_target(dataframe, target, sequence_forecast, iterator_class):
     if iterator_class == SequenceIterator:
-        group_df = dataframe[dataframe["id"] == 84]
+        group_df = dataframe.filter(pl.col("id") == 84)
         iterator = iterator_class(group_df, ["timestamp"])
     elif iterator_class == GroupSequenceAccessor:
         iterator = iterator_class(dataframe, group_column="id")
@@ -155,7 +153,7 @@ def test_group_split_random(dataframe, ratios):
 @pytest.mark.parametrize("sequence_length", [50, 1999])
 @pytest.mark.parametrize("sequence_forecast", [0, 1, 2])
 def test_sequence_accessor(dataframe, sequence_forecast, sequence_length):
-    group_df = dataframe[dataframe["id"] == 84]
+    group_df = dataframe.filter(pl.col("id") == 84)
     iterator = SequenceIterator(group_df, ["timestamp"])
     target = None if sequence_forecast == 0 else ["x", "y"]
 
@@ -185,27 +183,27 @@ def test_sequence_accessor(dataframe, sequence_forecast, sequence_length):
 @pytest.mark.parametrize("iterator_class", [SequenceIterator, GroupSequenceAccessor])
 def test_mixed_features_dtype(invalid_dataframe, iterator_class):
     if iterator_class == SequenceIterator:
-        group_df = invalid_dataframe[invalid_dataframe["id"] == 84]
+        group_df = invalid_dataframe.filter(pl.col("id") == 84)
         iterator = iterator_class(group_df, ["timestamp"])
     elif iterator_class == GroupSequenceAccessor:
         iterator = iterator_class(invalid_dataframe, group_column="id")
     else:
         raise RuntimeError(f"Unknown {iterator_class=}")
 
-    with pytest.raises(ValueError, match=r".*: Features \['x', 'y'\] do not have a consistent \(single\) datatype, got \[int64, float64\]"):
+    with pytest.raises(ValueError, match=r".*: Features \['x', 'y'\] do not have a consistent \(single\) datatype, got \[Int64, Float64\]"):
         iterator.to_keras_generator(["x", "y"], sequence_length=50, sequence_forecast=1)
 
 
 @pytest.mark.parametrize("iterator_class", [SequenceIterator, GroupSequenceAccessor])
 def test_mixed_targets_dtype(invalid_dataframe, iterator_class):
     if iterator_class == SequenceIterator:
-        group_df = invalid_dataframe[invalid_dataframe["id"] == 84]
+        group_df = invalid_dataframe.filter(pl.col("id") == 84)
         iterator = iterator_class(group_df, ["timestamp"])
     elif iterator_class == GroupSequenceAccessor:
         iterator = iterator_class(invalid_dataframe, group_column="id")
     else:
         raise RuntimeError(f"Unknown {iterator_class=}")
-    with pytest.raises(ValueError, match=r".*: Targets \['id', 'timestamp'\] do not have a consistent \(single\) datatype, got \[int64, float64\]"):
+    with pytest.raises(ValueError, match=r".*: Targets \['id', 'timestamp'\] do not have a consistent \(single\) datatype, got \[Int64, Float64\]"):
         iterator.to_keras_generator(
             ["x"], target=["id", "timestamp"], sequence_length=50, sequence_forecast=1)
 
@@ -213,7 +211,7 @@ def test_mixed_targets_dtype(invalid_dataframe, iterator_class):
 @pytest.mark.parametrize("iterator_class", [SequenceIterator, GroupSequenceAccessor])
 def test_negative_sequence_forecast(dataframe, iterator_class):
     if iterator_class == SequenceIterator:
-        group_df = dataframe[dataframe["id"] == 84]
+        group_df = dataframe.filter(pl.col("id") == 84)
         iterator = iterator_class(group_df, ["timestamp"])
     elif iterator_class == GroupSequenceAccessor:
         iterator = iterator_class(dataframe, group_column="id")

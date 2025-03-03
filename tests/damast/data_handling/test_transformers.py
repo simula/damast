@@ -5,6 +5,7 @@ import pytest
 
 import damast.core
 import damast.data_handling.transformers.filters
+from damast.core.types import XDataFrame
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
 from damast.domains.maritime.data_specification import ColumnName
 
@@ -27,19 +28,22 @@ def test_timestamp(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: bool):
     )
     pipeline.add("Add time stamp", damast.data_handling.transformers.AddTimestamp(),
                  name_mappings={"from": ColumnName.DATE_TIME_UTC, "to": ColumnName.TIMESTAMP})
-    adf_copy = adf.dataframe.copy()
+
+    adf_copy = adf.clone()
     new_adf = pipeline.transform(adf)
 
     # Drop converted nan values
-    subset = new_adf.dataframe.dropnan([ColumnName.TIMESTAMP])
+    subset = new_adf.dataframe.drop_nans(subset=[ColumnName.TIMESTAMP])
 
     # Drop missing values from input
-    ref_subset = adf_copy.dropmissing([ColumnName.DATE_TIME_UTC])
+    ref_subset = adf_copy.drop_nulls(subset=[ColumnName.DATE_TIME_UTC])
 
-    ref_lat_sorted = ref_subset.sort([ColumnName.DATE_TIME_UTC])[ColumnName.LATITUDE.lower()].evaluate()
-    lat_sorted = subset.sort([ColumnName.TIMESTAMP])[ColumnName.LATITUDE.lower()].evaluate()
-    assert np.allclose(ref_lat_sorted, lat_sorted)
+    ref_lat_sorted = ref_subset.sort(ColumnName.DATE_TIME_UTC).select(ColumnName.LATITUDE.lower()).collect()
+    lat_sorted = subset.sort(ColumnName.TIMESTAMP).select(ColumnName.LATITUDE.lower()).collect()
+
+    assert XDataFrame(ref_lat_sorted).equals(XDataFrame(lat_sorted))
+
     if inplace:
-        assert len(adf.dataframe.dropnan([ColumnName.TIMESTAMP])) == len(subset)
+        assert len(adf.dataframe.drop_nans([ColumnName.TIMESTAMP]).collect()) == len(subset.collect())
     else:
-        assert not (ColumnName.TIMESTAMP in adf.dataframe.column_names)
+        assert not (ColumnName.TIMESTAMP in adf.column_names)

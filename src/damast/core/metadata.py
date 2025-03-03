@@ -18,7 +18,7 @@ import yaml
 from .annotations import Annotation, History
 from .datarange import DataElement, DataRange, MinMax
 from .formatting import DEFAULT_INDENT
-from .polars_dataframe import PolarsDataFrame
+from .types import XDataFrame
 from .units import Unit, unit_registry, units
 
 __all__ = [
@@ -511,9 +511,9 @@ class DataSpecification:
 
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
-            pdf = PolarsDataFrame(df)
+            xdf = XDataFrame(df)
             if self.representation_type is not None:
-                dtype = pdf.dtype(column_name)
+                dtype = xdf.dtype(column_name)
                 if dtype.from_python(self.representation_type) != self.representation_type and \
                     dtype.to_python() != self.representation_type:
                     raise ValueError(
@@ -529,7 +529,7 @@ class DataSpecification:
             #        assert df.units[column_name] == self.unit
 
             if self.value_range:
-                min_value, max_value = pdf.minmax(column_name)
+                min_value, max_value = xdf.minmax(column_name)
                 if not self.value_range.is_in_range(min_value):
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
@@ -543,16 +543,16 @@ class DataSpecification:
             return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
-            pdf = PolarsDataFrame(df)
+            xdf = XDataFrame(df)
             if self.representation_type is not None:
-                dtype = pdf.dtype(column_name)
+                dtype = xdf.dtype(column_name)
                 if dtype != self.representation_type:
                     warnings.warn(
                         f"{self.__class__.__name__}.apply: column '{column_name}':"
                         f" expected representation type: {self.representation_type},"
                         f" but got '{dtype}'"
                     )
-                    pdf.set_dtype(column_name, self.representation_type)
+                    xdf.set_dtype(column_name, self.representation_type)
 
             #if self.unit is not None:
             #    if column_name not in df.units:
@@ -571,12 +571,12 @@ class DataSpecification:
                     warnings.warn(
                         f"Filtering out for column '{column_name}' values that are out of range."
                     )
-                    pdf._dataframe = pdf._dataframe.filter(
+                    xdf._dataframe = xdf._dataframe.filter(
                             (pl.col(column_name) >= self.value_range.min) &
                             (pl.col(column_name) <= self.value_range.max)
                         )
                 else:
-                    pdf._dataframe = pdf._dataframe.with_columns(
+                    xdf._dataframe = xdf._dataframe.with_columns(
                                 pl.when(
                                     (pl.col(column_name) < self.value_range.min) |
                                     (pl.col(column_name) > self.value_range.max)
@@ -584,17 +584,17 @@ class DataSpecification:
                                 .otherwise(pl.col(column_name))
                                 .alias(column_name)
                               )
-            return pdf._dataframe
+            return xdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
-            pdf = PolarsDataFrame(df)
-            self.representation_type = pdf.dtype(column_name)
+            xdf = XDataFrame(df)
+            self.representation_type = xdf.dtype(column_name)
 
             #if column_name in df.units:
             #    self.unit = df.units[column_name]
 
             try:
-                min_value, max_value = pdf.minmax(column_name)
+                min_value, max_value = xdf.minmax(column_name)
 
                # # Handle time issue since NaT can be returned as 'min' value
                # if isinstance(min_value, np.datetime64) or isinstance(min_value, np.timedelta64):
@@ -614,7 +614,7 @@ class DataSpecification:
             except ValueError:
                 # Type might not be numeric
                 pass
-            return pdf._dataframe
+            return xdf._dataframe
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
@@ -1024,7 +1024,7 @@ class MetaData:
         assert isinstance(df, pl.LazyFrame)
 
         for column_spec in self.columns:
-            if column_spec.name in PolarsDataFrame(df).column_names:
+            if column_spec.name in XDataFrame(df).column_names:
                 df = column_spec.apply(
                     df=df, column_name=column_spec.name, validation_mode=validation_mode
                 )

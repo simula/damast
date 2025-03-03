@@ -5,10 +5,10 @@ from random import choice, randint, random
 from typing import Any, List
 
 import pandas as pd
-import vaex
 from pyais.ais_types import AISType
 
 from damast.core.metadata import DataCategory
+from damast.core.types import DataFrame, XDataFrame
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.data_specification import (
@@ -61,7 +61,7 @@ AISTestDataSpec = {
 
 
 class AISTestData:
-    dataframe: vaex.DataFrame = None
+    dataframe: DataFrame = None
 
     def __init__(self,
                  number_of_trajectories: int,
@@ -72,7 +72,7 @@ class AISTestData:
         self.min_length = min_length
         self.max_length = max_length
 
-        self.dataframe: vaex.DataFrame = self._generate_data()
+        self.dataframe: DataFrame = self._generate_data()
 
     @staticmethod
     def generate_trajectory(min_size: int, max_size: int) -> List[List[Any]]:
@@ -140,7 +140,7 @@ class AISTestData:
                  ])
         return trajectory
 
-    def _generate_data(self) -> vaex.DataFrame:
+    def _generate_data(self) ->DataFrame:
         df = None
         for i in range(0, self.number_of_trajectories):
             trajectory = AISTestData.generate_trajectory(min_size=self.min_length, max_size=self.max_length)
@@ -151,10 +151,10 @@ class AISTestData:
                 df = pd.concat([df, t_df], axis=0, ignore_index=True)
         # shuffle rows
         df = df.sample(frac=1, axis="index").reset_index(drop=True)
-        return vaex.from_pandas(df)
+        return XDataFrame.from_pandas(df)
 
-    def generate_vessel_type_data(self) -> vaex.DataFrame:
-        """Generate a :class:`vaex.DataFrame` with data imitating vessel-type info
+    def generate_vessel_type_data(self) -> DataFrame:
+        """Generate a :class:`DataFrame` with data imitating vessel-type info
 
         Returns:
             A dataframe with an `ColumnName.MMSI` column and a `ColumnName.VESSEL_TYPE` column.
@@ -163,9 +163,9 @@ class AISTestData:
         for mmsi in self.dataframe[ColumnName.MMSI.lower()].unique():
             vessel_type_data.append([mmsi, vessel_types.Fishing.to_id()])
         df = pd.DataFrame(vessel_type_data, columns=[ColumnName.MMSI, ColumnName.VESSEL_TYPE])
-        return vaex.from_pandas(df)
+        return XDataFrame.from_pandas(df)
 
-    def generate_fishing_vessel_type_data(self) -> vaex.DataFrame:
+    def generate_fishing_vessel_type_data(self) -> DataFrame:
         """Generate a `vaex.Dataframe` with data imitating vessel info from Global Fishing Watch
 
         Returns:
@@ -181,17 +181,24 @@ class AISTestData:
 
         df = pd.DataFrame(fishing_vessel_type_data, columns=[ColumnName.MMSI.lower(), ColumnName.VESSEL_TYPE_GFW])
 
-        return vaex.from_pandas(df)
+        return XDataFrame.from_pandas(df)
 
-    def generate_anchorage_type_data(self) -> vaex.DataFrame:
+    def generate_anchorage_type_data(self) -> DataFrame:
+
+        raise RuntimeError("NEED MIGRATION")
+
         # Generate anchorages close to starting points of vessel trajectories
         mmsi = ColumnName.MMSI.lower()
         lat_vaex = self.dataframe.groupby(mmsi).agg({"lat": vaex.agg.first})
+
         lat_vaex.rename("lat", "latitude")
         lat_vaex["latitude"] *= 1.05
+
         lon_vaex = self.dataframe.groupby(mmsi).agg({"lon": vaex.agg.first})
         lon_vaex.rename("lon", "longitude")
         lon_vaex["longitude"] *= -0.95
+
+
         df = lat_vaex.join(lon_vaex, on=mmsi)
         return df
 

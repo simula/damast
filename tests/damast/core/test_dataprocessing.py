@@ -14,8 +14,8 @@ from damast.core.dataprocessing import (
     )
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
-from damast.core.polars_dataframe import PolarsDataFrame
 from damast.core.transformations import CycleTransformer, Transformer
+from damast.core.types import XDataFrame
 
 
 class DataProcessorA(PipelineElement):
@@ -459,4 +459,4 @@ def test_save_load_state(lat_lon_annotated_dataframe, lat_lon_metadata, tmp_path
 
     #for i in range(len(df_transformed)):
         #assert np.array_equiv(df_transformed[i], loaded_adf[i])
-    assert PolarsDataFrame(df_transformed).equals(PolarsDataFrame(loaded_adf))
+    assert XDataFrame(df_transformed).equals(XDataFrame(loaded_adf))

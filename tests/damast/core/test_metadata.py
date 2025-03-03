@@ -15,7 +15,7 @@ from damast.core.metadata import (
     Status,
     ValidationMode,
     )
-from damast.core.polars_dataframe import PolarsDataFrame
+from damast.core.types import XDataFrame
 
 
 @pytest.mark.parametrize(["name", "category", "is_optional",
@@ -261,7 +261,7 @@ def test_apply_update_with_row_drop():
             ).collect()
 
     df = metadata.apply(df, ValidationMode.UPDATE_DATA)
-    assert PolarsDataFrame(valid).equals(PolarsDataFrame(df))
+    assert XDataFrame(valid).equals(XDataFrame(df))
 
 def test_apply_update_with_setting_default_value():
     x_spec = DataSpecification(name="x",

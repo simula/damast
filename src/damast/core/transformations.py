@@ -1,6 +1,8 @@
-from damast.core.dataframe import AnnotatedDataFrame
 import numpy as np
 import polars
+
+from damast.core.dataframe import AnnotatedDataFrame
+
 
 class Transformer:
     def transform(self, df: AnnotatedDataFrame):

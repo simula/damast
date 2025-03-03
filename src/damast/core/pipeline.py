@@ -1,5 +1,6 @@
-from damast.core.transformations import Transformer
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.transformations import Transformer
+
 
 class Pipeline:
     steps: list[Transformer]
@@ -11,6 +12,9 @@ class Pipeline:
         return self.run(df=df)
 
     def run(self, df: AnnotatedDataFrame):
-        for step in self.steps:
-            df = step.fit_transform(df)
+        for idx, step in enumerate(self.steps):
+            try:
+                df = step.fit_transform(df)
+            except Exception as e:
+                raise RuntimeError(f"Step #{idx} in pipeline ({step.__class__.__name__}) failed: -- {e}")
         return df
