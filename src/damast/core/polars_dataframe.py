@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
@@ -115,11 +116,12 @@ class PolarsDataFrame(metaclass=Meta):
     def equals(self, other: PolarsDataFrame) -> bool:
         return self._dataframe.collect().equals(other._dataframe.collect())
 
-    def open(filename: str | Path, sep = ',') -> DataFrame:
-        if file_path.suffix == ".csv":
-            return polars.scan_csv(file_path, sep=sep)
+    def open(path: str | Path, sep = ',') -> DataFrame:
+        path = Path(path)
+        if path.suffix == ".csv":
+            return polars.scan_csv(path, sep=sep)
 
-        raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {file_path.suffix}")
+        raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
 
 
 

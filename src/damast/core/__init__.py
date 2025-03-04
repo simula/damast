@@ -3,7 +3,7 @@ This namespace contains the core modules that are required to define metadata.
 """
 
 from .annotations import Annotation
-from .dataframe import AnnotatedDataFrame, replace_na
+from .dataframe import AnnotatedDataFrame
 from .dataprocessing import (
     DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
@@ -43,5 +43,4 @@ __all__ = [
     "describe",
     "input",
     "output",
-    "replace_na",
 ]

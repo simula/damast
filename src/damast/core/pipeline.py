@@ -1,3 +1,5 @@
+import traceback as tc
+
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.transformations import Transformer
 
@@ -16,5 +18,6 @@ class Pipeline:
             try:
                 df = step.fit_transform(df)
             except Exception as e:
-                raise RuntimeError(f"Step #{idx} in pipeline ({step.__class__.__name__}) failed: -- {e}")
+                msg = ''.join(tc.format_exception(e)[-2:])
+                raise RuntimeError(f"Step #{idx} in pipeline ({step.__class__.__name__}) failed:\n{msg}")
         return df

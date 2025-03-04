@@ -22,7 +22,7 @@ from .annotations import Annotation
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame
 
-__all__ = ["AnnotatedDataFrame", "replace_na"]
+__all__ = ["AnnotatedDataFrame"]
 
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
@@ -31,24 +31,6 @@ DAMAST_SPEC_SUFFIX: str = ".spec.yaml"
 logging.basicConfig()
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
-
-
-def replace_na(df: DataFrame, dtype: str, column_names: Optional[List[str]] = None):
-    """
-    Replace ``Not Available`` and ``Not a Number`` with a mask, and convert to given ``dtype``.
-    This means that one later call ``df[column].fill_missing(...)`` to replace values
-
-    :param df: The dataframe to modify
-    :param dtype: The datatype to convert the columns to
-    :param column_names: The list of columns to change
-    """
-    if column_names is None:
-        column_names = []
-    for column in column_names:
-        mask = df[column].isnan() or df[column].isna()
-        df[column] = np.ma.masked_array(
-            df[column].collect(), mask.collect(), dtype=dtype
-        )
 
 
 class AnnotatedDataFrame(XDataFrame):
@@ -72,10 +54,13 @@ class AnnotatedDataFrame(XDataFrame):
 
     def __init__(
         self,
-        dataframe: polars.DataFrame | polars.LazyFrame,
+        dataframe: polars.DataFrame | polars.LazyFrame | XDataFrame,
         metadata: MetaData,
         validation_mode: ValidationMode = ValidationMode.READONLY,
     ):
+        if isinstance(dataframe, XDataFrame):
+            dataframe = dataframe._dataframe
+
         if isinstance(dataframe, polars.DataFrame):
             dataframe = dataframe.lazy()
 
@@ -309,7 +294,6 @@ class AnnotatedDataFrame(XDataFrame):
     @property
     def shape(self):
         return self._dataframe.collect().shape
-
 
     def __deepcopy__(self, memo=None):
         return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata))

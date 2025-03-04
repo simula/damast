@@ -7,6 +7,7 @@ from typing import Callable, List, Union
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import polars as pl
 
 import damast.core
 import damast.data_handling.transformers.augmenters as augmenters
@@ -33,15 +34,23 @@ class ComputeClosestAnchorage(PipelineElement):
     """
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
 
+    @property
+    def deg2rad(self) -> float:
+        return np.pi/180.0
+
     def __init__(self,
                  dataset: Union[str, Path, DataFrame],
                  columns: List[str],
                  sep: str = ";"):
-        if isinstance(dataset, DataFrame):
-            _dataset = dataset
-        else:
+        if type(dataset) in [str, Path]:
             _dataset = self.load_data(dataset, sep)
-        radian_dataset = [_dataset[column].deg2rad().evaluate() for column in columns]
+        else:
+            _dataset = dataset
+
+        radian_dataset = [
+                _dataset.select((pl.col(x)*self.deg2rad).alias(x))[:,0] for x in columns
+        ]
+
         self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
 
     @classmethod
@@ -55,7 +64,7 @@ class ComputeClosestAnchorage(PipelineElement):
         :return: A `pandas.DataFrame` where each row has a column MMSI and vessel_type
         """
         try:
-            return XDataFrame.open(filename, sep=sep)
+            return XDataFrame.open(path=filename, sep=sep)
         except FileNotFoundError as e:
             raise RuntimeError(f"{cls}: Vessel type information not accessible. File {vessel_type_csv} not found")
 
@@ -71,25 +80,28 @@ class ComputeClosestAnchorage(PipelineElement):
 
         # Transform latitude and longitude to radians
         dataframe = dataframe.with_columns(
-            (pl.col(x_name).map_elements(np.deg2rad)).alias(f"{x_name}_rad")
+            (pl.col(x_name)*self.deg2rad).alias(f"{x_name}_rad")
         )
         dataframe = dataframe.with_columns(
-            (pl.col(y_name).map_elements(np.deg2rad)).alias(f"{y_name}_rad")
+            (pl.col(y_name)*self.deg2rad).alias(f"{y_name}_rad")
         )
 
+        distance = self.get_name('distance')
         dataframe = dataframe.with_columns(
-            pl.struct(x_name, y_name).map_elements(lambda x: self._function(x[x_name], x[y_name])).alias("distance")
+            pl.struct(f"{x_name}_rad", f"{y_name}_rad").map_elements(
+                lambda x: self._function(x[f"{x_name}_rad"], x[f"{y_name}_rad"]),
+                return_dtype=float
+            ).alias(distance)
         )
 
         # Multiply distance column by earth radius
         dataframe = dataframe.with_columns(
-            (pl.col(distance)*EARTH_RADIUS).alias("distance")
+            (pl.col(distance)*EARTH_RADIUS).alias(distance)
         )
-        dataframe[self.get_name("distance")] *= EARTH_RADIUS
         #dataframe.units[self.get_name("distance")] = damast.core.units.units.km
 
         # Drop/hide conversion columns
-        dataframe = dataframe.drop(columns=[f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"])
+        df._dataframe = dataframe.drop([f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"])
         return df
 
 
@@ -126,26 +138,24 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
                  dataset: Union[str, Path, DataFrame]
                  ):
 
-        if not isinstance(dataset, DataFrame):
+        if type(dataset) in [str, Path]:
             dataset = XDataFrame.open(path=dataset)
 
         column_dtype = XDataFrame(dataset).dtype(dataset_col)
         name = f"{dataset_col}_mapped"
-        if column_dtype == str:
+        if str in [column_dtype, column_dtype.to_python()]:
             # VesselTypes should be mapped to integers
             mapping = VesselType.get_mapping()
             dataset = dataset.with_columns(
-                pl.col(dataset_col).map_elements(
-                    lambda x: mapping[x], return_dtype=pl.Int64i
-                ).alias(name)
+                pl.col(dataset_col).replace_strict(mapping).alias(name)
             )
-        elif column_dtype == int:
+        elif int in [column_dtype, column_dtype.to_python()]:
             dataset = dataset.with_columns(
                     pl.col(dataset_col).alias(name)
             )
         else:
             raise ValueError(f"{self.__class__.__name__}.__init__: dtype of column '{dataset_col}',"
-                             " must be either int or str, but was '{column_dtype}'")
+                             f" must be either int or str, but was '{column_dtype}'")
 
         super().__init__(dataset=dataset, right_on=right_on, dataset_col=name)
 

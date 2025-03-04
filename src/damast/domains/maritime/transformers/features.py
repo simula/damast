@@ -1,4 +1,5 @@
 import numpy as np
+import polars as pl
 from astropy import units
 
 import damast.core
@@ -54,49 +55,40 @@ class DeltaDistance(PipelineElement):
         in_y = self.get_name("y")
         shift_x = f"{in_x}_shifted"
         shift_y = f"{in_y}_shifted"
+
         tmp_column = f"{self.__class__.__name__}_tmp"
         assert tmp_column != self.get_name("out")
-        if tmp_column in dataframe.column_names:
+        if tmp_column in dataframe.columns:
             raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
 
-        dataframe[tmp_column] = vaex.vrange(0, len(dataframe), dtype=int)
-
-        shifted_x_array = np.zeros(len(dataframe))
-        shifted_y_array = np.zeros(len(dataframe))
-
+        # https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.shift.html
+        # shift
         # Group data and sort it. Only shift data within the same group
-        groups = dataframe.groupby(by=self.get_name("group"))
-        for _, group in groups:
-            sorted_group = group.sort(self.get_name("sort"))
-            # Add copy of in-column that should be shifted
-            sorted_group.add_virtual_column(shift_x, sorted_group[in_x])
-            sorted_group.add_virtual_column(shift_y, sorted_group[in_y])
-            global_indices = sorted_group[tmp_column].evaluate()
+        groups = dataframe.sort(self.get_name('sort'))\
+                    .group_by(self.get_name("group"), maintain_order=True)\
+                    .agg(\
+                        pl.col("*"),
+                        (pl.col(in_x).shift(1)).alias(shift_x),\
+                        (pl.col(in_y).shift(1)).alias(shift_y)\
+                    )
 
-            # Shift columns and assign to global output array
-            sorted_group.shift(1, shift_x, inplace=True)
-            shifted_x_array[global_indices] = sorted_group[shift_x].evaluate()
-            sorted_group.shift(1, f"{self.get_name('y')}_shifted", inplace=True)
-            shifted_y_array[global_indices] = sorted_group[shift_y].evaluate()
+        expanded = groups.explode(pl.exclude(self.get_name('group')))\
+                      .drop_nulls([shift_x, shift_y])\
+                      .with_columns(
+                        pl.struct(
+                            in_x, in_y,
+                            shift_x, shift_y).map_elements(lambda x :
+                                great_circle_distance(x[in_x], x[in_y], x[shift_x], x[shift_y])
+                            ).alias(self.get_name('out'))
+                      )
 
-            del global_indices
-
-        # Add global output array (and mask nans)
-        dataframe[shift_x] = np.ma.masked_invalid(shifted_x_array)
-        dataframe[shift_y] = np.ma.masked_invalid(shifted_y_array)
-
-        # Add virtual column for greater-circle-distance computation
-        dataframe.add_virtual_column(
-            self.get_name("out"),
-            dataframe.apply(great_circle_distance, [in_x, in_y, shift_x, shift_y], vectorize=True)
-        )
         # Drop/Hide unused columns
-        dataframe.drop(shift_x, inplace=True)
-        dataframe.drop(shift_y, inplace=True)
-        dataframe.drop(tmp_column, inplace=True)
+        df._dataframe = expanded.drop([shift_x, shift_y])
 
         # Add unit and data-specification to dataframe
-        dataframe.units[self.get_name("out")] = units.km
+        #dataframe.units[self.get_name("out")] = units.km
+
         new_spec = DataSpecification(self.get_name("out"), unit=units.km)
         df._metadata.columns.append(new_spec)
+
         return df

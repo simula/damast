@@ -37,7 +37,7 @@ class JoinDataFrameByColumn(PipelineElement):
 
     :param dataset: Path to `.csv/.hdf5`-file or a `polars.dataframe.LazyFrame`.
     :param right_on: Column from `dataset` to use for joining data
-    :param dataset_column: Name of column in `dataset` to
+    :param dataset_column: Name of column in `dataset` to add
     :param col_name: Name of augmented column
     :param sep: Separator in CSV file
 
@@ -70,17 +70,17 @@ class JoinDataFrameByColumn(PipelineElement):
         self._join_how = how
 
         # Load vessel type map
-        if not isinstance(dataset, XDataFrame):
+        if type(dataset) in [str, Path]:
             dataset = self.load_data(filename=dataset, sep=sep)
 
         # Check that the columns exist in dataset
         for col_name in [self._right_on, self._dataset_column]:
-            if col_name not in dataset.column_names:
+            if col_name not in dataset.columns:
                 raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{dataset.head()}'"
                                " - available are {','.join(vessel_type_data.columns)}")
 
         column_dtype = XDataFrame(dataset).dtype(self._dataset_column)
-        if column_dtype != int:
+        if int not in [column_dtype, column_dtype.to_python()]:
             raise ValueError(f"{self.__class__.__name__}.__init__:"
                              f" column '{self._dataset_column}' must be of type int, "
                              f", but was: {column_dtype}")
@@ -98,7 +98,7 @@ class JoinDataFrameByColumn(PipelineElement):
         :return: A `DataFrame` with the data
         """
         try:
-            return XDataFrame.open(file_path, sep=sep)
+            return XDataFrame.open(path=filename, sep=sep)
         except FileNotFoundError as e:
             raise RuntimeError(f"{cls}: Vessel type information not accessible -- {e}")
 
@@ -111,20 +111,26 @@ class JoinDataFrameByColumn(PipelineElement):
 
         :returns: DataFrame with added column
         """
+        other_df = self._dataset.select(
+                pl.col(self._right_on),
+                pl.col(self._dataset_column)
+        ).lazy()
+
         dataframe = df._dataframe.join(
-                other=self._dataset,
+                other=other_df,
                 left_on=self.get_name("x"),
                 right_on=self._right_on,
-                validate='1:1',
+                #validate='1:1',
                 #https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html
-                how=self.join_how.value
+                how=self._join_how.value
             )
 
         # If left_on and right_on are not equal, join adds right_on as a new column, adding
         # duplicate data
         if self._right_on != self.get_name("x"):
-            dataframe.drop(self._right_on, inplace=True)
-        dataframe.rename(self._dataset_column, self.get_name("out"))
+            dataframe = dataframe.drop(self._right_on)
+
+        df._dataframe = dataframe.rename({self._dataset_column: self.get_name("out")})
         return df
 
 
@@ -205,9 +211,10 @@ class AddUndefinedValue(PipelineElement):
         """
         mapped_name = self.get_name("x")
         df._dataframe = df._dataframe.with_columns(
-            pl.col(mapped_name).fill_null(self.fill_value).alias(mapped_name),
-            pl.col(mapped_name).fill_nan(self.fill_value).alias(mapped_name)
-        )
+                pl.col(mapped_name).fill_null(self.fill_value).alias(mapped_name),
+            ).with_columns(
+                pl.col(mapped_name).fill_nan(self.fill_value).alias(mapped_name)
+            )
         return df
 
 
@@ -226,70 +233,16 @@ class AddLocalIndex(PipelineElement):
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
 
-        local_index = np.empty(len(dataframe), dtype=int)
-        reverse_local_index = np.empty(len(dataframe), dtype=int)
-
-        # Identify the column index of the sort field
-        def update_indexes(indices):
-            group_size = len(indices)
-            sorted_indices = sorted(indices, key=lambda x: x[1])
-
-            for index, idx, in enumerate(sorted_indices):
-                local_index[idx[0]] = index
-                reverse_local_index[idx[0]] = group_size - 1 - index
-
-
-        # Identify the min and max index of a group, as well as the total length
-        groups_properties = {}
-        # Identify groups by selecting the indices
-        groups = {}
         group_column = self.get_name("group")
         sort_column = self.get_name("sort")
 
-        _log.info("AddLocalIndex: getting group properties")
-        # First identify first and last occurence of the items and keep count of the length of the trajectory
-        # that will allow us to update the local index earyl, and keep the memory footprint smaller
-        for i1, i2, chunk in dataframe.evaluate_iterator(group_column, chunk_size=500):
-            for index in range(i1, i2):
-                group_id = chunk[index - i1]
-                if group_id not in groups_properties:
-                    groups_properties[group_id] = [index, None, 1]
-                else:
-                    groups_properties[group_id][1] = index
-                    groups_properties[group_id][2] += 1
+        df._dataframe = dataframe\
+                .sort(group_column, sort_column)\
+                .with_columns(
+                    pl.int_range(pl.len()).over(group_column).alias(self.get_name("local_index")),
+                    pl.int_range(start=pl.len()-1, end=-1, step=-1).over(group_column).alias(self.get_name("reverse_{{local_index}}"))
+                )
 
-        _log.info("AddLocalIndex: updating local index - no parallel execution")
-        # Now reiterate over the chunks to identify the full index list per MMSI
-        # update the local index as soon as the last item for a group has been encountered
-        for i1, i2, chunks in dataframe.evaluate_iterator([group_column, sort_column], chunk_size=500, parallel=False):
-            chunk_dict = dict(zip([group_column, sort_column], chunks))
-            for index in range(i1, i2):
-                group_id = chunk_dict[group_column][index - i1]
-                sort_criteria = chunk_dict[sort_column][index - i1]
-
-                if group_id not in groups:
-                    groups[group_id] = [[index, sort_criteria]]
-                else:
-                    groups[group_id].append([index, sort_criteria])
-
-                # check if the maximum index has been found, and if so, update the local index
-                # and clean up
-                max_index = groups_properties[group_id][1]
-                length = groups_properties[group_id][2]
-                if length == 1 or max_index == index:
-                    # perform a local update of the index
-                    update_indexes(groups[group_id])
-                    del groups[group_id]
-
-        if groups != {}:
-            raise RuntimeError(f"{self.__class__.__name__}.transform: update index failed - remaining groups {groups}")
-
-        # Assign global arrays to dataframe
-        dataframe[self.get_name("local_index")] = local_index
-        dataframe[self.get_name("reverse_{{local_index}}")] = reverse_local_index
-
-        # Drop temporary index columns
-        del local_index, reverse_local_index
         return df
 
 

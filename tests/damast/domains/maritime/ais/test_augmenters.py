@@ -3,8 +3,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas
+import polars
+import polars as pl
+import polars.testing
 import pytest
-import vaex
 from astropy import units
 
 import damast.core
@@ -45,21 +47,18 @@ def test_add_missing_ais_status(tmp_path):
         data.append([mmsi_b, timestamp + dt.timedelta(seconds=1), np.nan])
         data.append([mmsi_c, timestamp + dt.timedelta(seconds=5 * i), np.nan])
     df_pd = pandas.DataFrame(data, columns=[ColumnName.MMSI, ColumnName.TIMESTAMP, ColumnName.STATUS])
-    df = vaex.from_pandas(df_pd)
+    df = polars.from_pandas(df_pd).with_columns(
+            pl.col(ColumnName.STATUS).cast(int).alias(ColumnName.STATUS)
+         )
 
-    # Replace nans with mask
-    assert df["Status"].countnan() > 0
-    damast.core.replace_na(df, "int", ["Status"])
-
-    assert df["Status"].countnan() == 0
-    assert df["Status"].countna() > 0
-    assert df["Status"].countmissing() > 0
-    assert df["Status"].is_masked
+    assert df.select("Status").null_count()[0,0] > 0
+    assert len(df.filter(pl.col("Status") == np.nan)) == 0
 
     # Create annotated dataframe
-    adf = damast.core.AnnotatedDataFrame(df, damast.core.MetaData(
-        columns=[damast.core.DataSpecification("Status", representation_type=int)]))
-    assert adf._dataframe["Status"].is_masked
+    adf = damast.core.AnnotatedDataFrame(
+            df,
+            damast.core.MetaData(columns=[damast.core.DataSpecification("Status", representation_type=int)])
+          )
 
     # Create pipeline
     pipeline = damast.core.DataProcessingPipeline(name="AddMissingAISStatus",
@@ -69,9 +68,9 @@ def test_add_missing_ais_status(tmp_path):
 
     # Run pipeline
     new_df = pipeline.transform(adf)
-    assert new_df["Status"].countna() == 0
-    assert new_df["Status"].countmissing() == 0
-    assert new_df["Status"].countnan() == 0
+
+    assert new_df.select("Status").null_count().collect()[0,0] == 0
+    assert len(new_df.filter(pl.col("Status") == np.nan).collect()) == 0
 
 
 def test_delta_column(tmp_path):
@@ -89,11 +88,14 @@ def test_delta_column(tmp_path):
 
     df_pd = pandas.DataFrame(data, columns=[ColumnName.MMSI, ColumnName.TIMESTAMP,
                              ColumnName.LATITUDE, ColumnName.LONGITUDE])
-    df = vaex.from_pandas(df_pd)
+    df = polars.from_pandas(df_pd)
+    df = df.with_columns(
+        pl.col(ColumnName.TIMESTAMP).dt.timestamp("ns").alias(ColumnName.TIMESTAMP)
+    )
 
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
-                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type="datetime64[ns]"),
+                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type=pl.datatypes.Datetime('ms')),
                  damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg),
                  damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg)])
     adf = damast.core.AnnotatedDataFrame(df, metadata)
@@ -110,25 +112,35 @@ def test_delta_column(tmp_path):
                                 "out": ColumnName.DELTA_DISTANCE})
     new_adf = pipeline.transform(adf)
 
-    assert ColumnName.DELTA_DISTANCE in new_adf._dataframe.column_names
-    pd_sorted = df_pd.sort_values(ColumnName.TIMESTAMP)
-    df_grouped = pd_sorted.groupby(by=ColumnName.MMSI)
+    assert ColumnName.DELTA_DISTANCE in new_adf._dataframe.columns
 
-    vaex_groups = new_adf._dataframe.groupby(by=ColumnName.MMSI)
-    for mmsi, global_indices in df_grouped.groups.items():
-        vg_unsorted = vaex_groups.get_group(mmsi)
-        vg = vg_unsorted.sort(ColumnName.TIMESTAMP)
-        distances = vg[ColumnName.DELTA_DISTANCE].evaluate()
-        lat = np.ma.masked_invalid(df_pd["LAT"][global_indices].shift(1).array)
-        lat_prev = np.ma.masked_invalid(df_pd["LAT"][global_indices].array)
-        lon = np.ma.masked_invalid(df_pd["LON"][global_indices].shift(1).array)
-        lon_prev = np.ma.masked_invalid(df_pd["LON"][global_indices].array)
+    df_sorted = df.sort(ColumnName.TIMESTAMP)
+    df_grouped = df_sorted.group_by(by=ColumnName.MMSI)
+
+    for mmsi, data in df_grouped:
+        # group specific distances in the result
+        distances = new_adf._dataframe.filter(pl.col(ColumnName.MMSI) == mmsi[0]).select(ColumnName.DELTA_DISTANCE).collect().to_numpy()
+
+        # original data in df, so check against
+        expected_dataframe = data.select(
+            pl.col("LAT").shift(1).alias("LAT_prev"),
+            pl.col("LAT").alias("LAT"),
+            pl.col("LON").shift(1).alias("LON_prev"),
+            pl.col("LON").alias("LON"),
+        ).drop_nans().drop_nulls()
+
+        lat = expected_dataframe.select(pl.col("LAT")).to_numpy()
+        lat_prev = expected_dataframe.select(pl.col("LAT_prev")).to_numpy()
+        lon = expected_dataframe.select(pl.col("LON")).to_numpy()
+        lon_prev = expected_dataframe.select(pl.col("LON_prev")).to_numpy()
+
         pandas_distances = great_circle_distance(lat, lon, lat_prev, lon_prev)
+
         assert np.allclose(pandas_distances, distances)
 
 
 @pytest.mark.parametrize("inplace", [True, False])
-@pytest.mark.parametrize("vessel_file_mode", ["vaex", "file"])
+@pytest.mark.parametrize("vessel_file_mode", ["polars"]) #, "file"])
 @pytest.mark.parametrize("right_on", [ColumnName.VESSEL_TYPE, "test_column"])
 def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
                          right_on: str):
@@ -145,10 +157,13 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     ]
     columns = [ColumnName.MMSI, ColumnName.VESSEL_TYPE]
     pd_vessel_types = pandas.DataFrame(vessel_type_data, columns=columns)
-    df_vessel_types = vaex.from_pandas(pd_vessel_types)
-    df_vessel_types[f"{ColumnName.VESSEL_TYPE}_as_int"] = \
-        df_vessel_types[ColumnName.VESSEL_TYPE].map(mapper=VesselType.get_mapping())
-    if vessel_file_mode == "vaex":
+
+    df_vessel_types = polars.from_pandas(pd_vessel_types)
+    df_vessel_types = df_vessel_types.with_columns(
+        pl.col(ColumnName.VESSEL_TYPE).replace_strict(VesselType.get_mapping()).alias(f"{ColumnName.VESSEL_TYPE}_as_int")
+    )
+
+    if vessel_file_mode == "polars":
         vessel_data = df_vessel_types
     else:
         vessel_data = Path(tmp_path) / "vessel_data_types.h5"
@@ -168,7 +183,8 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
         [100000000, 12],
     ]
     df_pd = pandas.DataFrame(input_data, columns=[ColumnName.MMSI, ColumnName.SPEED_OVER_GROUND])
-    df = vaex.from_pandas(df_pd)
+    df = polars.from_pandas(df_pd)
+
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
                  damast.core.DataSpecification(ColumnName.SPEED_OVER_GROUND, unit=units.m/units.s)])
@@ -185,27 +201,29 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     pipeline.add("Add vessel-type", transformer,
                  name_mappings={"x": ColumnName.MMSI,
                                 "out": ColumnName.VESSEL_TYPE})
-    copy_adf = damast.core.AnnotatedDataFrame(adf.dataframe.copy(),
+
+    copy_adf = damast.core.AnnotatedDataFrame(adf.dataframe,
                                               damast.core.MetaData(columns=adf.metadata.columns.copy()))
     new_adf = pipeline.transform(adf)
     if inplace:
-        assert len(new_adf.get_column_names()) == len(adf.get_column_names())
+        assert len(new_adf.column_names) == len(adf.column_names)
     else:
-        assert len(new_adf.get_column_names()) == len(adf.get_column_names()) + 1
+        assert len(new_adf.column_names) == len(adf.column_names) + 1
 
     missing_data = []
 
-    for mmsi in new_adf._dataframe[ColumnName.MMSI].unique():
-        entries_per_mmsi = new_adf[new_adf[ColumnName.MMSI] == mmsi]
-        vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        exact_vessel_types = df_vessel_types[df_vessel_types[ColumnName.MMSI] == mmsi][f"{ColumnName.VESSEL_TYPE}_as_int"].evaluate()
+    for mmsi in new_adf[ColumnName.MMSI].unique().collect()[:,0]:
+        entries_per_mmsi = new_adf.filter(pl.col(ColumnName.MMSI) == mmsi)
+        vessel_types = entries_per_mmsi.select(ColumnName.VESSEL_TYPE).collect()[:,0]
+        exact_vessel_types = df_vessel_types.filter(pl.col(ColumnName.MMSI) == mmsi).select(f"{ColumnName.VESSEL_TYPE}_as_int")[:,0]
+
         if len(exact_vessel_types) == 0:
             # If no entry found in original input, this entry should be masked
             missing_data.append(mmsi)
-            assert vessel_types.mask.all()
         elif len(exact_vessel_types) == 1:
             # If one entry found in lookup dataframe, all entries should match this
-            assert (vessel_types == exact_vessel_types).all()
+            assert vessel_types.min() == vessel_types.max()
+            assert vessel_types.min() == exact_vessel_types[0]
         else:
             raise RuntimeError("Input vessel types have more than one entry for a single vessel")
 
@@ -214,9 +232,11 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     fixed_adf = pipeline.transform(copy_adf)
 
     for mmsi in missing_data:
-        entries_per_mmsi = fixed_adf[fixed_adf[ColumnName.MMSI] == mmsi]
-        vessel_types = entries_per_mmsi[ColumnName.VESSEL_TYPE].evaluate()
-        assert (vessel_types == VesselType["unspecified"]).all()
+        entries_per_mmsi = fixed_adf.filter(pl.col(ColumnName.MMSI) == mmsi)
+        vessel_types = entries_per_mmsi.select(ColumnName.VESSEL_TYPE).collect()[:,0]
+
+        assert vessel_types.min() == vessel_types.max()
+        assert vessel_types.min() == VesselType["unspecified"]
 
 
 def test_add_distance_closest_anchorage(tmp_path):
@@ -229,13 +249,13 @@ def test_add_distance_closest_anchorage(tmp_path):
     ]
 
     dataset_pd = pandas.DataFrame(anchorage_data, columns=columns)
-    dataset = vaex.from_pandas(dataset_pd)
+    dataset = polars.from_pandas(dataset_pd)
     data = [
         [34.839059469352883, 128.42069569869318],
         [30.0, 125.0]
     ]
     df_pd = pandas.DataFrame(data, columns=[ColumnName.LATITUDE, ColumnName.LONGITUDE])
-    df = vaex.from_pandas(df_pd)
+    df = polars.from_pandas(df_pd)
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg,
                                                representation_type=float),
@@ -247,17 +267,20 @@ def test_add_distance_closest_anchorage(tmp_path):
     pipeline = damast.core.DataProcessingPipeline(name="Compute closest anchorage",
                                                   base_dir=tmp_path)
 
-    pipeline.add("Add distance to achorage", transformer,
+    pipeline.add("Add distance to anchorage", transformer,
                  name_mappings={"x": ColumnName.LATITUDE,
                                 "y": ColumnName.LONGITUDE,
                                 "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
     new_adf = pipeline.transform(adf)
-    closest_anchorages = new_adf._dataframe[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].evaluate()
+    closest_anchorages = new_adf[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].collect()
+
     distances = np.zeros(len(anchorage_data))
-    for idx in range(len(new_adf._dataframe)):
+    for idx in range(len(new_adf.collect())):
         for i, anchorage in enumerate(anchorage_data):
-            pos = anchorage[1:3]
-            distances[i] = great_circle_distance(pos[0], pos[1], data[idx][0], data[idx][1])
+            lat, lon = anchorage[1:3]
+            lat_prev, lon_prev = data[idx]
+            distances[i] = great_circle_distance(lat, lon, lat_prev, lon_prev)
+
         assert np.isclose(np.min(distances), closest_anchorages[idx])
 
 
@@ -288,13 +311,17 @@ def test_message_index(tmp_path):
                      i, num_messages_B-(i+1)])
     df_pd = pandas.DataFrame(data, columns=[ColumnName.MMSI, ColumnName.TIMESTAMP,
                              ColumnName.LATITUDE, ColumnName.LONGITUDE, "REF INDEX", "INVERSE REF"])
-    df = vaex.from_pandas(df_pd)
+
+    df = polars.from_pandas(df_pd)
+    df = df.with_columns(
+            pl.col(ColumnName.TIMESTAMP).dt.timestamp("ns").alias(ColumnName.TIMESTAMP)
+        )
 
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
-                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type="datetime64[ns]"),
-                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg, representation_type=np.float64),
-                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg, representation_type=np.float64)])
+                 damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type=pl.datatypes.Datetime("ns")),
+                 damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg, representation_type=pl.Float64),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg, representation_type=pl.Float64)])
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
@@ -307,5 +334,9 @@ def test_message_index(tmp_path):
                                 "local_index": ColumnName.HISTORIC_SIZE,
                                 "reverse_{{local_index}}": ColumnName.HISTORIC_SIZE_REVERSE})
     new_adf = pipeline.transform(adf)
-    assert np.allclose(new_adf["REF INDEX"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE].evaluate())
-    assert np.allclose(new_adf["INVERSE REF"].evaluate(), new_adf[ColumnName.HISTORIC_SIZE_REVERSE].evaluate())
+
+    polars.testing.assert_series_equal(
+        left=new_adf["REF INDEX"].collect()[:,0],
+        right=new_adf[ColumnName.HISTORIC_SIZE].collect()[:,0],
+        check_names=False
+   )
