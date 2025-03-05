@@ -47,6 +47,7 @@ dependencies = [
     "pyarrow",
     "pydantic",
     "scikit-learn",
+    "tables",
     # BEGIN keras backends
     "jax[cpu]",
     "tf-nightly",
