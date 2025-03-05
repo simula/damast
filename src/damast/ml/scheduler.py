@@ -35,7 +35,7 @@ class Job:
     target: List[str]
     #: The length of the sequence
     sequence_length: int
-    #: The path to the vaex-readable file containing the sequences to run the prediction on
+    #: The path to the file containing the sequences to run the prediction on
     data_filename: str
 
     class Status(str, Enum):

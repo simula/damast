@@ -120,8 +120,20 @@ class PolarsDataFrame(metaclass=Meta):
         path = Path(path)
         if path.suffix == ".csv":
             return polars.scan_csv(path, sep=sep)
+        elif path.suffix in [".h5", ".hdf5"]:
+            import pandas as pd
+            pandas_df = pd.read_hdf(path, key="DAMAST_HDF")
+            return polars.from_pandas(pandas_df)
 
         raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
+
+    def export_hdf5(df: DataFrame, path: str | Path):
+        import pandas
+        if isinstance(df, polars.dataframe.DataFrame):
+            df = df.lazy()
+
+        pandas_df = df.collect().to_pandas()
+        pandas_df.to_hdf(path, key="DAMAST_HDF")
 
 
 

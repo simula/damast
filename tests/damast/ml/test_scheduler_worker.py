@@ -5,9 +5,9 @@ from time import sleep
 
 import numpy as np
 import pandas as pd
+import polars
 import psutil
 import pytest
-import vaex
 
 from damast.ml.scheduler import Job, JobScheduler
 
@@ -22,9 +22,9 @@ def job(tmp_path):
         data.append(row)
 
     pandas_df = pd.DataFrame(data, columns=column_names)
-    df = vaex.from_pandas(pandas_df)
-    data_filename = tmp_path / "test_sequence.hdf5"
-    df.export(data_filename)
+    df = polars.from_pandas(pandas_df)
+    data_filename = tmp_path / "test_sequence.parquet"
+    df.write_parquet(data_filename)
 
     job_dict = {
         "id": -1,

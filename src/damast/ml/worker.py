@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import vaex
+import polars as pl
 
 from damast.data_handling.accessors import SequenceIterator
 from damast.ml.experiments import Experiment
@@ -146,7 +146,7 @@ class Worker:
         try:
             _log.info(f"{self.__class__.__name__}({job.id}): loading data")
             start = dt.datetime.utcnow()
-            df = vaex.open(job.data_filename).to_pandas_df()
+            df = pl.scan_parquet(job.data_filename)
             _log.info(
                 f"{self.__class__.__name__}({job.id}): loading data "
                 f"[done after {(dt.datetime.utcnow() - start).total_seconds()} seconds]")

@@ -233,6 +233,10 @@ class AnnotatedDataFrame(XDataFrame):
             metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
         elif Path(filename).suffix in [ ".csv", ".parquet"]:
             df = polars.scan_csv(filename)
+        elif Path(filename).suffix in [".h5", ".hdf5"]:
+            import pandas
+            pandas_df = pandas.read_hdf(filename)
+            df = polars.from_pandas(pandas_df)
         else:
             raise RuntimeError(f"Could not load {filename} - please use parquet files")
 

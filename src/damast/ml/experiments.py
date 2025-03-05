@@ -14,11 +14,12 @@ from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Union
 
 import keras
 import numpy as np
-import vaex
+import polars as pl
 import yaml
 
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline
+from damast.core.types import DataFrame
 from damast.data_handling.accessors import GroupSequenceAccessor
 from damast.ml.models.base import BaseModel, ModelInstanceDescription
 
@@ -382,8 +383,8 @@ class Experiment:
         """
 
         normalized_rates = np.asarray([rate / sum(ratios) for rate in ratios])
-        groups = adf.dataframe[group].unique().copy()
-        random.shuffle(groups)
+        groups = adf[group].unique().select(pl.col(group).shuffle().alias(group)).collect()
+
         partition_sizes = np.asarray(
             np.round(len(groups) * normalized_rates), dtype=int)
         delta = len(groups) - sum(partition_sizes)
@@ -478,7 +479,6 @@ class Experiment:
 
         :return: model instance
         """
-
         # NOTE: This should probably be an individual step, as we could re-use an existing model to continue training
         if isinstance(self.learning_task, ForecastTask):
             # TODO: the model needs to be applicable to a forecast task - so we might
@@ -542,7 +542,7 @@ class Experiment:
 
     def run(self,
             logging_level: int = INFO,
-            report_filename: Optional[Union[str, Path]] = None) -> vaex.DataFrame:
+            report_filename: Optional[Union[str, Path]] = None) -> DataFrame:
         """
         Run the experiment and return evaluation data.
 
@@ -575,11 +575,11 @@ class Experiment:
         # only relevant data (with a minimum length of the given sequence length) will be accounted
         # for this learning task
         if hasattr(self.learning_task, "sequence_length"):
-            groups_with_sequence_length = adf.dataframe.groupby(group_column, agg={"sequence_length": "count"})
-            filtered_groups = groups_with_sequence_length[groups_with_sequence_length.sequence_length
-                                                          > self.learning_task.sequence_length]
-            permitted_values = filtered_groups[group_column].unique()
-            adf._dataframe = adf._dataframe[adf._dataframe[group_column].isin(permitted_values)]
+            groups_with_sequence_length = adf.dataframe.group_by(group_column).agg(sequence_length=pl.len())
+
+            filtered_groups = groups_with_sequence_length.filter(pl.col("sequence_length") > self.learning_task.sequence_length)
+            permitted_values = filtered_groups.select(group_column).unique().collect()[:,0]
+            adf._dataframe = adf.filter(pl.col(group_column).is_in(permitted_values))
 
         features = self.compute_features(adf)
         train_group, test_group, validate_group = \

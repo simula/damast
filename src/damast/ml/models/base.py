@@ -12,10 +12,9 @@ import keras
 import keras.callbacks
 import keras.utils
 import pandas as pd
-import vaex
-from vaex import DataFrame
 
 from damast.core import DataSpecification
+from damast.core.types import DataFrame, XDataFrame
 
 __all__ = [
     "BaseModel",
@@ -244,8 +243,8 @@ class BaseModel(ABC):
 
         # Save the history
         if save_history:
-            history: DataFrame = vaex.from_dict(self.history.history)
-            history.export_csv(f"{self.model_dir / HISTORY_FILENAME}")
+            history: DataFrame = XDataFrame.from_dict(self.history.history)
+            history.write_csv(f"{self.model_dir / HISTORY_FILENAME}")
 
     def get_evaluations(self) -> DataFrame:
         """
@@ -254,7 +253,7 @@ class BaseModel(ABC):
         :raise FileNotFoundError: If evaluation result file does not exist
         """
         if self.evaluation_file.exists():
-            return vaex.read_csv(self.evaluation_file)
+            return XDataFrame.read_csv(self.evaluation_file)
 
         raise FileNotFoundError(f"There is are no evaluation results for {self.name} available: {self.evaluation_file} "
                                 "does not exist")

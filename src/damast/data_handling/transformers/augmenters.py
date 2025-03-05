@@ -125,11 +125,6 @@ class JoinDataFrameByColumn(PipelineElement):
                 how=self._join_how.value
             )
 
-        # If left_on and right_on are not equal, join adds right_on as a new column, adding
-        # duplicate data
-        if self._right_on != self.get_name("x"):
-            dataframe = dataframe.drop(self._right_on)
-
         df._dataframe = dataframe.rename({self._dataset_column: self.get_name("out")})
         return df
 
@@ -328,7 +323,11 @@ class ChangeTypeColumn(PipelineElement):
 
     def __init__(self, new_type: Any):
         """Constructor"""
-        self._new_type = new_type
+        if type(new_type) == str:
+            polar_type = new_type.capitalize()
+            if not hasattr(pl.datatypes.classes, polar_type):
+                raise TypeError(f"Type {new_type} has not correspondence in 'polars'")
+            self._new_type = getattr(pl.datatypes.classes, polar_type)
 
     @property
     def new_type(self):

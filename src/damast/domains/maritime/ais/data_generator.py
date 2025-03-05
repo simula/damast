@@ -5,6 +5,7 @@ from random import choice, randint, random
 from typing import Any, List
 
 import pandas as pd
+import polars as pl
 from pyais.ais_types import AISType
 
 from damast.core.metadata import DataCategory
@@ -184,22 +185,14 @@ class AISTestData:
         return XDataFrame.from_pandas(df)
 
     def generate_anchorage_type_data(self) -> DataFrame:
-
-        raise RuntimeError("NEED MIGRATION")
-
         # Generate anchorages close to starting points of vessel trajectories
         mmsi = ColumnName.MMSI.lower()
-        lat_vaex = self.dataframe.groupby(mmsi).agg({"lat": vaex.agg.first})
-
-        lat_vaex.rename("lat", "latitude")
-        lat_vaex["latitude"] *= 1.05
-
-        lon_vaex = self.dataframe.groupby(mmsi).agg({"lon": vaex.agg.first})
-        lon_vaex.rename("lon", "longitude")
-        lon_vaex["longitude"] *= -0.95
-
-
-        df = lat_vaex.join(lon_vaex, on=mmsi)
+        first = self.dataframe.group_by(mmsi).first()
+        first = first.rename({ "lat": "latitude", "lon": "longitude"})
+        df = first.with_columns(
+                pl.col("latitude")*1.05,
+                pl.col("longitude")*-0.95,
+            )
         return df
 
 

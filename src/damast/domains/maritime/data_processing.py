@@ -8,15 +8,14 @@ Contains AIS-specific pipelines for filtering and augmenting data
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-import vaex
-
 from damast.core import DataProcessingPipeline
+from damast.core.types import XDataFrame
 from damast.data_handling.exploration import plot_lat_lon
 from damast.data_handling.transformers import (
     AddTimestamp,
     AddUndefinedValue,
     ChangeTypeColumn,
-    DropMissing,
+    DropMissingOrNan,
     FilterWithin,
     RemoveValueRows,
     )
@@ -85,7 +84,7 @@ class CleanseAndSanitise(DataProcessingPipeline):
 
         self.add("Remove rows with ground as source", RemoveValueRows("g"),
                  name_mappings={"x": ColumnName.SOURCE})
-        self.add("Remove rows with null dates", DropMissing(),
+        self.add("Remove rows with null dates", DropMissingOrNan(),
                  name_mappings={"x": ColumnName.DATE_TIME_UTC})
         self.add("Filter rows within message types", FilterWithin(message_types),
                  name_mappings={"x": ColumnName.MESSAGE_TYPE})
@@ -160,7 +159,8 @@ class DataProcessing(DataProcessingPipeline):
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         # Output an overview over the existing anchorages
-        anchorages_data = vaex.open(anchorages_hdf5)
+        anchorages_data = XDataFrame.open(anchorages_hdf5)
+
         plot_lat_lon(df=anchorages_data,
                      latitude_name="latitude",
                      longitude_name="longitude",
@@ -169,16 +169,16 @@ class DataProcessing(DataProcessingPipeline):
 
         # Temporary converters to csv to be compatible
         if isinstance(vessel_type_hdf5, Path):
-            vessel_type_csv = vaex.open(vessel_type_hdf5)
+            vessel_type_csv = XDataFrame.open(vessel_type_hdf5)
         else:
             vessel_type_csv = vessel_type_hdf5
 
         if isinstance(anchorages_hdf5, Path):
-            anchorages_csv = vaex.open(anchorages_hdf5)
+            anchorages_csv = XDataFrame.open(anchorages_hdf5)
         else:
             anchorages_csv = anchorages_hdf5
         if isinstance(fishing_vessel_type_hdf5, Path):
-            fishing_vessel_type_csv = vaex.open(fishing_vessel_type_hdf5)
+            fishing_vessel_type_csv = XDataFrame.open(fishing_vessel_type_hdf5)
         else:
             fishing_vessel_type_csv = fishing_vessel_type_hdf5
 

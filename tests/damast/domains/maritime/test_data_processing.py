@@ -3,11 +3,13 @@ import pathlib
 from typing import Tuple
 
 import numpy as np
+import polars
+import polars as pl
 import pytest
-import vaex
 
 import damast.core
 from damast.core import units
+from damast.core.types import DataFrame, XDataFrame
 from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import CleanseAndSanitise, DataProcessing
 from damast.domains.maritime.data_specification import ColumnName
@@ -27,39 +29,31 @@ def ais_test_data() -> AISTestData:
 
 @pytest.fixture()
 def vessel_types_data(ais_test_data: AISTestData,
-                      workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
+                      workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_vessel_type_data()
     hdf5_path = workdir / "vessel_types.hdf5"
-    df.export_hdf5(hdf5_path)
+    XDataFrame.export_hdf5(df, hdf5_path)
     return df, hdf5_path
 
 
 @pytest.fixture()
 def fishing_vessel_types_data(ais_test_data: AISTestData,
-                              workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
+                              workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_fishing_vessel_type_data()
     hdf5_path = workdir / "fishing_vessel_types.hdf5"
-    df.export_hdf5(hdf5_path)
+    XDataFrame.export_hdf5(df, hdf5_path)
     return df, hdf5_path
 
 
 @pytest.fixture()
 def anchorages_data(ais_test_data: AISTestData,
-                    workdir: pathlib.Path) -> Tuple[vaex.DataFrame, pathlib.Path]:
+                    workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_anchorage_type_data()
 
     anchorages_csv = workdir / "anchorages.hdf5"
-    df.export_hdf5(anchorages_csv)
+    XDataFrame.export_hdf5(df, anchorages_csv)
 
     return df, anchorages_csv
-
-
-def test_data_processing_with_plain_vaex(workdir,
-                                         ais_test_data,
-                                         fishing_vessel_types_data,
-                                         vessel_types_data,
-                                         anchorages_data):
-    _ = vaex.from_pandas(ais_test_data.dataframe)
 
 
 def test_data_processing(workdir,
@@ -82,8 +76,8 @@ def test_data_processing(workdir,
         "message_nr": ColumnName.MESSAGE_TYPE,
         "source": "source"
     }
-    for (old_name, new_name) in columns.items():
-        ais_test_data.dataframe.rename(old_name, new_name)
+
+    ais_test_data.dataframe = ais_test_data.dataframe.rename(columns)
 
     metadata = damast.core.MetaData(
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
@@ -113,27 +107,32 @@ def test_data_processing(workdir,
     adf_preprocess = pipeline.transform(adf)
 
     column_names = adf_preprocess.dataframe.column_names
-    assert (adf_preprocess.dataframe["source"].evaluate().to_numpy(zero_copy_only=False) == "s").all()
-    assert adf_preprocess.dataframe[ColumnName.DATE_TIME_UTC].countmissing() == 0
-    assert (adf_preprocess.dataframe[ColumnName.MESSAGE_TYPE].evaluate() == 2).all()
+
+    assert adf_preprocess.filter(pl.col("source") != "s").count()[0,0] == 0
+    assert adf_preprocess.select(ColumnName.DATE_TIME_UTC).null_count()[0,0] == 0
+    assert adf_preprocess.filter(pl.col(ColumnName.MESSAGE_TYPE) != 2).count()[0,0] == 0
+
     assert ColumnName.TIMESTAMP in column_names
     assert ColumnName.SPEED_OVER_GROUND + "_int16" in column_names
-    assert adf_preprocess[ColumnName.SPEED_OVER_GROUND+"_int16"].dtype == np.int16
+    assert adf_preprocess.dtype(ColumnName.SPEED_OVER_GROUND+"_int16") == pl.Int16
     assert ColumnName.COURSE_OVER_GROUND + "_int16" in column_names
-    assert adf_preprocess[ColumnName.COURSE_OVER_GROUND+"_int16"].dtype == np.int16
+    assert adf_preprocess.dtype(ColumnName.COURSE_OVER_GROUND+"_int16") == pl.Int16
 
     pipeline2 = DataProcessing(workdir=workdir,
                                vessel_type_hdf5=vessel_types_data[1],
                                fishing_vessel_type_hdf5=fishing_vessel_types_data[1],
                                anchorages_hdf5=anchorages_data[1])
+
+    adf_preprocess._dataframe = adf_preprocess._dataframe.lazy()
     adf_processed = pipeline2.transform(adf_preprocess)
     processed_column_names = adf_processed.dataframe.column_names
 
     assert ColumnName.VESSEL_TYPE in processed_column_names
-    assert adf_processed.dataframe[ColumnName.VESSEL_TYPE].countmissing() == 0
+    assert adf_processed[ColumnName.VESSEL_TYPE].collect().null_count()[0,0] == 0
     assert ColumnName.FISHING_TYPE in processed_column_names
-    assert adf_processed.dataframe[ColumnName.FISHING_TYPE].countmissing() == 0
-    assert adf_processed.dataframe[ColumnName.FISHING_TYPE].min() >= -1
+    assert adf_processed[ColumnName.FISHING_TYPE].collect().null_count()[0,0] == 0
+    assert adf_processed[ColumnName.FISHING_TYPE].collect().min()[0,0] >= -1
+
     assert ColumnName.DISTANCE_CLOSEST_ANCHORAGE in processed_column_names
     assert ColumnName.HISTORIC_SIZE in processed_column_names
     assert ColumnName.HISTORIC_SIZE_REVERSE in processed_column_names

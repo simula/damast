@@ -161,7 +161,7 @@ class GroupSequenceAccessor:
 
         # Sanity checks before creating generator
         # Check that all features have the same data-type
-        datatypes = self.df[features].dtypes
+        datatypes = [XDataFrame(self.df).dtype(f) for f in features]
         for dtype in datatypes:
             if dtype != datatypes[0]:
                 raise ValueError(f"{self.__class__.__name__}:"
@@ -170,7 +170,7 @@ class GroupSequenceAccessor:
 
         use_target = target is not None
         if use_target:
-            datatypes = self.df[target].dtypes
+            datatypes = [XDataFrame(self.df).dtype(t) for t in target]
             for dtype in datatypes:
                 if dtype != datatypes[0]:
                     raise ValueError(f"{self.__class__.__name__}:"
@@ -252,6 +252,9 @@ class GroupSequenceAccessor:
                             sequence = sequence.sort(by=self.sort_columns)
                         elif shuffle:
                             sequence = sequence.sample(fraction=1)
+
+                        if isinstance(sequence, DataFrame):
+                            sequence = sequence.collect()
 
                         len_sequence = sequence.shape[0]
                         if len_sequence >= (sequence_length + sequence_forecast):
@@ -385,7 +388,7 @@ class SequenceIterator:
 
         # Sanity checks before creating generator
         # Check that all features have the same data-type
-        datatypes = self.df[features].dtypes
+        datatypes = [XDataFrame(self.df).dtype(f) for f in features]
         for dtype in datatypes:
             if dtype != datatypes[0]:
                 raise ValueError(f"{self.__class__.__name__}:"
@@ -394,7 +397,7 @@ class SequenceIterator:
 
         use_target = target is not None
         if use_target:
-            datatypes = self.df[target].dtypes
+            datatypes = [XDataFrame(self.df).dtype(t) for t in target]
             for dtype in datatypes:
                 if dtype != datatypes[0]:
                     raise ValueError(f"{self.__class__.__name__}:"

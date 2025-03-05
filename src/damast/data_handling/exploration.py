@@ -4,8 +4,9 @@ Module containing the functionality to explore and visualise data
 from pathlib import Path
 from typing import List, Optional
 
-import vaex
 from matplotlib import pyplot as plt
+
+from damast.core.types import DataFrame
 
 __all__ = ["plot_histograms",
            "plot_lat_lon",
@@ -17,7 +18,7 @@ PLOT_DPI: int = 300
 
 
 def plot_lat_lon(*,
-                 df: vaex.DataFrame,
+                 df: DataFrame,
                  output_dir: Path,
                  latitude_name: str = "LAT",
                  longitude_name: str = "LON",
@@ -34,15 +35,17 @@ def plot_lat_lon(*,
 
     :return: Path to the file
     """
+    if not isinstance(df, DataFrame):
+        df = df.lazy()
 
-    longitude = df[longitude_name].evaluate()
-    latitude = df[latitude_name].evaluate()
+    longitude = df.select(longitude_name).collect()
+    latitude = df.select(latitude_name).collect()
 
     # .copy() to address ValueError: assignment destination is read-only
     # raised in numpy/ma/core.py:3528: in mask
     #      self.__setmask__(value)
-    plt.scatter(x=longitude.copy(),
-                y=latitude.copy(),
+    plt.scatter(x=longitude.to_numpy(),
+                y=latitude.to_numpy(),
                 alpha=1)
     plt.xlim(-180, 180)
     plt.ylim(-90, 90)
@@ -56,7 +59,7 @@ def plot_lat_lon(*,
 
 
 def plot_histograms(*,
-                    df: vaex.DataFrame,
+                    df: DataFrame,
                     output_dir: Path,
                     filename_prefix: str,
                     columns: Optional[List[str]] = None,
@@ -71,19 +74,25 @@ def plot_histograms(*,
     :param columns: columns of the dataframe to use
     :return: Path to the plots' directory
     """
+    if not isinstance(df, DataFrame):
+        df = df.lazy()
+
     if columns is None:
         columns = df.columns
+
     # For each column plot the histogram
     for col_name in columns:
-        if col_name not in df.column_names:
+        if col_name not in df.columns:
             raise KeyError(f"plot_histogram: {col_name} is not an existing column,"
-                           f" available are {','.join(df.column_names)}")
+                           f" available are {','.join(df.columns)}")
         # Vaex uses the prefix "__" for hidden columns, i.e. columns that have either been removed, or
         # is a dependent of another column (say after converting radians to degrees)
         if col_name.startswith("__"):
             continue
         fig = plt.figure()
-        df.viz.histogram(df[col_name])
+
+        df.select(col_name).collect().plot.hist()
+
         plt.tight_layout()
         path = output_dir / f"{filename_prefix}{col_name}.png"
         fig.savefig(path, dpi=dpi)

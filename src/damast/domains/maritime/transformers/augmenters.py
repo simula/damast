@@ -133,7 +133,8 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
     :raise ValueError: when the input column that shall extend the dataset is neither int nor str
     """
 
-    def __init__(self, right_on: str,
+    def __init__(self,
+                 right_on: str,
                  dataset_col: str,
                  dataset: Union[str, Path, DataFrame]
                  ):
@@ -156,7 +157,6 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
         else:
             raise ValueError(f"{self.__class__.__name__}.__init__: dtype of column '{dataset_col}',"
                              f" must be either int or str, but was '{column_dtype}'")
-
         super().__init__(dataset=dataset, right_on=right_on, dataset_col=name)
 
     @damast.core.describe("Add vessel-type from other dataset to current dataset, "

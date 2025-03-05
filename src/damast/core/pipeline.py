@@ -19,5 +19,6 @@ class Pipeline:
                 df = step.fit_transform(df)
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
-                raise RuntimeError(f"Step #{idx} in pipeline ({step.__class__.__name__}) failed:\n{msg}")
+                raise RuntimeError(f"Step #{idx} in pipeline ({step.__class__.__name__}) failed: name_mappings: {step.name_mappings}\n\
+                        {msg}")
         return df
