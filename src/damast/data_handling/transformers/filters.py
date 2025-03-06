@@ -64,10 +64,10 @@ class DropMissingOrNan(PipelineElement):
         mapped_name = self.get_name("x")
         dataframe = df._dataframe
 
-        new_dataframe = dataframe.drop_nulls(subset=mapped_name).collect()
+        new_dataframe = dataframe.drop_nulls(subset=mapped_name)
         dtype = XDataFrame(new_dataframe).dtype(mapped_name)
         if dtype not in [str, pl.String]:
-            new_dataframe = new_dataframe.drop_nans(subset=mapped_name).collect()
+            new_dataframe = new_dataframe.drop_nans(subset=mapped_name)
 
         df._dataframe = new_dataframe
         return df
