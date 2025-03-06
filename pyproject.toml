@@ -95,8 +95,9 @@ damast = "damast.cli.main:run"
 [tool.mypy]
 ignore_missing_imports = true
 
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 # Disable to be able to debug in IDE
-#[tool.pytest.ini_options]
 #addopts = "--cov --cov-report html:doc/ --cov-report term-missing"
 
 [tool.coverage.run]

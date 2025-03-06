@@ -1,3 +1,4 @@
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Union
@@ -21,6 +22,8 @@ from damast.ml.experiments import (
     TrainingParameters,
     )
 from damast.ml.models.base import BaseModel
+
+os.environ["COLUMNS"] = '120'
 
 
 class ModelA(BaseModel):
