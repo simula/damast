@@ -78,9 +78,12 @@ This project is licensed under the [BSD-3-Clause License](LICENSE).
 
 ## Copyright
 
-Copyright (c) 2023 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/software-engineering)
+Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/software-engineering)
 
 ## Acknowledgments
 
 This work has been derived from work that is part of the [T-SAR project](https://www.simula.no/research/projects/t-sar)
 Some derived work is mainly part of the specific data processing for the 'maritime' domain.
+
+The development of this library is part of the EU-project [AI4COPSEC](https://ai4copsec.eu) which receives funding
+ from the Horizon Europe framework programme under Grant Agreement N. 101190021
