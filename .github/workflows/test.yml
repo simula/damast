@@ -33,10 +33,10 @@ jobs:
       # Due to space issues avoid creating too many venvs (via tox)
       #     see https://github.com/actions/runner-images/issues/709
       - name: Run tests - tensorflow backend
-        run: KERAS_BACKEND=tensorflow pytest -v --cov=damast --cov-report=term tests
+        run: KERAS_BACKEND=tensorflow pytest -v --timeout=120 --cov=damast --cov-report=term tests
 
       - name: Run tests - torch backend
-        run: KERAS_BACKEND=torch pytest -v --cov=damast --cov-report=term tests
+        run: KERAS_BACKEND=torch pytest -v --timeout=120 --cov=damast --cov-report=term tests
 
       - name: Run tests - jax backend
-        run: KERAS_BACKEND=jax pytest -v --cov=damast --cov-report=term tests
+        run: KERAS_BACKEND=jax pytest -v --timeout=120 --cov=damast --cov-report=term tests

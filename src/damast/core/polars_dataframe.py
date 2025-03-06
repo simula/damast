@@ -7,6 +7,8 @@ import numpy as np
 import polars
 from polars import LazyFrame
 
+VAEX_HDF5_ROOT: str = "/table"
+VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
 class Meta(type):
     _base_impl: ClassVar["str"] = "polars"
@@ -122,18 +124,91 @@ class PolarsDataFrame(metaclass=Meta):
             return polars.scan_csv(path, sep=sep)
         elif path.suffix in [".h5", ".hdf5"]:
             import pandas as pd
-            pandas_df = pd.read_hdf(path, key="DAMAST_HDF")
+
+            from damast.core.metadata import DAMAST_HDF5_ROOT
+
+            pandas_df = pd.read_hdf(path, key=DAMAST_HDF5_ROOT)
             return polars.from_pandas(pandas_df)
 
         raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
 
+    @classmethod
+    def from_vaex_hdf5(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+        # avoid circular dependencies
+        from damast.core.annotations import Annotation
+        from damast.core.metadata import DataSpecification, MetaData
+
+        try:
+            import tables
+        except LoadError as e:
+            print("Could not load pytables -- please install to use hdf5 functionality")
+
+        annotations = []
+        column_specifications = []
+        with tables.open_file(str(path)) as hdf5file:
+            if not VAEX_HDF5_ROOT in hdf5file:
+                raise TypeError(f"This HDF5 file '{hdf5file}' has not been exported with vaex")
+
+            table_attrs = hdf5file.get_node(VAEX_HDF5_ROOT)._v_attrs
+            for key in table_attrs._f_list():
+                value = table_attrs[key]
+                annotations.append(
+                        Annotation(name=key, value=value)
+                )
+
+            data = {}
+            for column in hdf5file.get_node(VAEX_HDF5_COLUMNS):
+                raw_data = column.data.read()
+                if isinstance(raw_data, np.ndarray) and np.issubdtype(raw_data.dtype, np.bytes_):
+                    raw_data = [x.decode('utf-8') for x in raw_data]
+                data[column._v_name] = raw_data
+
+                data_specification_dict = {}
+                for key in column._v_attrs._f_list():
+                    data_specification_dict[key] = column._v_attrs[key]
+
+                if data_specification_dict:
+                    column_spec = DataSpecification.from_dict(data=data_specification_dict)
+                    column_specifications.append(column_spec)
+
+        metadata = None
+        if column_specifications or annotations:
+            metadata = MetaData(columns=column_specifications, annotations=annotations)
+
+        return polars.LazyFrame(data), metadata
+
+    def import_hdf5(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+        try:
+            import tables
+        except LoadError as e:
+            print("Could not load pytables -- please install to use hdf5 functionality")
+
+        try:
+            import pandas
+        except LoadError as e:
+            print("Could not load pandas -- please install to use hdf5 functionality")
+
+        try:
+            pandas_df = pandas.read_hdf(filename)
+            df = polars.from_pandas(pandas_df)
+
+            return df.lazy(), None
+        except tables.exceptions.NoSuchNodeError as e:
+            logger.warning(f"HDF5 {filename} cannot be imported with pandas")
+
+        return cls.from_vaex_hdf5(filename)
+
+
     def export_hdf5(df: DataFrame, path: str | Path):
         import pandas
+
+        from damast.core.metadata import DAMAST_HDF5_ROOT
+
         if isinstance(df, polars.dataframe.DataFrame):
             df = df.lazy()
 
         pandas_df = df.collect().to_pandas()
-        pandas_df.to_hdf(path, key="DAMAST_HDF")
+        pandas_df.to_hdf(path, key=DAMAST_HDF5_ROOT)
 
 
 

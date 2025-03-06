@@ -24,8 +24,6 @@ from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
 
-VAEX_HDF5_ROOT: str = "/table"
-VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 DAMAST_SPEC_SUFFIX: str = ".spec.yaml"
 
 logging.basicConfig()
@@ -169,45 +167,8 @@ class AnnotatedDataFrame(XDataFrame):
 
         # First save the hdf5 file in order to add then the metadata to it
         self.export_hdf5(filename)
+        self._metadata.append_to_hdf(filename)
 
-        ## Add metadata
-        #metadata = dict(self._metadata)
-        #annotations = self._metadata.Key.annotations.value
-        #columns = self._metadata.Key.columns.value
-        #list_attrs = metadata[columns]
-        #dict_annotations = metadata[annotations]
-        ## Include virtual column names as well
-        #list_columns = self.get_column_names(virtual=True)
-
-        #h5f = h5py.File(filename, "r+")
-        ## Add annotations to main group
-        #for key in dict_annotations:
-        #    if (
-        #        key in h5f[VAEX_HDF5_ROOT].attrs.keys()
-        #        and h5f[VAEX_HDF5_ROOT].attrs[key] != dict_annotations[key]
-        #    ):
-        #        raise RuntimeError(
-        #            f"{self.__class__.__name__}.save:"
-        #            f" attribute '{key}' present"
-        #            f" in vaex dataframe but different from user-defined"
-        #        )
-
-        #    h5f[VAEX_HDF5_ROOT].attrs[key] = dict_annotations[key]
-
-        ## Add attributes for columns
-        #for attrs in list_attrs:
-        #    if (
-        #        DataSpecification.Key.name.value in attrs.keys()
-        #        and attrs[DataSpecification.Key.name.value] in list_columns
-        #    ):
-        #        group_name = f"/{VAEX_HDF5_COLUMNS}/{attrs[DataSpecification.Key.name.value]}"
-        #        if group_name in h5f:
-        #            for key in attrs.keys():
-        #                if isinstance(attrs[key], dict):
-        #                    h5f[group_name].attrs[key] = str(attrs[key])
-        #                else:
-        #                    h5f[group_name].attrs[key] = attrs[key]
-        #h5f.close()
         return self
 
     def export(self, filename: str | Path):
@@ -234,12 +195,15 @@ class AnnotatedDataFrame(XDataFrame):
         elif Path(filename).suffix in [ ".csv", ".parquet"]:
             df = polars.scan_csv(filename)
         elif Path(filename).suffix in [".h5", ".hdf5"]:
-            import pandas
-            pandas_df = pandas.read_hdf(filename)
-            df = polars.from_pandas(pandas_df)
+            import tables
+            try:
+                import pandas
+                pandas_df = pandas.read_hdf(filename)
+                df = polars.from_pandas(pandas_df)
+            except tables.exceptions.NoSuchNodeError as e:
+                df, metadata = XDataFrame.from_vaex_hdf5(filename)
         else:
             raise RuntimeError(f"Could not load {filename} - please use parquet files")
-
 
         if not metadata:
             metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)

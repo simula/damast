@@ -6,6 +6,7 @@ import astropy.units as units
 import numpy as np
 import pandas as pd
 import polars
+import polars.testing
 import pytest
 
 from damast.core.annotations import Annotation
@@ -79,7 +80,6 @@ def test_annotated_dataframe_deep_copy(metadata, polars_dataframe):
     assert adf_copy.dataframe.column_names != column_names
 
 
-@pytest.mark.xfail(reason="hdf is not supported")
 def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
     """
     Simple test of the annotated dataframe export to HDF5
@@ -100,23 +100,28 @@ def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
         adf.save(filename=test_file)
 
     loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
-    assert all(loaded_adf.dataframe.values == polars_dataframe.values)
-    #assert metadata == loaded_adf.metadata
+    assert loaded_adf.dataframe.collect().equals(polars_dataframe)
+    assert metadata == loaded_adf.metadata
 
     # Test the manipulation of metadata for import and export
     test_file = tmp_path / "test_dataframe_reload.hdf5"
 
-    # Write updated dataframe (with virtual column)
     extra_column = "extra_column"
     loaded_adf.metadata.columns.append(DataSpecification(name=extra_column))
-    from_column = loaded_adf._dataframe.get_column_names()[0]
-    loaded_adf._dataframe[extra_column] = from_column
+    from_column = loaded_adf.column_names[0]
+    loaded_adf._dataframe = loaded_adf._dataframe.with_columns(
+        polars.col(from_column).alias(extra_column)
+    )
     loaded_adf.save(filename=test_file)
 
     # Check updated dataframe (with virtual column)
     loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
-    assert any(loaded_adf.dataframe[extra_column].values == polars_dataframe[from_column].values)
-    assert extra_column in loaded_adf.dataframe.get_column_names()
+    polars.testing.assert_series_equal(
+            loaded_adf.select(extra_column).collect().to_series(0),
+            polars_dataframe[from_column],
+            check_names=False)
+
+    assert extra_column in loaded_adf.column_names
     assert extra_column in loaded_adf.metadata
 
 
@@ -138,8 +143,7 @@ def test_annotated_dataframe_export_csv(metadata, polars_dataframe, tmp_path):
     assert test_file.exists()
     assert metadata_test_file.exists()
 
-@pytest.mark.xfail(reason="hdf is not supported")
-def test_annotated_dataframe_import_hdf5():
+def test_annotated_dataframe_import_vaex_hdf5():
     """
     Simple test of the annotated dataframe import for HDF5
     """
@@ -149,7 +153,8 @@ def test_annotated_dataframe_import_hdf5():
     adf = AnnotatedDataFrame.from_file(hdf5_path)
     assert adf.column_names == ["height", "letter"]
 
-    assert adf._dataframe.to_pandas_df().equals(vaex.open(hdf5_path).to_pandas_df())
+    pandas_df = pd.DataFrame(data = {'height': [0,1,2], 'letter': ['a','b','c']})
+    assert adf.dataframe.collect().to_pandas().equals(pandas_df)
 
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")

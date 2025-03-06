@@ -21,6 +21,9 @@ from .formatting import DEFAULT_INDENT
 from .types import XDataFrame
 from .units import Unit, unit_registry, units
 
+DAMAST_HDF5_ROOT: str = "/dataframe"
+DAMAST_HDF5_COLUMNS: str = "/dataframe/columns"
+
 __all__ = [
     "ArtifactSpecification",
     "DataCategory",
@@ -409,6 +412,7 @@ class DataSpecification:
             if not isinstance(abbreviation, str):
                 raise TypeError(
                     f"{cls.__name__}.from_dict: " f"abbreviation must be of type 'str'"
+                    f", but was {type(abbreviation)} - {abbreviation}"
                 )
 
         data_category = None
@@ -1007,6 +1011,43 @@ class MetaData:
             # Do not sort the keys, but keep the entry order the way
             # the dictionary has been constructed
             yaml.dump(dict(self), f, sort_keys=False)
+
+    def append_to_hdf(self, path: str | Path, overwrite: bool = False):
+        # Add metadata
+        import tables
+        with tables.open_file(path, "a") as f:
+            main_node = f.get_node(DAMAST_HDF5_ROOT)
+
+            # Add annotations to main group
+            for key, annotation in self.annotations.items():
+                if (
+                    key in main_node._v_attrs._f_list()
+                    and main_node._v_attrs[key] != annotation
+                ) and not overwrite:
+                    raise RuntimeError(
+                        f"{self.__class__.__name__}.save:"
+                        f" attribute '{key}' present"
+                        f" in file but different from user-defined"
+                    )
+                main_node._v_attrs[key] = annotation
+
+            if DAMAST_HDF5_COLUMNS not in f:
+                f.create_group(DAMAST_HDF5_ROOT, DAMAST_HDF5_COLUMNS.replace(DAMAST_HDF5_ROOT + "/",""))
+
+            # Add attributes for columns
+            for column_spec in self.columns:
+                group_name = f"{DAMAST_HDF5_COLUMNS}/{column_spec.name}"
+                if group_name not in f:
+                    group = f.create_group(DAMAST_HDF5_COLUMNS, column_spec.name)
+                else:
+                    group = f.get_node(group_name)
+
+                for key, value in dict(column_spec).items():
+                    if isinstance(value, dict):
+                        group._v_attrs[key] = str(value)
+                    else:
+                        group._v_attrs[key] = value
+
 
     def apply(
         self,

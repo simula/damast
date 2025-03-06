@@ -84,7 +84,9 @@ test = [
     "pandas",
     "pytest",
     "pytest-cov",
-    "pydot"
+    "pytest-timeout",
+    "pydot",
+    "tox"
 ]
 
 [project.scripts]
