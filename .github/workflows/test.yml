@@ -13,7 +13,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        backend: ['torch','jax','tensorflow']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,11 +34,5 @@ jobs:
       # Run keras backend specific tests (for keras>=3)
       # Due to space issues avoid creating too many venvs (via tox)
       #     see https://github.com/actions/runner-images/issues/709
-      - name: Run tests - tensorflow backend
-        run: KERAS_BACKEND=torch pytest -v --timeout=120 --cov=damast --cov-report=term tests/damast/ml/test_experiments.py -s
-
-        #- name: Run tests - torch backend
-        #  run: KERAS_BACKEND=torch pytest -v --timeout=120 --cov=damast --cov-report=term tests
-
-        #- name: Run tests - jax backend
-        #  run: KERAS_BACKEND=jax pytest -v --timeout=120 --cov=damast --cov-report=term tests
+      - name: Run tests - ${{ matrix.backend }} backend
+        run: KERAS_BACKEND=${{ matrix.backend }} pytest -v --timeout=120 --cov=damast --cov-report=term
