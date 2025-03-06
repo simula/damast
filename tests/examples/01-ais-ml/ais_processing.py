@@ -1,20 +1,21 @@
 from pathlib import Path
 from typing import Union
 
-import vaex
+import polars
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import MetaData
+from damast.core.transformations import CycleTransformer
 from damast.core.units import units
 
 ais_spec = Path(__file__).parent / "ais_dataspec.yaml"
 ais_data = Path(__file__).parent.parent.parent / "damast" / "data" / "test_ais.csv"
 
 md = MetaData.load_yaml(ais_spec)
-df = vaex.from_csv(ais_data, sep=";")
+df = polars.scan_csv(ais_data, separator=";")
 
 adf = AnnotatedDataFrame(dataframe=df,
                          metadata=md)
@@ -51,8 +52,8 @@ class LatLonTransformer(PipelineElement):
         "lon_y": {"value_range": MinMax(-1.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        lat_cyclic_transformer = vaex.ml.CycleTransformer(features=["lat"], n=180.0)
-        lon_cyclic_transformer = vaex.ml.CycleTransformer(features=["lon"], n=360.0)
+        lat_cyclic_transformer = CycleTransformer(features=["lat"], n=180.0)
+        lon_cyclic_transformer = CycleTransformer(features=["lon"], n=360.0)
 
         _df = lat_cyclic_transformer.fit_transform(df=df)
         _df = lon_cyclic_transformer.fit_transform(df=_df)
@@ -70,7 +71,7 @@ pipeline = DataProcessingPipeline(name="ais_preparation",
 
 new_df = pipeline.transform(adf)
 print(pipeline.to_str(indent_level=2))
-print(new_df._dataframe)
+print(new_df._dataframe.collect())
 
 # Start ML
 # ml = MLPipeline(name="train")
