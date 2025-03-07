@@ -7,23 +7,23 @@ requires = ["setuptools >= 61.0.0",
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "damast"
-version = "0.1"
+version = "0.1.1"
 description = "Package to improve the development of transparent, replicable data processing pipelines"
 license = { file="LICENSE" }
 readme = "README.md"
 keywords = ["data processing", "pipeline", "machine learning"]
 authors = [
-    { name = "Pierre Bernabé", email = "pierbernabe@simula.no" },
+    { name = "Thomas Roehr", email = "roehr@simula.no" },
     { name = "Jørgen S. Dokken", email = "dokken@simula.no" },
     { name = "Anne Fouilloux", email = "annef@simula.no" },
-    { name = "Thomas Roehr", email = "roehr@simula.no" }
+    { name = "Pierre Bernabé", email = "pierbernabe@simula.no" }
 ]
 requires-python = ">=3.10"
 
 maintainers = [
+    { name = "Thomas Roehr", email = "roehr@simula.no" },
     { name = "Jørgen S. Dokken", email = "dokken@simula.no" },
-    { name = "Anne Fouilloux", email = "annef@simula.no" },
-    { name = "Thomas Roehr", email = "roehr@simula.no" }
+    { name = "Anne Fouilloux", email = "annef@simula.no" }
 ]
 
 classifiers = [

@@ -32,12 +32,16 @@ Clone the repo and install:
     git clone https://github.com/simula/damast
     cd damast
     pip install -e ".[test,dev]"
+```
 
+or alternatively:
+```
+    pip install damast[test,dev]
 ```
 
 ## Docker Container
 
-If you prefer to work or start with a docker container you can build it using the provided [Dockerfile](Dockerfile)
+If you prefer to work or start with a docker container you can build it using the provided [Dockerfile](https://github.com/simula/damast/blob/main/Dockerfile)
 ```
     docker build -t damast:latest -f Dockerfile .
 ```
@@ -58,7 +62,7 @@ You can then open the documentation with a browser:
     <yourbrowser> _build/html/index.html
 ```
 
-Otherwise you will find API and usage documentation [here](https://simula-srl.gitlab.io/damast/README.html).
+Otherwise you will find API and usage documentation [here](https://simula.github.io/damast/README.html).
 
 
 
@@ -71,14 +75,14 @@ Install the project and use the predefined default test environment:
 
 ## Contributing
 
-This project is open to contributions. For details on how to contribute please check the [Contribution Guidelines](CONTRIBUTING.md)
+This project is open to contributions. For details on how to contribute please check the [Contribution Guidelines](https://github.com/simula/damast/blob/main/CONTRIBUTING.md)
 
 ## License
-This project is licensed under the [BSD-3-Clause License](LICENSE).
+This project is licensed under the [BSD-3-Clause License](https://github.com/simula/damast/blob/main/LICENSE).
 
 ## Copyright
 
-Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/software-engineering)
+Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/research-department)
 
 ## Acknowledgments
 
@@ -86,4 +90,4 @@ This work has been derived from work that is part of the [T-SAR project](https:/
 Some derived work is mainly part of the specific data processing for the 'maritime' domain.
 
 The development of this library is part of the EU-project [AI4COPSEC](https://ai4copsec.eu) which receives funding
- from the Horizon Europe framework programme under Grant Agreement N. 101190021
+ from the Horizon Europe framework programme under Grant Agreement N. 101190021. 

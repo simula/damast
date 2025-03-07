@@ -1,9 +1,9 @@
 """
 Module to define Annotation object for data specification
 """
-# Copyright (C) 2023 Simula Research Laboratory
+# Copyright (C) 2023-2025 Simula Research Laboratory
 #
-# This file is part of Damast
+# This file is part of damast
 #
 # SPDX-License-Identifier:    BSD-3-Clause
 from __future__ import annotations
