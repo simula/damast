@@ -112,7 +112,7 @@ def test_delta_column(tmp_path):
                                 "out": ColumnName.DELTA_DISTANCE})
     new_adf = pipeline.transform(adf)
 
-    assert ColumnName.DELTA_DISTANCE in new_adf._dataframe.columns
+    assert ColumnName.DELTA_DISTANCE in new_adf.column_names
 
     df_sorted = df.sort(ColumnName.TIMESTAMP)
     df_grouped = df_sorted.group_by(by=ColumnName.MMSI)

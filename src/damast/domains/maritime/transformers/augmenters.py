@@ -88,8 +88,8 @@ class ComputeClosestAnchorage(PipelineElement):
 
         distance = self.get_name('distance')
         dataframe = dataframe.with_columns(
-            pl.struct(f"{x_name}_rad", f"{y_name}_rad").map_elements(
-                lambda x: self._function(x[f"{x_name}_rad"], x[f"{y_name}_rad"]),
+            pl.struct(f"{x_name}_rad", f"{y_name}_rad").map_batches(
+                lambda x: self._function(x.struct.field(f"{x_name}_rad"), x.struct.field(f"{y_name}_rad")),
                 return_dtype=float
             ).alias(distance)
         )

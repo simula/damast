@@ -58,7 +58,7 @@ class DeltaDistance(PipelineElement):
 
         tmp_column = f"{self.__class__.__name__}_tmp"
         assert tmp_column != self.get_name("out")
-        if tmp_column in dataframe.columns:
+        if tmp_column in dataframe.compat.column_names:
             raise RuntimeError(f"{self.__class__.__name__}.transform: Dataframe contains {tmp_column}")
 
         # https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.shift.html
@@ -77,8 +77,9 @@ class DeltaDistance(PipelineElement):
                       .with_columns(
                         pl.struct(
                             in_x, in_y,
-                            shift_x, shift_y).map_elements(lambda x :
-                                great_circle_distance(x[in_x], x[in_y], x[shift_x], x[shift_y])
+                            shift_x, shift_y).map_elements(
+                                lambda x : great_circle_distance(x[in_x], x[in_y], x[shift_x], x[shift_y]),
+                                return_dtype=float
                             ).alias(self.get_name('out'))
                       )
 

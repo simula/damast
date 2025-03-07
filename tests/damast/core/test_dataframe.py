@@ -203,7 +203,7 @@ def test_01_dataframe_composition():
     assert adf._metadata == md
     assert XDataFrame(adf._dataframe).equals(XDataFrame(df))
 
-    assert adf.column_names == df.columns
+    assert adf.column_names == df.compat.column_names
 
     md.columns[0].value_range = MinMax(min=0, max=1)
     with pytest.raises(ValueError, match="lies outside of range"):
