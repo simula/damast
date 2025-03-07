@@ -18,7 +18,7 @@ import yaml
 from .annotations import Annotation, History
 from .datarange import DataElement, DataRange, MinMax
 from .formatting import DEFAULT_INDENT
-from .types import XDataFrame
+from .types import DataFrame, XDataFrame
 from .units import Unit, unit_registry, units
 
 DAMAST_HDF5_ROOT: str = "/dataframe"
@@ -500,10 +500,10 @@ class DataSpecification:
 
     def apply(
         self,
-        df: pl.LazyFrame,
+        df: DataFrame | XDataFrame,
         column_name: str,
         validation_mode: ValidationMode
-    ) -> pl.LazyFrame:
+        ) -> DataFrame:
         """
         Apply the metadata object to the dataframe
 
@@ -512,6 +512,20 @@ class DataSpecification:
         :param validation_mode: Mode which shall apply to updating either data or
             metadata, when encountering inconsistencies
         """
+
+        df_type = type(df)
+        if df_type == pl.LazyFrame:
+            pass
+        elif df_type == pl.DataFrame:
+            df = df.lazy()
+        elif df_type == XDataFrame:
+            df = df._dataframe
+        else:
+            raise TypeError("MetaData.apply: dataframe must be either "
+                " polars.LazyFrame,"
+                " polars.DataFrame,"
+                " or damast.core.types.XDataFrame"
+            )
 
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
@@ -785,7 +799,7 @@ class DataSpecification:
 
 class MetaData:
     """
-    The representation for metadata that can be associated with a :class:`polary.LazyFrame`.
+    The representation for metadata that can be associated with a :class:`polars.LazyFrame`.
 
     :param columns: (Ordered) list of column specifications
     :param annotations:  List of annotations for this dataframe.
@@ -1054,7 +1068,7 @@ class MetaData:
         df: pl.LazyFrame,
         validation_mode: ValidationMode = ValidationMode.READONLY,
     ) -> pl.LazyFrame:
-        """Check that each column in the :class:`polar.LazyFrame` fulfills the
+        """Check that each column in the :class:`polars.LazyFrame` fulfills the
         data-specifications.
 
         :param df: The dataframe

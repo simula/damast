@@ -5,6 +5,7 @@ from typing import ClassVar
 
 import numpy as np
 import polars
+import polars.api
 from polars import LazyFrame
 
 VAEX_HDF5_ROOT: str = "/table"
@@ -19,7 +20,8 @@ class Meta(type):
 
         raise AttributeError(f"'{cls.__name__}' has not attribute '{attr_name}'")
 
-
+@polars.api.register_dataframe_namespace("compat")
+@polars.api.register_lazyframe_namespace("compat")
 class PolarsDataFrame(metaclass=Meta):
     _dataframe: LazyFrame
 
@@ -35,7 +37,7 @@ class PolarsDataFrame(metaclass=Meta):
         Allows to access the underlying dataframe directly.
 
         .. note::
-            AnnotatedDataFrame behaves like a ``polars.LazyDataFrame``, so typically you will not need to access the
+            AnnotatedDataFrame behaves like a ``polars.LazyFrame``, so typically you will not need to access the
             dataframe through this property.
 
         :return: The underlying dataframe
@@ -45,7 +47,7 @@ class PolarsDataFrame(metaclass=Meta):
 
     def __getitem__(self, column_name: str):
         """
-        Make dataframe subscriptable and behave like the :class:`vaex.DataFrame`.
+        Make dataframe subscriptable and behave more like the :class:`pandas.DataFrame`.
 
         :param item: Name of the key when using [] operators
         :return: item/column from the underlying vaex.dataframe
@@ -54,19 +56,33 @@ class PolarsDataFrame(metaclass=Meta):
 
     @property
     def column_names(self) -> list[str]:
+        """
+        Get all column names (without collecting the full dataframe)
+        """
         return self._dataframe.collect_schema().names()
 
     def dtype(self, column_name: str) -> polars.datatypes.DataType:
+        """
+        Get column dtype (without collecting the full dataframe)
+        """
         idx = self.column_names.index(column_name)
         return self._dataframe.collect_schema().dtypes()[idx]
 
-    def minmax(self, column_name: str):
+    def minmax(self, column_name: str) -> Tuple[any, any]:
+        """
+        Tuple of min and max values of the given column
+        """
         min_value = self._dataframe.select(column_name).min().collect()[0,0]
         max_value = self._dataframe.select(column_name).max().collect()[0,0]
 
         return min_value, max_value
 
     def set_dtype(self, column_name, representation_type) -> PolarsDataFrame:
+        """
+        Set the dtype for a column to the given representation type.
+        Using polars cast functionality
+        :return: The updated object
+        """
         if representation_type == np.int64:
             representation_type = polars.Int64
 

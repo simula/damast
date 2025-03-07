@@ -104,26 +104,26 @@ def test_data_processing(workdir,
     },
         workdir=workdir)
 
-    adf_preprocess = pipeline.transform(adf)
 
+    adf_preprocess = pipeline.transform(adf)
     column_names = adf_preprocess.dataframe.column_names
 
-    assert adf_preprocess.filter(pl.col("source") != "s").count()[0,0] == 0
-    assert adf_preprocess.select(ColumnName.DATE_TIME_UTC).null_count()[0,0] == 0
-    assert adf_preprocess.filter(pl.col(ColumnName.MESSAGE_TYPE) != 2).count()[0,0] == 0
+    df = adf_preprocess.collect()
+    assert df.filter(pl.col("source") != "s").count()[0,0] == 0
+    assert df.select(ColumnName.DATE_TIME_UTC).null_count()[0,0] == 0
+    assert df.filter(pl.col(ColumnName.MESSAGE_TYPE) != 2).count()[0,0] == 0
 
     assert ColumnName.TIMESTAMP in column_names
     assert ColumnName.SPEED_OVER_GROUND + "_int16" in column_names
-    assert adf_preprocess.dtype(ColumnName.SPEED_OVER_GROUND+"_int16") == pl.Int16
+    assert df.compat.dtype(ColumnName.SPEED_OVER_GROUND+"_int16") == pl.Int16
     assert ColumnName.COURSE_OVER_GROUND + "_int16" in column_names
-    assert adf_preprocess.dtype(ColumnName.COURSE_OVER_GROUND+"_int16") == pl.Int16
+    assert df.compat.dtype(ColumnName.COURSE_OVER_GROUND+"_int16") == pl.Int16
 
     pipeline2 = DataProcessing(workdir=workdir,
                                vessel_type_hdf5=vessel_types_data[1],
                                fishing_vessel_type_hdf5=fishing_vessel_types_data[1],
                                anchorages_hdf5=anchorages_data[1])
 
-    adf_preprocess._dataframe = adf_preprocess._dataframe.lazy()
     adf_processed = pipeline2.transform(adf_preprocess)
     processed_column_names = adf_processed.dataframe.column_names
 
