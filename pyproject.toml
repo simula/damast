@@ -58,8 +58,8 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/simula/damast"
-documentation = "https://github.com/simula/damast"
+homepage = "https://simula.github.io/damast"
+documentation = "https://simula.github.io/damast"
 repository = "https://github.com/simula/damast"
 
 #[project.entry-points]
