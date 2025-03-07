@@ -26,8 +26,8 @@ RUN git config --global user.name "Damast CI User"
 
 ENV PATH=/home/docker/.local/bin:$PATH
 
-RUN git clone https://gitlab.com/simula-srl/damast
-RUN pip install -e "damast[test,dev]"
+RUN git clone https://github.com/simula/damast
+RUN pip install -e "./damast[test,dev]"
 RUN damast --help
 
 # Use login shell (-l) in case we update .bashrc
