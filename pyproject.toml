@@ -72,7 +72,9 @@ dev = [
     "jupyter-book",
     "pre-commit",
     "pydot",
-    "sphinx-autoapi",
+    # With sphinx-autoapi NamedTuple is not
+    # parse correctly
+    "sphinx-autoapi<=3.3",
     "tox"
 ]
 

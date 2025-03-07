@@ -425,7 +425,7 @@ class Experiment:
                          group: str,
                          group_ids: List[Any]) -> Sequence:
         """
-        Create a generator applicable for :module:`keras` from the input data.
+        Create a generator applicable for :py:mod:`keras` from the input data.
 
         ..note::
             This function is called whenever you want to train your models, i.e
@@ -465,8 +465,7 @@ class Experiment:
               loss_function: str = "mse") -> BaseModel:
         """
         Train a set of machine-learning models on given input data.
-        :param suffix: allow to add a training specific suffix to the output folder (otherwise) only the
-               model class name will be used, so only the last training would be kept
+        :param suffix: allow to add a training specific suffix to the output folder (otherwise) only the model class name will be used, so only the last training would be kept
         :param model_instance_description: The model instance description for the model that should be trained
         :param train_generator: Generator providing data from training set
         :param validate_generator: Generator providing data from validation set
