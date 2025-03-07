@@ -90,7 +90,7 @@ class AISTestData:
         lon_start = (random() * 360.0) - 180.0
 
         last_day = datetime.datetime(year=2022, month=12, day=31)
-        start_time = randint(0, last_day.timestamp())
+        start_time = randint(0, int(last_day.timestamp()))
 
         sog_start = random() * SpeedOverGround.min_value / SpeedOverGround.max_value
         cog_start = random() * CourseOverGround.min_value / CourseOverGround.max_value
