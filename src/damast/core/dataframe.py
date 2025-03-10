@@ -188,10 +188,13 @@ class AnnotatedDataFrame(XDataFrame):
         metadata = None
         if Path(filename).suffix in [ ".pq", ".parquet"]:
             df = polars.scan_parquet(filename)
-            schema = pq.read_schema(filename)
+            try:
+                schema = pq.read_schema(filename)
 
-            data = schema.metadata[b"annotated_dataframe"]
-            metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
+                data = schema.metadata[b"annotated_dataframe"]
+                metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
+            except Exception as e:
+                _log.warning(f"{filename} has no (damast) annotations")
         elif Path(filename).suffix in [ ".csv", ".parquet"]:
             df = polars.scan_csv(filename)
         elif Path(filename).suffix in [".h5", ".hdf5"]:
@@ -210,11 +213,13 @@ class AnnotatedDataFrame(XDataFrame):
             if metadata_filename.exists():
                 metadata = MetaData.load_yaml(filename=metadata_filename)
             else:
+                head = df.head(10).collect()
                 # metadata missing
                 raise RuntimeError(
                     f"{cls.__name__}.from_file:"
                     f" metadata is missing in '{filename}'"
-                    f" and needs to be added"
+                    f" and needs to be added'\n"
+                    f"{head}"
                 )
 
         if not metadata:
