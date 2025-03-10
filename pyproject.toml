@@ -87,6 +87,7 @@ test = [
     "coverage",
     "pandas",
     "pytest",
+    "pytest-console-scripts",
     "pytest-cov",
     "pytest-timeout",
     "pydot",
