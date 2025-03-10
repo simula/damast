@@ -2,7 +2,6 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from damast.cli.base import BaseParser
-from damast.ml.experiments import Experiment
 
 
 class ExperimentParser(BaseParser):
@@ -27,6 +26,8 @@ class ExperimentParser(BaseParser):
 
     def execute(self, args):
         super().execute(args)
+
+        from damast.ml.experiments import Experiment
 
         experiment = Experiment.from_file(args.filename)
         experiment.output_directory = args.output_dir
