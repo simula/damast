@@ -1,5 +1,7 @@
-import damast.cli.main as cli_main
 import sys
+
+import damast.cli.main as cli_main
+
 
 def test_help(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['damast'])

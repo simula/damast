@@ -90,4 +90,4 @@ This work has been derived from work that is part of the [T-SAR project](https:/
 Some derived work is mainly part of the specific data processing for the 'maritime' domain.
 
 The development of this library is part of the EU-project [AI4COPSEC](https://ai4copsec.eu) which receives funding
- from the Horizon Europe framework programme under Grant Agreement N. 101190021. 
+ from the Horizon Europe framework programme under Grant Agreement N. 101190021.
