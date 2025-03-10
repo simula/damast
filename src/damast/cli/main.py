@@ -53,7 +53,10 @@ def run():
                                          help=help_desc,
                                          parser_klass=ExperimentParser)
     args = main_parser.parse_args()
-    args.active_subparser.execute(args)
+    if hasattr(args, "active_subparser"):
+        args.active_subparser.execute(args)
+    else:
+        main_parser.print_help()
 
 
 if __name__ == "__main__":
