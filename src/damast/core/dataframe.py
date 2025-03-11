@@ -140,10 +140,14 @@ class AnnotatedDataFrame(XDataFrame):
                         f" {','.join(self.dataframe.column_names)}"
                     )
 
+
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
         """
-        Save this instance in an hdf5 file.
-        The resulting file can be inspected using HDF5 tools and in particular h5dump.
+        Save this annotated dataframe in a file.
+
+        Filetype can be .parquet (recommended) or *.hdf5.
+
+        For hdf5 the resulting file can be inspected using HDF5 tools and in particular h5dump.
         To get the HDF5 groups and their corresponding metdata (header only e.g. no data printed), use the command:
 
         .. code-block:: console
@@ -181,7 +185,10 @@ class AnnotatedDataFrame(XDataFrame):
         pq.write_table(arrow_table, filename)
 
     @classmethod
-    def from_file(cls, filename: Union[str, Path]) -> AnnotatedDataFrame:
+    def from_file(cls,
+            filename: Union[str, Path],
+            metadata_required: bool = False
+        ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe from an hdf5 file.
 

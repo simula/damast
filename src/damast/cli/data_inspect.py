@@ -8,7 +8,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 
 class DataInspectParser(BaseParser):
     """
-    Argparser for inspecting AnnotatedDataFrame encoded as .h5
+    Argparser for inspecting AnnotatedDataFrame
 
     :param parser: The base parser
     """

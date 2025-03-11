@@ -38,9 +38,6 @@ def run():
     Run the main command line interface
     """
     main_parser = MainParser()
-    main_parser.attach_subcommand_parser(subcommand="process",
-                                         help="Process data by running a predefined pipeline",
-                                         parser_klass=DataProcessingParser)
 
     convert_help_desc = "Convert a dataset (set of .csv-files) to a .h5-file (containing the data)" +\
         " and .yml-file (containing data specification)"
@@ -48,15 +45,21 @@ def run():
                                          help=convert_help_desc,
                                          parser_klass=DataConvertParser)
 
+    experiment_help_desc = "Run a predefined experiment"
+    main_parser.attach_subcommand_parser(subcommand="experiment",
+                                         help=experiment_help_desc,
+                                         parser_klass=ExperimentParser)
+
     inspect_help_desc = "Inspect a dataset given by filename or pattern and associated metadata"
     main_parser.attach_subcommand_parser(subcommand="inspect",
                                          help=inspect_help_desc,
                                          parser_klass=DataInspectParser)
 
-    experiment_help_desc = "Run a predefined experiment"
-    main_parser.attach_subcommand_parser(subcommand="experiment",
-                                         help=experiment_help_desc,
-                                         parser_klass=ExperimentParser)
+    main_parser.attach_subcommand_parser(subcommand="process",
+                                         help="Process data by running a predefined pipeline",
+                                         parser_klass=DataProcessingParser)
+
+
     args = main_parser.parse_args()
     if hasattr(args, "active_subparser"):
         args.active_subparser.execute(args)

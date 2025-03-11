@@ -9,7 +9,7 @@ from damast.core.metadata import ValidationMode
 
 class DataConvertParser(BaseParser):
     """
-    Argparser for converting CSV files to AnnotatedDataframes (.h5 and .yml files)
+    Argparser for converting CSV files to AnnotatedDataframes (.parquet and .yml files)
 
     :param parser: The base parser
     """
