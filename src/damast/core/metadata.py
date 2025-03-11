@@ -364,8 +364,8 @@ class DataSpecification:
         if self.representation_type is not None:
             if inspect.isclass(self.representation_type):
                 yield "representation_type", self.representation_type.__name__
-            elif isinstance(self.representation_type, DataType):
-                yield "representation_type", self.representation_type.name
+            elif isinstance(self.representation_type, pl.datatypes.DataType):
+                yield "representation_type", str(self.representation_type)
             else:
                 raise TypeError(
                     f"{self.__class__.__name__}.__iter__ failed to identify representation_type from"
@@ -882,6 +882,12 @@ class MetaData:
                     + f"got {[dict(an) for an in annotations]}"
                 )
             self._annotations = {an.name: an for an in annotations}
+
+    def add_annotation(self, annotation: Annotation):
+        if annotation.name in self._annotations:
+            raise KeyError(f"Annotation {annotation.name} already exists")
+
+        self._annotations[annotation.name] = annotation
 
     @property
     def annotations(self) -> Dict[str, Annotation]:

@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from damast.cli.base import BaseParser
+from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
@@ -38,6 +39,9 @@ def run():
     Run the main command line interface
     """
     main_parser = MainParser()
+    main_parser.attach_subcommand_parser(subcommand="annotate",
+                                         help="Annotate a dataframe",
+                                         parser_klass=DataAnnotateParser)
 
     convert_help_desc = "Convert a dataset (set of .csv-files) to a .h5-file (containing the data)" +\
         " and .yml-file (containing data specification)"

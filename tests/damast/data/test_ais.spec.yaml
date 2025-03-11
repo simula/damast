@@ -1,0 +1,86 @@
+columns:
+- name: mmsi
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 209318000
+      max: 230666000
+      allow_missing: true
+- name: imo_nr
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 8911736
+      max: 9754446
+      allow_missing: true
+- name: length
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 89
+      max: 170
+      allow_missing: true
+- name: date_time_utc
+  is_optional: false
+  representation_type: String
+- name: lon
+  is_optional: false
+  representation_type: Float64
+  value_range:
+    MinMax:
+      min: 5.25503
+      max: 5.54976
+      allow_missing: true
+- name: lat
+  is_optional: false
+  representation_type: Float64
+  value_range:
+    MinMax:
+      min: 58.7635
+      max: 59.407
+      allow_missing: true
+- name: sog
+  is_optional: false
+  representation_type: Float64
+  value_range:
+    MinMax:
+      min: 9.4
+      max: 18.0
+      allow_missing: true
+- name: cog
+  is_optional: false
+  representation_type: Float64
+  value_range:
+    MinMax:
+      min: 2.9
+      max: 355.7
+      allow_missing: true
+- name: true_heading
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 6
+      max: 359
+      allow_missing: true
+- name: nav_status
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 0
+      max: 0
+      allow_missing: true
+- name: message_nr
+  is_optional: false
+  representation_type: Int64
+  value_range:
+    MinMax:
+      min: 1
+      max: 1
+      allow_missing: true
+annotations:
+  source: tests/damast/data/test_ais.csv

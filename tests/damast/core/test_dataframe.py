@@ -234,7 +234,7 @@ def test_force_range():
     assert XDataFrame(adf._dataframe).equals(XDataFrame(df_filtered))
 
 def test_convert_csv_to_adf(tmp_path):
-    output_filename =  tmp_path / "test-convert-csv.pq" #hdf5"
+    output_filename =  tmp_path / "test-convert-csv.pq"
     test_path = Path(__file__).parent.parent / "data"
     AnnotatedDataFrame.convert_csv_to_adf(csv_filenames=[test_path / "test_dataframe.csv"],
                                           metadata_filename=test_path / "test_dataframe.spec.yaml",
