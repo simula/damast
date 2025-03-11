@@ -9,6 +9,7 @@ import json
 import logging
 from logging import INFO, Logger, getLogger
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, List, Optional, Union
 
@@ -19,7 +20,7 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from .annotations import Annotation
-from .datarange import MinMax
+from .datarange import MinMax, ListOfValues
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame
 
@@ -247,7 +248,17 @@ class AnnotatedDataFrame(XDataFrame):
                     'representation_type': df.compat.dtype(column)
             }
 
-            if not str(df.compat.dtype(column)).lower().startswith("str"):
+            if str(df.compat.dtype(column)).lower().startswith("str"):
+                categories = df.select(column).unique().sort(by=column).collect()[:,0].to_list()
+                if len(categories) < 100:
+                    timepoint_like = 0
+                    for c in categories[:10]:
+                        if c and re.search(r"[0-9]{2}:[0-9]{2}", c) is not None:
+                            timepoint_like += 1
+
+                    if timepoint_like < 3:
+                        data['value_range'] = ListOfValues(categories)
+            else:
                 min_value, max_value = df.compat.minmax(column)
                 data['value_range'] = MinMax(min_value, max_value)
 

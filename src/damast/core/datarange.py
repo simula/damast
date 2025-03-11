@@ -123,7 +123,7 @@ class ListOfValues:
         """
         if not isinstance(values, list):
             raise ValueError(
-                f"{self.__class__.__name__}.__init__: required list of values for initialisation"
+                f"{self.__class__.__name__}.__init__: required list of values for initialisation, got {type(values)}"
             )
 
         self.values = values
