@@ -1,4 +1,4 @@
-import os
+import re
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -18,7 +18,7 @@ class DataInspectParser(BaseParser):
 
         parser.description = "damast inspect - data inspection subcommand called"
         parser.add_argument("-f", "--filename",
-                            help="Filename of the *.hdf5 annotated data file that should be inspected",
+                            help="Filename or pattern of the (annotated) data file that should be inspected",
                             required=True
                             )
 
@@ -26,17 +26,23 @@ class DataInspectParser(BaseParser):
         super().execute(args)
 
         base = Path(args.filename).parent
-        stem = Path(args.filename).stem
-        files = [x for x in base.glob(stem)]
+        name = Path(args.filename).name
+        files = [x for x in base.glob(name)]
 
         sum_st_size = 0
-        for idx, file in enumerate(files):
-            stat_result = os.stat(str(file))
-            sum_st_size += stat_result.st_size
+        for idx, file in enumerate(files, start=1):
+            sum_st_size += file.stat().st_size
 
         print(f"Loading dataframe ({len(files)} files) of total size: {sum_st_size / (1024**2):.2f} MB")
 
-        adf = AnnotatedDataFrame.from_file(filename=args.filename)
-        print(adf.metadata.to_str())
-        print("\n\nFirst 10 rows:")
-        print(adf.head(10).collect())
+        try:
+            adf = AnnotatedDataFrame.from_file(filename=args.filename)
+
+            print(adf.metadata.to_str())
+            print("\n\nFirst 10 rows:")
+            print(adf.head(10).collect())
+        except RuntimeError as e:
+            if re.search(r"metadata is missing", str(e)) is not None:
+                print(e)
+            else:
+                raise

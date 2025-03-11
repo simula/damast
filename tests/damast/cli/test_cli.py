@@ -1,17 +1,17 @@
-from argparse import ArgumentParser
-from pytest_console_scripts import ScriptRunner
-import pytest
 import re
 import sys
-
+from argparse import ArgumentParser
 from pathlib import Path
 
-import damast.cli.main as cli_main
+import pytest
+from pytest_console_scripts import ScriptRunner
 
+import damast.cli.main as cli_main
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
+
 
 @pytest.fixture
 def subparsers():
@@ -50,4 +50,16 @@ def test_subparser(name, klass, script_runner):
 
         for option in a.option_strings:
             assert re.search(option, result.stdout) is not None, f"Should have {option=}"
+
+@pytest.mark.parametrize("filename", [
+    "data.hdf5",
+    "test_ais.csv",
+    "test_dataframe.csv",
+    "test_dataframe.hdf5",
+])
+def test_inspect(data_path, filename, script_runner):
+    result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename)])
+
+    assert re.search("Loading dataframe \(1 files\)", result.stdout) is not None, "Process dataframe"
+    assert re.search("shape:", result.stdout) is not None, "Show dataframe"
 

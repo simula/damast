@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import ClassVar
 
@@ -7,6 +8,8 @@ import numpy as np
 import polars
 import polars.api
 from polars import LazyFrame
+
+logger = logging.getLogger(__name__)
 
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
@@ -145,15 +148,19 @@ class PolarsDataFrame(metaclass=Meta):
 
             pandas_df = pd.read_hdf(path, key=DAMAST_HDF5_ROOT)
             return polars.from_pandas(pandas_df)
+        elif path.suffix in [".pq", ".parquet"]:
+            return polars.scan_parquet(path)
 
         raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
 
     @classmethod
     def from_vaex_hdf5(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+        """
+        Load hdf5 file and (damast) metadata if found in the file.
+        """
         # avoid circular dependencies
         from damast.core.annotations import Annotation
         from damast.core.metadata import DataSpecification, MetaData
-
         try:
             import tables
         except LoadError as e:
@@ -193,7 +200,15 @@ class PolarsDataFrame(metaclass=Meta):
 
         return polars.LazyFrame(data), metadata
 
-    def import_hdf5(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+    @classmethod
+    def import_hdf5(cls, filename: str | Path) -> Tuple[DataFrame, MetaData]:
+        """
+        Import a dataframe stored as HDF5.
+
+        This method tries to load using pandas first, then falls back to reading a vaex-based format
+        using pytables.
+        """
+        path = Path(filename)
         try:
             import tables
         except LoadError as e:
@@ -205,17 +220,31 @@ class PolarsDataFrame(metaclass=Meta):
             print("Could not load pandas -- please install to use hdf5 functionality")
 
         try:
-            pandas_df = pandas.read_hdf(filename)
+            import warnings
+
+            # Avoid output pollution and ignore the following message
+            #     tables/attributeset.py:295: DataTypeWarning: Unsupported type
+            #     for attribute 'is_optional' in node 'height'. Offending HDF5
+            #     class: 8
+            warnings.filterwarnings("ignore", message="Unsupported type for attribute .*")
+
+            pandas_df = pandas.read_hdf(str(filename))
             df = polars.from_pandas(pandas_df)
+
+            warnings.resetwarnings()
 
             return df.lazy(), None
         except tables.exceptions.NoSuchNodeError as e:
-            logger.warning(f"HDF5 {filename} cannot be imported with pandas")
+            logger.debug(f"HDF5 {filename} cannot be imported with pandas")
 
-        return cls.from_vaex_hdf5(filename)
+        return cls.from_vaex_hdf5(path)
 
-
-    def export_hdf5(df: DataFrame, path: str | Path):
+    @classmethod
+    def export_hdf5(cls, df: DataFrame, path: str | Path) -> Path:
+        """
+        Export the dataframe as hdf5. Please use only if really needed, otherwise, stick with the
+        default format (parquet).
+        """
         import pandas
 
         from damast.core.metadata import DAMAST_HDF5_ROOT
@@ -225,6 +254,7 @@ class PolarsDataFrame(metaclass=Meta):
 
         pandas_df = df.collect().to_pandas()
         pandas_df.to_hdf(path, key=DAMAST_HDF5_ROOT)
+        return path
 
 
 

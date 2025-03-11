@@ -143,11 +143,10 @@ def test_annotated_dataframe_export_csv(metadata, polars_dataframe, tmp_path):
     assert test_file.exists()
     assert metadata_test_file.exists()
 
-def test_annotated_dataframe_import_vaex_hdf5():
+def test_annotated_dataframe_import_vaex_hdf5(data_path):
     """
     Simple test of the annotated dataframe import for HDF5
     """
-    data_path = Path(__file__).parent.parent / "data"
     hdf5_path = data_path / "data.hdf5"
 
     adf = AnnotatedDataFrame.from_file(hdf5_path)
@@ -163,11 +162,10 @@ def test_annotated_dataframe_import_vaex_hdf5():
         value_range=MinMax(min=0, max=40))
 
 
-def test_annotated_dataframe_import_csv():
+def test_annotated_dataframe_import_csv(data_path):
     """
     Simple test of the annotated dataframe import for csv
     """
-    data_path = Path(__file__).parent.parent / "data"
     csv_path = data_path / "test_dataframe.csv"
 
     adf = AnnotatedDataFrame.from_file(csv_path)
@@ -179,11 +177,11 @@ def test_annotated_dataframe_import_csv():
         name="height", abbreviation="height", category=DataCategory.STATIC,
         unit=units.m, value_range=MinMax(min=0, max=40), representation_type=int)
 
-def test_01_dataframe_composition():
+def test_01_dataframe_composition(data_path):
     """
     Test the dataframe composition, i.e. metadata in combination with an actual dataframe
     """
-    data_path = Path(__file__).parent.parent / "data" / "01_dataframe_composition"
+    data_path = data_path / "01_dataframe_composition"
     csv_path = data_path / "data.csv"
     spec_path = data_path / "dataspec.yaml"
 
