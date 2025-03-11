@@ -1,6 +1,43 @@
+[![Supported Python Versions](https://img.shields.io/pypi/pyversions/damast)](https://pypi.org/project/damast/)
+![test workflow](https://github.com/simula/damast/actions/workflows/test.yml/badge.svg)
+![docs workflow](https://github.com/simula/damast/actions/workflows/gh-pages.yml/badge.svg)
+
 # damast: Creation of reproducible data processing pipelines
 
-Documentation at: https://simula.github.io/damast
+The main purpose of this library is to faciliate the reusability of data and data processing pipelines.
+For this, damast introduces a means to associate metadata with data frames and enables consistency checking.
+
+To ensure semantic consistency, transformation steps in a pipeline can be annotated with
+allowed data ranges for inputs and outputs, as well as units.
+
+```
+class LatLonTransformer(PipelineElement):
+    """
+    The LatLonTransformer will consume a lat(itude) and a lon(gitude) column and perform
+    cyclic normalization. It will add four columns to a dataframe, namely lat_x, lat_y, lon_x, lon_y.
+    """
+    @damast.core.describe("Lat/Lon cyclic transformation")
+    @damast.core.input({
+        "lat": {"unit": units.deg},
+        "lon": {"unit": units.deg}
+    })
+    @damast.core.output({
+        "lat_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lat_y": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_x": {"value_range": MinMax(-1.0, 1.0)},
+        "lon_y": {"value_range": MinMax(-1.0, 1.0)}
+    })
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        lat_cyclic_transformer = CycleTransformer(features=["lat"], n=180.0)
+        lon_cyclic_transformer = CycleTransformer(features=["lon"], n=360.0)
+
+        _df = lat_cyclic_transformer.fit_transform(df=df)
+        _df = lon_cyclic_transformer.fit_transform(df=_df)
+        df._dataframe = _df
+        return df
+```
+
+For detailed examples, check the documentation at: https://simula.github.io/damast
 
 ## Installation and Development Setup
 
@@ -53,18 +90,16 @@ To enter the container:
 
 ## Usage
 
-Once you installed the package you can locally generate the documentation:
+To get the usage documentation it is easiest to check the published documentation [here](https://simula.github.io/damast/README.html).
+
+Otherwise, you can also locally generate the latest documentation once you installed the package:
 ```
     tox -e build_docs
 ```
-You can then open the documentation with a browser:
+Then open the documentation with a browser:
 ```
     <yourbrowser> _build/html/index.html
 ```
-
-Otherwise you will find API and usage documentation [here](https://simula.github.io/damast/README.html).
-
-
 
 
 ## Testing
