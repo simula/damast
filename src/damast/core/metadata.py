@@ -1079,14 +1079,15 @@ class MetaData:
         assert isinstance(df, pl.LazyFrame)
 
         for column_spec in self.columns:
-            if column_spec.name in XDataFrame(df).column_names:
+            columns = df.compat.column_names
+            if column_spec.name in columns:
                 df = column_spec.apply(
                     df=df, column_name=column_spec.name, validation_mode=validation_mode
                 )
             else:
                 raise ValueError(
                     f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
-                    f" Found {len(df.columns)} column(s): {','.join(df.columns)}"
+                    f" Found {len(columns)} column(s): {','.join(columns)}"
                 )
         return df
 
