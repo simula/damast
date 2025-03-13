@@ -13,8 +13,6 @@ import re
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, List, Optional, Union
 
-import h5py
-import numpy as np
 import polars
 import pyarrow
 import pyarrow.parquet as pq
@@ -198,7 +196,8 @@ class AnnotatedDataFrame(XDataFrame):
 
         """
         metadata = None
-        if Path(filename).suffix in [ ".pq", ".parquet"]:
+        path = Path(filename)
+        if path.suffix in [ ".pq", ".parquet"]:
             df = polars.scan_parquet(filename)
             try:
                 schema = pq.read_schema(filename)
@@ -207,13 +206,15 @@ class AnnotatedDataFrame(XDataFrame):
                 metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
             except Exception as e:
                 _log.warning(f"{filename} has no (damast) annotations")
-        elif Path(filename).suffix in [ ".csv"]:
+        elif path.suffix in [ ".csv"]:
             df = polars.scan_csv(filename, separator=";")
             if len(df.compat.column_names) <= 1:
                 # unlikely that this frame has only one column, so trying with comma
                 df = polars.scan_csv(filename, separator=",")
-        elif Path(filename).suffix in [".h5", ".hdf5"]:
+        elif path.suffix in [".h5", ".hdf5"]:
             df, metadata = XDataFrame.import_hdf5(filename)
+        elif path.suffix in [".nc", ".netcdf"]:
+            df, metadata = XDataFrame.import_netcdf(filename)
         else:
             raise RuntimeError(
                 f"Could not load {filename} - supported are currently parquet (.pq,.parquet)"

@@ -201,6 +201,21 @@ class PolarsDataFrame(metaclass=Meta):
         return polars.LazyFrame(data), metadata
 
     @classmethod
+    def import_netcdf(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+        try:
+            import xarray
+            import dask
+        except ImportError as e:
+            raise RuntimeError("Loading netcdf files requires to 'pip install xarray dask'"
+                    ", additionally either netcdf4 or h5netcdf")
+
+        netcdf_df = xarray.open_mfdataset(str(path), combine='by_coords')
+        pandas_df = netcdf_df.to_pandas()
+
+        df = polars.from_pandas(pandas_df)
+        return df.lazy(), None
+
+    @classmethod
     def import_hdf5(cls, filename: str | Path) -> Tuple[DataFrame, MetaData]:
         """
         Import a dataframe stored as HDF5.
