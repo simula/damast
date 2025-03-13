@@ -24,12 +24,18 @@ class DataAnnotateParser(BaseParser):
                             required=True
                             )
         parser.add_argument("-i", "--interactive",
+                            action="store_true",
                             help="Perform the annotation interactively",
                             default=False,
                             required=False)
 
         parser.add_argument("-o", "--output-dir",
                             help="Output directory",
+                            default=None,
+                            required=False)
+
+        parser.add_argument("--output-spec-file",
+                            help="The spec file name - if provided with path, it will override output-dir",
                             default=None,
                             required=False)
 
@@ -51,10 +57,19 @@ class DataAnnotateParser(BaseParser):
         print(adf.head(10).collect())
 
         metadata_filename = Path(args.filename).with_suffix(DAMAST_SPEC_SUFFIX)
+        output_dir = Path()
         if args.output_dir is not None:
             output_dir = Path(args.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
+        if args.output_spec_file:
+            spec_file = Path(args.output_spec_file)
+            if spec_file.is_absolute():
+                spec_file.parent.mkdir(parents=True, exist_ok=True)
+                metadata_filename = spec_file.with_suffix(DAMAST_SPEC_SUFFIX)
+            else:
+                metadata_filename = output_dir / spec_file.with_suffix(DAMAST_SPEC_SUFFIX)
+        else:
             metadata_filename = output_dir / metadata_filename.name
 
         metadata = AnnotatedDataFrame.infer_annotation(df=adf.dataframe)
