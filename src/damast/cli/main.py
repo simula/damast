@@ -3,6 +3,8 @@ Main argument parser and CLI entry point.
 """
 from argparse import ArgumentParser
 from pathlib import Path
+import traceback as tb
+import warnings
 
 from damast.cli.base import BaseParser
 from damast.cli.data_annotate import DataAnnotateParser
@@ -19,6 +21,7 @@ class MainParser(ArgumentParser):
         self.description = "damast - data processing with annotation"
 
         self.add_argument("-w", "--workdir", default=str(Path(".").resolve()))
+        self.add_argument("-v", "--verbose", action="store_true")
         self.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
         self.add_argument("--logfile", dest="logfile", type=str, default=None,
                           help="Set file for saving log (default prints to terminal)")
@@ -66,7 +69,13 @@ def run():
 
     args = main_parser.parse_args()
     if hasattr(args, "active_subparser"):
-        args.active_subparser.execute(args)
+        try:
+            args.active_subparser.execute(args)
+        except Exception as e:
+            if args.verbose:
+                tb.print_exception(e)
+            else:
+                print(f"\033[91mError: {e}\033[00m")
     else:
         main_parser.print_help()
 
