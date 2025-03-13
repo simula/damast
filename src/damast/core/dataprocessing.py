@@ -19,6 +19,7 @@ import yaml
 
 from damast.core.pipeline import Pipeline
 from damast.core.transformations import Transformer
+import damast.version
 
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT
@@ -483,12 +484,15 @@ class DataProcessingPipeline(PipelineElement):
     _name_mappings: Dict[str, str]
     _processing_stats: Dict[str, Dict[str, Any]]
 
+    _meta: Dict[str, str]
+
     def __init__(self, *,
                  name: str,
                  base_dir: Union[str, Path] = tempfile.gettempdir(),
                  steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = [],
                  inplace_transformation: bool = False,
                  name_mappings: Dict[str, str] = {},
+                 meta: Dict[str, str] | None = None,
                  ):
         super().__init__()
 
@@ -517,6 +521,12 @@ class DataProcessingPipeline(PipelineElement):
                                  f" from {type(step)}")
         self.is_ready = False
 
+        if meta is not None:
+            self._meta = meta
+        else:
+            self._meta = {
+                'damast_version': damast.version.__version__
+            }
 
     @property
     def output_specs(self):
@@ -639,6 +649,7 @@ class DataProcessingPipeline(PipelineElement):
 
     def __iter__(self):
         yield "name", self.name
+        yield "meta", self._meta
         yield "base_dir", str(self.base_dir)
         yield "steps", [[step_name, dict(pipeline_element)] for step_name, pipeline_element in self.steps]
 
