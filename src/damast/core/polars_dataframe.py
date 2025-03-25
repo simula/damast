@@ -163,8 +163,9 @@ class PolarsDataFrame(metaclass=Meta):
         from damast.core.metadata import DataSpecification, MetaData
         try:
             import tables
-        except LoadError as e:
-            print("Could not load pytables -- please install to use hdf5 functionality")
+        except ImportError as e:
+            raise RuntimeError("Could not load pytables -- "
+                    "please install 'tables' to use hdf5 functionality") from e
 
         annotations = []
         column_specifications = []
@@ -203,11 +204,11 @@ class PolarsDataFrame(metaclass=Meta):
     @classmethod
     def import_netcdf(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
         try:
-            import xarray
             import dask
+            import xarray
         except ImportError as e:
             raise RuntimeError("Loading netcdf files requires to 'pip install xarray dask'"
-                    ", additionally either netcdf4 or h5netcdf")
+                    ", additionally either netcdf4 or h5netcdf") from e
 
         netcdf_df = xarray.open_mfdataset(str(path), combine='by_coords')
         pandas_df = netcdf_df.to_pandas()
@@ -226,13 +227,13 @@ class PolarsDataFrame(metaclass=Meta):
         path = Path(filename)
         try:
             import tables
-        except LoadError as e:
-            print("Could not load pytables -- please install to use hdf5 functionality")
+        except ImportError as e:
+            raise RuntimeError("Could not load pytables -- please install 'tables' to use hdf5 functionality") from e
 
         try:
             import pandas
-        except LoadError as e:
-            print("Could not load pandas -- please install to use hdf5 functionality")
+        except ImportError as e:
+            raise RuntimeError("Could not load pandas -- please install 'pandas' to use hdf5 functionality") from e
 
         try:
             import warnings
@@ -260,7 +261,10 @@ class PolarsDataFrame(metaclass=Meta):
         Export the dataframe as hdf5. Please use only if really needed, otherwise, stick with the
         default format (parquet).
         """
-        import pandas
+        try:
+            import pandas
+        except ImportError as e:
+            raise RuntimeError("Could not load pandas -- please install pandas to use hdf5 functionality")
 
         from damast.core.metadata import DAMAST_HDF5_ROOT
 

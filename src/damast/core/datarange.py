@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 import numpy as np
+import polars as pl
 
 import damast.core.datarange
 
@@ -26,6 +27,9 @@ class DataElement:
         :param value: value of the DataElement
         :param dtype: datatype of the value
         """
+        if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
+            return dtype.to_python()(value)
+
         return dtype(value)
 
 
