@@ -117,7 +117,7 @@ This project is licensed under the [BSD-3-Clause License](https://github.com/sim
 
 ## Copyright
 
-Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/research-department)
+Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/research-departments)
 
 ## Acknowledgments
 
