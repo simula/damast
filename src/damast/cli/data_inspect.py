@@ -4,7 +4,8 @@ from pathlib import Path
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
-
+import datetime as dt
+import polars as pl
 
 class DataInspectParser(BaseParser):
     """
@@ -22,6 +23,19 @@ class DataInspectParser(BaseParser):
                             required=True
                             )
 
+        parser.add_argument("--filter", type=str, help="Filter based on column data, e.g., mmsi==120123")
+        parser.add_argument("--head", type=int, default=10, help="First this number of rows, default is 10")
+
+    def expand_filter_arg(self, adf: AnnotatedDataFrame, arg: str):
+        if arg in adf.column_names:
+            return f"pl.col('{arg}')"
+
+        m = re.match(r"datetime\((.*)\)", arg)
+        if m:
+            return f"dt.datetime.fromisoformat({m.group(1)})"
+
+        return arg
+
     def execute(self, args):
         super().execute(args)
 
@@ -38,9 +52,21 @@ class DataInspectParser(BaseParser):
         try:
             adf = AnnotatedDataFrame.from_file(filename=args.filename)
 
+            if args.filter:
+                m = re.match(r"([^=<>]+)([=><]+)([^=<>]*)", args.filter)
+                if m:
+                    lhs = m.group(1).strip()
+                    op = m.group(2).strip()
+                    rhs = m.group(3).strip()
+
+                    lhs = self.expand_filter_arg(adf, lhs)
+                    rhs = self.expand_filter_arg(adf, rhs)
+                    print(f"adf._dataframe.filter({lhs} {op} {rhs})")
+                    adf._dataframe = eval(f"adf._dataframe.filter({lhs} {op} {rhs})")
+
             print(adf.metadata.to_str())
-            print("\n\nFirst 10 rows:")
-            print(adf.head(10).collect())
+            print(f"\n\nFirst {args.head} rows:")
+            print(adf.head(n=args.head).collect())
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)
