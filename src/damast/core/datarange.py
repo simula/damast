@@ -28,7 +28,9 @@ class DataElement:
         :param dtype: datatype of the value
         """
         if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
-            return dtype.to_python()(value)
+            dtype = dtype.to_python()
+        elif isinstance(dtype, pl.datatypes.Datetime):
+            return dtype.to_python().fromtimestamp(value.timestamp())
 
         return dtype(value)
 
@@ -170,11 +172,15 @@ class ListOfValues:
         :raise ValueError: If dtype is given, but does not match the value type in the given list of values
         """
         if data and dtype is not None:
-            actual_dtype = type(data[0])
+            for sample in data:
+                if sample is not None:
+                    break
+
+            actual_dtype = type(sample)
             if actual_dtype != dtype:
                 raise ValueError(
                     f"{cls.__name__}.from_data: expected list of {dtype.__name__}, but received"
-                    f" {actual_dtype}"
+                    f" {actual_dtype}, {data=}"
                 )
         return cls(values=data)
 

@@ -9,10 +9,12 @@ import inspect
 import warnings
 from enum import Enum
 from pathlib import Path
+import traceback
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import polars as pl
+import re
 import yaml
 
 from .annotations import Annotation, History
@@ -338,7 +340,14 @@ class DataSpecification:
             exceptions.append(e)
 
         try:
+            m = re.match("(.*)\((.*)\)", type_name)
+            call_args = None
+            if m is not None:
+                type_name = m.group(1)
+                call_args = m.group(2)
             dtype = getattr(pl.datatypes, type_name)
+            if call_args:
+                dtype = eval(f"pl.datatypes.{dtype}({call_args})")
             return dtype
         except TypeError as e:
             exceptions.append(e)
@@ -979,6 +988,7 @@ class MetaData:
                 data_specification = DataSpecification.from_dict(data=data_spec_dict)
                 data_specs.append(data_specification)
             except Exception as e:
+                traceback.print_tb(e.__traceback__)
                 raise RuntimeError(
                     f"{cls.__name__}.from_dict: could not"
                     f" process column specification: {data_spec_dict} -- {e}"

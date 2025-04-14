@@ -201,7 +201,10 @@ class AnnotatedDataFrame(XDataFrame):
             df = polars.scan_parquet(filename)
             try:
                 schema = pq.read_schema(filename)
-
+                if schema is None or not hasattr(schema, "metadata"):
+                    raise RuntimeError(
+                        f"Could not load {filename} - parquet file contains no metadata"
+                    )
                 data = schema.metadata[b"annotated_dataframe"]
                 metadata = MetaData.from_dict(json.loads(data.decode('UTF-8')))
             except Exception as e:
