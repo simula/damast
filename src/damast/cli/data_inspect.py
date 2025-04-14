@@ -1,11 +1,13 @@
+import datetime as dt
 import re
 from argparse import ArgumentParser
 from pathlib import Path
 
+import polars as pl
+
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
-import datetime as dt
-import polars as pl
+
 
 class DataInspectParser(BaseParser):
     """

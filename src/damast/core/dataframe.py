@@ -7,9 +7,9 @@ import copy
 import gc
 import json
 import logging
+import re
 from logging import INFO, Logger, getLogger
 from pathlib import Path
-import re
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, List, Optional, Union
 
@@ -18,7 +18,7 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from .annotations import Annotation
-from .datarange import MinMax, ListOfValues
+from .datarange import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame
 

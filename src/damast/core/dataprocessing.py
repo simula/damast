@@ -17,9 +17,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
 
+import damast.version
 from damast.core.pipeline import Pipeline
 from damast.core.transformations import Transformer
-import damast.version
 
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT

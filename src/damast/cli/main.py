@@ -1,10 +1,10 @@
 """
 Main argument parser and CLI entry point.
 """
-from argparse import ArgumentParser
-from pathlib import Path
 import traceback as tb
 import warnings
+from argparse import ArgumentParser
+from pathlib import Path
 
 from damast.cli.base import BaseParser
 from damast.cli.data_annotate import DataAnnotateParser

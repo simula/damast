@@ -6,15 +6,15 @@ from __future__ import annotations
 import ast
 import builtins
 import inspect
+import re
+import traceback
 import warnings
 from enum import Enum
 from pathlib import Path
-import traceback
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import polars as pl
-import re
 import yaml
 
 from .annotations import Annotation, History
