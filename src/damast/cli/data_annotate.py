@@ -57,7 +57,7 @@ class DataAnnotateParser(BaseParser):
         print(adf.head(10).collect())
 
         metadata_filename = Path(args.filename).with_suffix(DAMAST_SPEC_SUFFIX)
-        output_dir = Path()
+        output_dir = Path(args.filename).parent
         if args.output_dir is not None:
             output_dir = Path(args.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)

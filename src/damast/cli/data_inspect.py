@@ -50,7 +50,7 @@ class DataInspectParser(BaseParser):
         print(f"Loading dataframe ({len(files)} files) of total size: {sum_st_size / (1024**2):.2f} MB")
 
         try:
-            adf = AnnotatedDataFrame.from_file(filename=args.filename)
+            adf = AnnotatedDataFrame.from_file(filename=args.filename, metadata_required=False)
 
             if args.filter:
                 m = re.match(r"([^=<>]+)([=><]+)([^=<>]*)", args.filter)

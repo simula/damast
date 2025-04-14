@@ -239,7 +239,7 @@ class AnnotatedDataFrame(XDataFrame):
                         f"{head}"
                     )
             else:
-                metadata = MetaData(columns=[])
+                metadata = cls.infer_annotation(df)
 
         return cls(dataframe=df, metadata=metadata)
 
