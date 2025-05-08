@@ -210,21 +210,21 @@ class PolarsDataFrame(metaclass=Meta):
             raise RuntimeError("Loading netcdf files requires to 'pip install xarray dask'"
                     ", additionally either netcdf4 or h5netcdf") from e
 
-        netcdf_df = xarray.open_mfdataset(str(path), combine='by_coords')
-        pandas_df = netcdf_df.to_pandas()
 
+        netcdf_df = xarray.open_mfdataset(path, combine='by_coords', cache=True)
+        pandas_df = netcdf_df.to_pandas()
         df = polars.from_pandas(pandas_df)
+
         return df.lazy(), None
 
     @classmethod
-    def import_hdf5(cls, filename: str | Path) -> Tuple[DataFrame, MetaData]:
+    def import_hdf5(cls, files: str | Path | list[str|Path]) -> Tuple[DataFrame, MetaData]:
         """
         Import a dataframe stored as HDF5.
 
         This method tries to load using pandas first, then falls back to reading a vaex-based format
         using pytables.
         """
-        path = Path(filename)
         try:
             import tables
         except ImportError as e:
@@ -235,6 +235,9 @@ class PolarsDataFrame(metaclass=Meta):
         except ImportError as e:
             raise RuntimeError("Could not load pandas -- please install 'pandas' to use hdf5 functionality") from e
 
+        if type(files) != list:
+            files = [files]
+
         try:
             import warnings
 
@@ -244,15 +247,22 @@ class PolarsDataFrame(metaclass=Meta):
             #     class: 8
             warnings.filterwarnings("ignore", message="Unsupported type for attribute .*")
 
-            pandas_df = pandas.read_hdf(str(filename))
-            df = polars.from_pandas(pandas_df)
+            data_frames = []
+            for filename in files:
+                data_frames.append( pandas.read_hdf(str(filename)) )
+            pandas_df = pandas.concat(data_frames, ignore_index=True)
 
+            df = polars.from_pandas(pandas_df)
             warnings.resetwarnings()
 
             return df.lazy(), None
         except tables.exceptions.NoSuchNodeError as e:
             logger.debug(f"HDF5 {filename} cannot be imported with pandas")
 
+        if len(files) > 1:
+            raise RuntimeError("Loading from vaex is only supported with one file at a time")
+
+        path = Path(files[0])
         return cls.from_vaex_hdf5(path)
 
     @classmethod

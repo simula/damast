@@ -20,8 +20,10 @@ class DataInspectParser(BaseParser):
         super().__init__(parser=parser)
 
         parser.description = "damast inspect - data inspection subcommand called"
-        parser.add_argument("-f", "--filename",
-                            help="Filename or pattern of the (annotated) data file that should be inspected",
+        parser.add_argument("-f", "--files",
+                            help="Files or patterns of the (annotated) data file that should be inspected (space separated)",
+                            nargs="+",
+                            type=str,
                             required=True
                             )
 
@@ -41,18 +43,22 @@ class DataInspectParser(BaseParser):
     def execute(self, args):
         super().execute(args)
 
-        base = Path(args.filename).parent
-        name = Path(args.filename).name
-        files = [x for x in base.glob(name)]
+        files = args.files
+
+        expanded_pattern = []
+        for file in files:
+            base = Path(file).parent
+            name = Path(file).name
+            expanded_pattern += [x for x in base.glob(name)]
 
         sum_st_size = 0
-        for idx, file in enumerate(files, start=1):
+        for idx, file in enumerate(expanded_pattern, start=1):
             sum_st_size += file.stat().st_size
 
-        print(f"Loading dataframe ({len(files)} files) of total size: {sum_st_size / (1024**2):.2f} MB")
+        print(f"Loading dataframe ({len(expanded_pattern)} files) of total size: {sum_st_size / (1024**2):.2f} MB")
 
         try:
-            adf = AnnotatedDataFrame.from_file(filename=args.filename, metadata_required=False)
+            adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
 
             if args.filter:
                 m = re.match(r"([^=<>]+)([=><]+)([^=<>]*)", args.filter)
