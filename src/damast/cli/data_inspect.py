@@ -44,18 +44,8 @@ class DataInspectParser(BaseParser):
         super().execute(args)
 
         files = args.files
-
-        expanded_pattern = []
-        for file in files:
-            base = Path(file).parent
-            name = Path(file).name
-            expanded_pattern += [x for x in base.glob(name)]
-
-        sum_st_size = 0
-        for idx, file in enumerate(expanded_pattern, start=1):
-            sum_st_size += file.stat().st_size
-
-        print(f"Loading dataframe ({len(expanded_pattern)} files) of total size: {sum_st_size / (1024**2):.2f} MB")
+        files_stats = self.get_files_stats(args.files)
+        print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
         try:
             adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)

@@ -6,6 +6,8 @@ from __future__ import annotations
 import ast
 import builtins
 import inspect
+import logging
+import os
 import re
 import traceback
 import warnings
@@ -18,13 +20,16 @@ import polars as pl
 import yaml
 
 from .annotations import Annotation, History
+from .constants import (
+    DAMAST_HDF5_COLUMNS,
+    DAMAST_HDF5_ROOT,
+    DAMAST_SPEC_SUFFIX,
+    DAMAST_SUPPORTED_FILE_FORMATS,
+    )
 from .datarange import DataElement, DataRange, MinMax
 from .formatting import DEFAULT_INDENT
 from .types import DataFrame, XDataFrame
 from .units import Unit, unit_registry, units
-
-DAMAST_HDF5_ROOT: str = "/dataframe"
-DAMAST_HDF5_COLUMNS: str = "/dataframe/columns"
 
 __all__ = [
     "ArtifactSpecification",
@@ -35,6 +40,7 @@ __all__ = [
     "ValidationMode",
 ]
 
+logger = logging.getLogger(__name__)
 
 class DataCategory(str, Enum):
     """
@@ -1154,3 +1160,36 @@ class MetaData:
                     ),
                 )
         return md_fulfillment
+
+
+    @classmethod
+    def search(cls, files: list[str | Path]) -> tuple[MetaData | None, str | None]:
+        """
+        Search for the metadata specfile for a given list of files
+        """
+        logger.info("Metadata is required, so searching now for an existing annotation file")
+        commonpath = os.path.commonpath(files)
+        if len(files) == 1:
+            commonpath = Path(commonpath).parent
+
+        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        metadata_file_candidates = Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}")
+        for f in metadata_file_candidates:
+            try:
+                return MetaData.load_yaml(filename=f), f, metadata_file_candidates
+            except Exception as e:
+                logger.debug(f"Loading {f} as metadata file failed -- {e}")
+
+        return None, None, metadata_file_candidates
+
+    @classmethod
+    def specfile(cls, files: list[str | Path]) -> str:
+        """
+        Create the default filename for the spec file
+        """
+        if len(files) == 1:
+            return Path(files[0]).with_suffix(DAMAST_SPEC_SUFFIX)
+
+        commonpath = os.path.commonpath(files)
+        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"

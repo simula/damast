@@ -81,6 +81,6 @@ def test_inspect(data_path, filename, spec_filename, tmp_path, script_runner):
 
     with open(data_path / spec_filename, "r") as f:
         expected_spec = yaml.load(f, Loader=yaml.SafeLoader)
-        expected_spec["annotations"]["source"] = str(data_path / filename)
+        expected_spec["annotations"]["source"] = [str(data_path / filename)]
 
     assert written_spec == expected_spec

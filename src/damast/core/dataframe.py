@@ -19,19 +19,13 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from .annotations import Annotation
+from .constants import DAMAST_SPEC_SUFFIX, DAMAST_SUPPORTED_FILE_FORMATS
 from .datarange import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
 
-DAMAST_SPEC_SUFFIX: str = ".spec.yaml"
-DAMAST_SUPPORTED_FILE_FORMATS: dict[str, list[str]] = {
-    "parquet": [".parquet", ".pq"],
-    "netcdf": [".nc", ".netcdf", ".nc4", ".netcdf4"],
-    "hdf": [".h5", ".hdf", ".hdf5"],
-    "csv": [".csv"],
-}
 
 logging.basicConfig()
 _log: Logger = getLogger(__name__)
@@ -237,17 +231,8 @@ class AnnotatedDataFrame(XDataFrame):
             _log.info("No metadata found in file")
             if metadata_required:
                 _log.info("Metadata is required, so searching now for an existing annotation file")
-                commonpath = os.path.commonpath(files)
-                if len(files) == 1:
-                    commonpath = Path(commonpath).parent
 
-                commonprefix = os.path.commonprefix([x.stem for x in files])
-                metadata_file_candidates = Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}")
-                for f in metadata_file_candidates:
-                    try:
-                        metadata = MetaData.load_yaml(filename=f)
-                    except Exception as e:
-                        logger.debug(f"Loading {f} as metadata file failed -- {e}")
+                metadata, _ , metadata_file_candidates = MetaData.search(files)
 
                 if metadata is None:
                     head = df.head(10).collect()

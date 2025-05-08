@@ -83,4 +83,5 @@ columns:
       max: 1
       allow_missing: true
 annotations:
-  source: tests/damast/data/test_ais.csv
+  source:
+  - tests/damast/data/test_ais.csv
