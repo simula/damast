@@ -72,8 +72,9 @@ class DataInspectParser(BaseParser):
                 adf._dataframe = eval(f"adf._dataframe{filter_values}")
 
             print(adf.metadata.to_str())
-            print(f"\n\nFirst {args.head} rows:")
+            print(f"\n\nFirst {args.head} and last {args.tail} rows:")
             print(adf.head(n=args.head).collect())
+            print(adf.tail(n=args.tail).collect())
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)
