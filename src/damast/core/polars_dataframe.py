@@ -212,7 +212,7 @@ class PolarsDataFrame(metaclass=Meta):
 
 
         netcdf_df = xarray.open_mfdataset(path, combine='by_coords', cache=True)
-        pandas_df = netcdf_df.to_pandas()
+        pandas_df = netcdf_df.to_dataframe()
         df = polars.from_pandas(pandas_df)
 
         return df.lazy(), None
