@@ -210,9 +210,17 @@ class PolarsDataFrame(metaclass=Meta):
             raise RuntimeError("Loading netcdf files requires to 'pip install xarray dask'"
                     ", additionally either netcdf4 or h5netcdf") from e
 
+        try:
+            import pandas as pd
+        except ImportError as e:
+            raise RuntimeError("Loading netcdf files requires pandas, "
+                " e.g., run 'pip install pandas'") from e
 
-        netcdf_df = xarray.open_mfdataset(path, combine='by_coords', cache=True)
-        pandas_df = netcdf_df.to_dataframe()
+        dataframes = []
+        for f in path:
+            ds = xarray.open_dataset(f)
+            dataframes.append( ds.to_dataframe().reset_index() )
+        pandas_df = pd.concat(dataframes, ignore_index=True).reset_index()
         df = polars.from_pandas(pandas_df)
 
         return df.lazy(), None
