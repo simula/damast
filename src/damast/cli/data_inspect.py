@@ -47,7 +47,7 @@ class DataInspectParser(BaseParser):
     def execute(self, args):
         super().execute(args)
 
-        files = args.files
+        files = sorted(args.files)
         files_stats = self.get_files_stats(args.files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
