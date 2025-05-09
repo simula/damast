@@ -181,7 +181,7 @@ class AnnotatedDataFrame(XDataFrame):
         Export the annotated dataframe to a file. By default the format is parquet.
         """
         arrow_table = self._dataframe.collect().to_arrow()
-        new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata)).encode('UTF-8')})
+        new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
         arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
         pq.write_table(arrow_table, filename)
 
@@ -228,7 +228,7 @@ class AnnotatedDataFrame(XDataFrame):
             )
 
         if metadata is None:
-            _log.info("No metadata found in file")
+            _log.info("No metadata provided or found in file")
             if metadata_required:
                 _log.info("Metadata is required, so searching now for an existing annotation file")
 

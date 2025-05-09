@@ -4,7 +4,7 @@ from pathlib import Path
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.metadata import ValidationMode
+from damast.core.metadata import MetaData, ValidationMode
 
 
 class DataConvertParser(BaseParser):
@@ -18,17 +18,19 @@ class DataConvertParser(BaseParser):
         super().__init__(parser=parser)
 
         parser.description = "damast convert - data conversion subcommand called"
-        parser.add_argument("-c", "--csv-input",
-                            action="append",
-                            help="The csv input file(s); enclosed in quotes accepts * as wildcard "
-                                 "for directories of filenames",
-                            required=True)
-        parser.add_argument("-m", "--metadata-input",
-                            help="The metadata input file",
+        parser.add_argument("-f", "--files",
+                            help="Files or patterns of the (annotated) data file that should be converted",
+                            nargs="+",
+                            type=str,
                             required=True
                             )
+        parser.add_argument("-m", "--metadata-input",
+                            help="The metadata input file",
+                            default=None,
+                            required=False
+                            )
         parser.add_argument("-o", "--output",
-                            help="The output (*.hdf5) file",
+                            help="The output file either: .parquet, .hdf5",
                             required=True
                             )
         parser.add_argument("--validation-mode",
@@ -39,24 +41,37 @@ class DataConvertParser(BaseParser):
     def execute(self, args):
         super().execute(args)
 
-        csv_filenames = []
-        for path in args.csv_input:
-            files = [f for f in glob.iglob(path)]
-            if len(files) == 0:
-                raise FileNotFoundError(f"csv-input: '{path}' does not match an existing filename")
-            csv_filenames.extend(files)
+        files_stats = self.get_files_stats(args.files)
+        print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
-        if not Path(args.metadata_input).exists():
-            raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
+        metadata = None
 
-        try:
-            validation_mode = ValidationMode[args.validation_mode.upper()]
-        except KeyError:
-            raise ValueError(f"--validation-mode has invalid argument."
-                             f" Select from: {[x.value.lower() for x in ValidationMode]}")
+        adf = AnnotatedDataFrame.from_files(
+                files=args.files,
+                metadata_required=False
+            )
 
-        AnnotatedDataFrame.convert_csv_to_adf(csv_filenames=csv_filenames,
-                                              metadata_filename=args.metadata_input,
-                                              output_filename=args.output,
-                                              validation_mode=validation_mode,
-                                              progress=True)
+        if args.metadata_input:
+            if not Path(args.metadata_input).exists():
+                raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
+            metadata = MetaData.load_yaml(filename=args.metadata_input)
+
+            try:
+                validation_mode = ValidationMode[args.validation_mode.upper()]
+            except KeyError:
+                raise ValueError(f"--validation-mode has invalid argument."
+                                 f" Select from: {[x.value.lower() for x in ValidationMode]}")
+            adf._metadata = metadata
+            adf.validate_metadata(validation_mode)
+
+        print(adf.head(10).collect())
+        adf.save(filename=args.output)
+
+        if not Path(args.output).exists():
+            raise FileNotFoundError(f"Failed to write {args.output}")
+
+        print(f"Written to: {args.output}")
+
+
+
+

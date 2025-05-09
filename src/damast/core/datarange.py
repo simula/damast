@@ -3,6 +3,7 @@ This module contains data range definitions.
 """
 from __future__ import annotations
 
+import datetime as dt
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -30,6 +31,8 @@ class DataElement:
         if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
             dtype = dtype.to_python()
         elif isinstance(dtype, pl.datatypes.Datetime):
+            if type(value) == str:
+                value = dt.datetime.fromisoformat(value)
             return dtype.to_python().fromtimestamp(value.timestamp())
 
         return dtype(value)
@@ -109,7 +112,8 @@ class DataRange(ABC):
             datarange_subclass = getattr(damast.core.datarange, klass)
             return datarange_subclass.from_data(data=values, dtype=dtype)
         except AttributeError as e:
-            raise ValueError(f"DataRange.from_dict: unknown range definition '{klass}'") from e
+            msg = f"DataRange.from_dict: unknown range definition '{klass}' -- {e}"
+            raise ValueError(msg) from e
 
 
 class ListOfValues:

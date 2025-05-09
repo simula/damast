@@ -638,12 +638,12 @@ class DataSpecification:
 
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
-                        self.value_range.merge(MinMax(float(min_value), float(max_value)))
+                        self.value_range.merge(MinMax(min_value, max_value))
                 else:
                      warnings.warn(
                          f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
                      )
-                     self.value_range = MinMax(float(min_value), float(max_value))
+                     self.value_range = MinMax(min_value, max_value)
             except ValueError:
                 # Type might not be numeric
                 pass
