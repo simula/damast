@@ -2,6 +2,8 @@ import select
 import socket
 from time import sleep
 from typing import Iterable
+import pytest
+import sys
 
 from damast.ml.scheduler import Job, ResponseCollector
 
@@ -46,7 +48,7 @@ def test_job_response():
 
     assert job_response == decoded_job_response
 
-
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="Scheduler requires a UNIX system")
 def test_response_collector(tmp_path, monkeypatch):
     class MockSelect:
         call_count = 0

@@ -115,7 +115,6 @@ def test_data_specification_read_write(name, category, is_optional,
 
     ds_dict = dict(ds)
     ds_yaml = tmp_path / "test_data_specification_read_write-ds.yaml"
-    ds_yaml = "/tmp/test_data_specification_read_write-ds.yaml"
 
     assert ds_dict["name"] == name
 

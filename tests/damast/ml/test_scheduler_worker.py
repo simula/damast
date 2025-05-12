@@ -8,6 +8,7 @@ import pandas as pd
 import polars
 import psutil
 import pytest
+import sys
 
 from damast.ml.scheduler import Job, JobScheduler
 
@@ -53,6 +54,7 @@ def worker_process():
     worker_process.terminate()
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="Scheduler requires a UNIX system")
 def test_scheduler_worker_fail(job):
     # Ensure that no previous worker job is running
     for proc in psutil.process_iter():
@@ -63,6 +65,7 @@ def test_scheduler_worker_fail(job):
     with pytest.raises(RuntimeError):
         job_scheduler.start(job)
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="Scheduler requires a UNIX system")
 def test_scheduler_worker(monkeypatch, job, worker_process):
     job_scheduler = JobScheduler()
     for _ in range(60):
