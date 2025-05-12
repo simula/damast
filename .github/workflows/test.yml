@@ -28,13 +28,32 @@ jobs:
         run: python -m pip install -U pip
 
       - name: Install package
-        run: python -m pip install -e .[dev,test]
+        run: python -m pip install -e .[ml,dev,test]
+
+      # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#runner-context
+      - name: Set Env (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "KERAS_BACKEND=${{ matrix.backend }}"  | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Set Env (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "KERAS_BACKEND=${{ matrix.backend }}"  >> $GITHUB_ENV
+
+      - name: Set Env (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          echo "KERAS_BACKEND=${{ matrix.backend }}"  >> $GITHUB_ENV
+          echo "PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0" >> $GITHUB_ENV
 
       # Run keras backend specific tests (for keras>=3)
       # Due to space issues avoid creating too many venvs (via tox)
       #     see https://github.com/actions/runner-images/issues/709
       - name: Run tests - ${{ matrix.backend }} backend
-        run: KERAS_BACKEND=${{ matrix.backend }} pytest -v --timeout=120 --cov=damast --cov-report=term --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.backend }}.xml tests
+        run: |
+          pytest -v --timeout=120 --cov=damast --cov-report=term --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.backend }}.xml tests
 
       - name: Upload pytest results
         uses: actions/upload-artifact@v4

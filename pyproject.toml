@@ -51,8 +51,6 @@ dependencies = [
     "scikit-learn",
     "tables",
     # BEGIN keras backends
-    "jax[cpu]",
-    "tf-nightly",
     "torch",
     # END backends
 ]
@@ -76,6 +74,11 @@ dev = [
     # parse correctly
     "sphinx-autoapi<=3.3",
     "tox"
+]
+
+ml = [
+    "jax[cpu]",
+    "tensorflow"
 ]
 
 cuda = [
