@@ -75,7 +75,8 @@ class DataInspectParser(BaseParser):
 
                         print(f"   .filter({lhs} {op} {rhs})")
                         filter_values += f".filter({lhs} {op} {rhs})"
-
+                    else:
+                        logger.warning(f"Filter expression invalid: {filter_expression}")
                 adf._dataframe = eval(f"adf._dataframe{filter_values}")
 
             print(adf.metadata.to_str(columns=args.columns))
