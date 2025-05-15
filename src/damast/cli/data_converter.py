@@ -1,6 +1,9 @@
 import glob
+import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
+
+from tqdm import tqdm
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
@@ -29,27 +32,50 @@ class DataConvertParser(BaseParser):
                             default=None,
                             required=False
                             )
-        parser.add_argument("-o", "--output",
+        parser.add_argument("-o", "--output-file",
                             help="The output file either: .parquet, .hdf5",
-                            required=True
+                            required=False
+                            )
+        parser.add_argument("--output-dir",
+                            help="The output directory",
+                            required=False,
+                            )
+        parser.add_argument("--output-type",
+                            help="The output file type: .parquet or .hdf5",
+                            required=False,
                             )
         parser.add_argument("--validation-mode",
                             default="readonly",
                             choices=[x.value.lower() for x in ValidationMode],
                             help="Define the validation mode")
-
     def execute(self, args):
         super().execute(args)
 
-        files_stats = self.get_files_stats(args.files)
+        files = args.files
+        files_stats = self.get_files_stats(files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
+
+        if args.output_dir and args.output_file:
+            raise ValueError("--output-dir and --output-file cannot be used together")
 
         metadata = None
 
-        adf = AnnotatedDataFrame.from_files(
-                files=args.files,
-                metadata_required=False
-            )
+        expanded_files = []
+        local_mount = Path(".local-mount")
+        local_mount.mkdir(parents=True, exist_ok=True)
+        mounted_dirs = []
+        for file in files:
+            if Path(file).suffix in [".tar", ".gz", ".zip"]:
+                target_mount = local_mount / Path(file).name
+                target_mount.mkdir(parents=True, exist_ok=True)
+                subprocess.run(["ratarmount", file, target_mount])
+                mounted_dirs.append(target_mount)
+
+                decompressed_files = [x for x in Path(target_mount).glob("*")]
+                expanded_files += decompressed_files
+
+        if expanded_files:
+            files = expanded_files
 
         if args.metadata_input:
             if not Path(args.metadata_input).exists():
@@ -64,13 +90,38 @@ class DataConvertParser(BaseParser):
             adf._metadata = metadata
             adf.validate_metadata(validation_mode)
 
-        print(adf.head(10).collect())
-        adf.save(filename=args.output)
+        created_files = []
+        try:
+            if args.output_dir:
+                # Create multiple output files
+                output_dir = Path(args.output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
 
-        if not Path(args.output).exists():
-            raise FileNotFoundError(f"Failed to write {args.output}")
+                for file in files:
+                    adf = AnnotatedDataFrame.from_files(
+                            files=file,
+                            metadata_required=False,
+                        )
+                    output_file = output_dir / f"{Path(file).stem}{args.output_type}"
+                    adf.save(filename=output_file)
+                    created_files.append(output_file)
+            else:
+                # Create single output file
+                adf = AnnotatedDataFrame.from_files(
+                        files=files,
+                        metadata_required=False,
+                    )
+                adf.save(filename=args.output_file)
+                created_files.append(args.output_file)
 
-        print(f"Written to: {args.output}")
+            print(adf.head(10).collect())
+            print(f"Written: {created_files}")
+        except Exception as e:
+            raise
+        finally:
+            for mounted_dir in mounted_dirs:
+                subprocess.run(["umount", mounted_dir])
+
 
 
 
