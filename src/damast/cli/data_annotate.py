@@ -18,19 +18,13 @@ class DataAnnotateParser(BaseParser):
     def __init__(self, parser: ArgumentParser):
         super().__init__(parser=parser)
 
-        parser.description = "damast annotate - data annotation subcommand called"
+        parser.description = "damast annotate - extract (default) or apply annotation to dataset"
         parser.add_argument("-f", "--files",
                             help="Files or patterns of the (annotated) data file that should be annotated",
                             nargs="+",
                             type=str,
                             required=True
                             )
-        parser.add_argument("-i", "--interactive",
-                            action="store_true",
-                            help="Perform the annotation interactively",
-                            default=False,
-                            required=False)
-
         parser.add_argument("-o", "--output-dir",
                             help="Output directory",
                             default=None,
@@ -67,7 +61,7 @@ class DataAnnotateParser(BaseParser):
         else:
             metadata_filename = output_dir / metadata_filename.name
 
-        metadata = AnnotatedDataFrame.infer_annotation(df=adf.dataframe)
+        metadata = AnnotatedDataFrame.infer_annotation(df=adf)
         metadata.add_annotation(
                 Annotation(
                     name=Annotation.Key.Source,
