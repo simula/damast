@@ -42,16 +42,18 @@ dependencies = [
     "keras>=3.0",
     "matplotlib",
     "numba",
-    "numpy",
-    "polars",
+    "numpy>=2",
+    "polars>=1.20",
     "psutil",
     "pyais",
     "pyarrow",
-    "pydantic",
+    "pydantic>=2.0",
+    "ratarmount",
     "scikit-learn",
     "tables",
     # BEGIN keras backends
     "torch",
+    "tqdm",
     # END backends
 ]
 
@@ -88,7 +90,7 @@ cuda = [
 
 test = [
     "coverage",
-    "pandas",
+    "pandas>=2",
     "pytest",
     "pytest-console-scripts",
     "pytest-cov",
