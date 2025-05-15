@@ -110,6 +110,7 @@ def test_data_processing(workdir,
 
     df = adf_preprocess.collect()
     assert df.filter(pl.col("source") != "s").count()[0,0] == 0
+
     assert df.select(ColumnName.DATE_TIME_UTC).null_count()[0,0] == 0
     assert df.filter(pl.col(ColumnName.MESSAGE_TYPE) != 2).count()[0,0] == 0
 

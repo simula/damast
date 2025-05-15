@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
-from damast.core.datarange import CyclicMinMax, MinMax
+from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,

@@ -11,7 +11,7 @@ import pytest
 
 from damast.core.annotations import Annotation
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.datarange import MinMax
+from damast.core.data_description import MinMax
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,
@@ -63,7 +63,6 @@ def test_annotated_dataframe_deep_copy(metadata, polars_dataframe):
 
     adf = AnnotatedDataFrame(dataframe=polars_dataframe,
                              metadata=metadata)
-
     adf_copy = copy.deepcopy(adf)
 
     assert adf_copy.metadata.columns == adf.metadata.columns

@@ -71,7 +71,7 @@ def test_inspect(data_path, filename, script_runner):
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
-def test_inspect(data_path, filename, spec_filename, tmp_path, script_runner):
+def test_annotate(data_path, filename, spec_filename, tmp_path, script_runner):
     result = script_runner.run(['damast', 'annotate', '-f', str(data_path / filename), '-o', tmp_path])
 
     assert result.returncode == 0
@@ -82,5 +82,4 @@ def test_inspect(data_path, filename, spec_filename, tmp_path, script_runner):
     with open(data_path / spec_filename, "r") as f:
         expected_spec = yaml.load(f, Loader=yaml.SafeLoader)
         expected_spec["annotations"]["source"] = [str(data_path / filename)]
-
     assert written_spec == expected_spec

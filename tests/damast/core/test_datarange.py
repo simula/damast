@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from damast.core.datarange import CyclicMinMax, DataRange, ListOfValues, MinMax
+from damast.core.data_description import CyclicMinMax, DataRange, ListOfValues, MinMax
 
 
 @pytest.mark.parametrize(["min", "max", "value", "is_in_range", "allow_missing"],

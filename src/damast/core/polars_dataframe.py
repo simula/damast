@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import ClassVar
 
@@ -8,6 +9,8 @@ import numpy as np
 import polars
 import polars.api
 from polars import LazyFrame
+
+from .data_description import NumericValueStats
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +30,17 @@ class Meta(type):
 @polars.api.register_lazyframe_namespace("compat")
 class PolarsDataFrame(metaclass=Meta):
     _dataframe: LazyFrame
+    _polars_dataframe: PolarsDataFrame
+    _dataframe_collected: polars.DataFrame
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
         if type(df) == polars.DataFrame:
             self._dataframe = df.lazy()
         else:
             self._dataframe = df
+
+        self._dataframe_collected = None
+        self._polars_dataframe = None
 
     @property
     def dataframe(self) -> PolarsDataFrame:
@@ -45,8 +53,22 @@ class PolarsDataFrame(metaclass=Meta):
 
         :return: The underlying dataframe
         """
-        return PolarsDataFrame(self._dataframe)
+        if self._polars_dataframe is None or self._dataframe is not self._polars_dataframe._dataframe:
+            self._polars_dataframe = PolarsDataFrame(self._dataframe)
 
+        return self._polars_dataframe
+
+    def collected(self):
+        if self._dataframe_collected is None:
+            self._dataframe_collected = self._dataframe.collect()
+
+        return self._dataframe_collected
+
+    def is_string(self, column_name: str) -> bool:
+        return str(self.dtype(column_name)).lower().startswith("str")
+
+    def is_numeric(self, column_name: str) -> bool:
+        return self.dtype(column_name).is_numeric()
 
     def __getitem__(self, column_name: str):
         """
@@ -71,15 +93,6 @@ class PolarsDataFrame(metaclass=Meta):
         idx = self.column_names.index(column_name)
         return self._dataframe.collect_schema().dtypes()[idx]
 
-    def minmax(self, column_name: str) -> Tuple[any, any]:
-        """
-        Tuple of min and max values of the given column
-        """
-        min_value = self._dataframe.select(column_name).min().collect()[0,0]
-        max_value = self._dataframe.select(column_name).max().collect()[0,0]
-
-        return min_value, max_value
-
     def set_dtype(self, column_name, representation_type) -> PolarsDataFrame:
         """
         Set the dtype for a column to the given representation type.
@@ -91,6 +104,87 @@ class PolarsDataFrame(metaclass=Meta):
 
         self._df = self._dataframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
         return self
+
+    def minmax(self, column_name: str) -> Tuple[any, any]:
+        """
+        Tuple of min and max values of the given column
+        """
+        result = self._dataframe.select([
+                polars.col(column_name).min().alias("min_value"),
+                polars.col(column_name).max().alias("max_value")
+            ]).collect()
+
+        min_value = result["min_value"][0]
+        max_value = result["max_value"][0]
+
+        return min_value, max_value
+
+    def categories(self, column_name: str, max_count: int = 100) -> list[str]:
+        categories = self._dataframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
+        if len(categories) <= max_count:
+            timepoint_like = 0
+            for c in categories[:10]:
+                if c and re.search(r"[0-9]{2}:[0-9]{2}", c) is not None:
+                    timepoint_like += 1
+
+            if timepoint_like < 3:
+                return categories
+
+        return None
+
+
+    def minmax_stats(self, column_names: list[str]) -> dict[str, dict[str, any]]:
+        """
+        Tuple of min and max values of the given column
+        """
+        fields = []
+        for column in column_names:
+            fields.extend([
+                polars.col(column).min().alias(f"{column}_min_value"),
+                polars.col(column).max().alias(f"{column}_max_value"),
+                polars.col(column).mean().alias(f"{column}_mean"),
+                polars.col(column).std().alias(f"{column}_stddev"),
+                polars.col(column).count().alias(f"{column}_total_count"),
+                polars.col(column).null_count().alias(f"{column}_null_count")
+            ])
+
+        result = self._dataframe.select(
+                fields
+        ).collect()
+
+        results = {}
+        for column in column_names:
+            min_value = result[f"{column}_min_value"][0]
+            max_value = result[f"{column}_max_value"][0]
+            stats = NumericValueStats(
+                mean=result[f"{column}_mean"][0],
+                stddev=result[f"{column}_stddev"][0],
+                total_count=result[f"{column}_total_count"][0],
+                null_count=result[f"{column}_null_count"][0],
+            )
+            results[column] = {
+                    "min_value": min_value,
+                    "max_value": max_value,
+                    "stats": stats
+            }
+
+        return results
+
+
+    def stats(self, column_name: str) -> NumericValueStats:
+        result = self._dataframe.select([
+            polars.col(column_name).mean().alias("mean"),
+            polars.col(column_name).std().alias("stddev"),
+            polars.col(column_name).count().alias("total_count"),
+            polars.col(column_name).null_count().alias("null_count")
+        ]).collect()
+
+        return NumericValueStats(
+                mean=result['mean'][0],
+                stddev=result['stddev'][0],
+                total_count=result['total_count'][0],
+                null_count=result['null_count'][0]
+        )
 
     def __getattr__(self, attr_name):
         """
@@ -132,10 +226,10 @@ class PolarsDataFrame(metaclass=Meta):
 
         :return: Length of the dataframe
         """
-        return len(self._dataframe.collect())
+        return len(self.collected())
 
     def equals(self, other: PolarsDataFrame) -> bool:
-        return self._dataframe.collect().equals(other._dataframe.collect())
+        return self.collected().equals(other.collected())
 
     def open(path: str | Path, sep = ',') -> DataFrame:
         path = Path(path)

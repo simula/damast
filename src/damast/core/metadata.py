@@ -26,7 +26,7 @@ from .constants import (
     DAMAST_SPEC_SUFFIX,
     DAMAST_SUPPORTED_FILE_FORMATS,
     )
-from .datarange import DataElement, DataRange, MinMax
+from .data_description import DataElement, DataRange, MinMax, NumericValueStats
 from .formatting import DEFAULT_INDENT
 from .types import DataFrame, XDataFrame
 from .units import Unit, unit_registry, units
@@ -64,7 +64,6 @@ class Status(str, Enum):
 
     FAIL = "FAIL"
     """Data-specification is not adhered to"""
-
 
 class ArtifactSpecification:
     """
@@ -109,6 +108,9 @@ class ValidationMode(str, Enum):
     Specification of how to apply meta-data to :class:`DataFrame`
     """
 
+    IGNORE = "IGNORE"
+    """Metadata will not be validated"""
+
     READONLY = "READONLY"
     """Metadata cannot be changed"""
 
@@ -131,7 +133,9 @@ class DataSpecification:
     :param missing_value: The representation of a missing value for this data element
     :param unit: The (physical) unit of this data element
     :param precision: The precision of this data element
-    :param range: The allowed data range, which remains as ``None`` if unrestricted
+    :param value_range: The allowed data range, which remains as ``None`` if unrestricted
+    :param value_stats: The statistics about the data
+    :param value_meanings: A description of value meanings
     """
 
     class Key(str, Enum):
@@ -150,6 +154,7 @@ class DataSpecification:
         precision = "precision"
         unit = "unit"
         value_range = "value_range"
+        value_stats = "value_stats"
         value_meanings = "value_meanings"
 
     class Fulfillment:
@@ -257,6 +262,7 @@ class DataSpecification:
         unit: Optional[Unit] = None,
         precision: Any = None,
         value_range: Optional[DataRange] = None,
+        value_stats: Optional[NumericValueStats] = None,
         value_meanings: Optional[Dict[Any, str]] = None,
     ):
         """
@@ -284,6 +290,7 @@ class DataSpecification:
         self.unit = unit
         self.precision = precision
         self.value_range = value_range
+        self.value_stats = value_stats
         self.value_meanings = value_meanings
         self.description = description
         self._validate()
@@ -399,6 +406,9 @@ class DataSpecification:
         if self.value_range is not None:
             yield "value_range", dict(self.value_range)
 
+        if self.value_stats is not None:
+            yield "value_stats", self.value_stats.__dict__
+
         if self.value_meanings is not None:
             yield "value_meanings", self.value_meanings
 
@@ -491,6 +501,10 @@ class DataSpecification:
             if cls.Key.value_meanings.value in data:
                 spec.value_meanings = data[cls.Key.value_meanings.value]
 
+            if cls.Key.value_stats.value in data:
+                if not str(spec.representation_type).lower().startswith("str"):
+                    spec.value_stats = NumericValueStats(**data[cls.Key.value_meanings.value])
+
         return spec
 
     @classmethod
@@ -542,6 +556,9 @@ class DataSpecification:
                 " or damast.core.types.XDataFrame"
             )
 
+        if validation_mode == ValidationMode.IGNORE:
+            return df
+
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
             xdf = XDataFrame(df)
@@ -554,12 +571,6 @@ class DataSpecification:
                         f" expected representation type: {self.representation_type},"
                         f" but got '{dtype}'"
                     )
-
-            #if self.unit is not None:
-            #    if column_name not in df.units:
-            #        df.units[column_name] = self.unit
-            #    else:
-            #        assert df.units[column_name] == self.unit
 
             if self.value_range:
                 min_value, max_value = xdf.minmax(column_name)
@@ -587,18 +598,6 @@ class DataSpecification:
                     )
                     xdf.set_dtype(column_name, self.representation_type)
 
-            #if self.unit is not None:
-            #    if column_name not in df.units:
-            #        df.units[column_name] = self.unit
-            #    else:
-            #        if df.units[column_name] != self.unit:
-            #            warnings.warn(
-            #                f"{self.__class__.__name__}.apply: column '{column_name}:"
-            #                f" expected unit type: {self.unit},"
-            #                f" but got '{df.units[column_name]}'"
-            #            )
-            #            df[column_name].dtype = self.unit
-
             if self.value_range:
                 if self.missing_value is None:
                     warnings.warn(
@@ -623,19 +622,8 @@ class DataSpecification:
             xdf = XDataFrame(df)
             self.representation_type = xdf.dtype(column_name)
 
-            #if column_name in df.units:
-            #    self.unit = df.units[column_name]
-
             try:
                 min_value, max_value = xdf.minmax(column_name)
-
-               # # Handle time issue since NaT can be returned as 'min' value
-               # if isinstance(min_value, np.datetime64) or isinstance(min_value, np.timedelta64):
-               #     if np.isnat(min_value):
-               #         min_value = df[~df[column_name].isin([min_value])].min(column_name)
-               #     if np.isnat(max_value):
-               #         max_value = df[~df[column_name].isin([max_value])].max(column_name)
-
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
                         self.value_range.merge(MinMax(min_value, max_value))

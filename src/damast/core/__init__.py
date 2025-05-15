@@ -15,7 +15,7 @@ from .dataprocessing import (
     input,
     output,
     )
-from .datarange import DataRange, MinMax
+from .data_description import DataRange, MinMax
 from .metadata import (
     ArtifactSpecification,
     DataSpecification,

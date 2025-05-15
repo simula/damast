@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from functools import partial
 from pathlib import Path
 from time import sleep
@@ -8,7 +9,6 @@ import pandas as pd
 import polars
 import psutil
 import pytest
-import sys
 
 from damast.ml.scheduler import Job, JobScheduler
 

@@ -1,9 +1,10 @@
 import select
 import socket
+import sys
 from time import sleep
 from typing import Iterable
+
 import pytest
-import sys
 
 from damast.ml.scheduler import Job, ResponseCollector
 

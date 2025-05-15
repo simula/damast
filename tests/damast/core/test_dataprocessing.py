@@ -12,7 +12,7 @@ from damast.core.dataprocessing import (
     DataProcessingPipeline,
     PipelineElement,
     )
-from damast.core.datarange import CyclicMinMax, MinMax
+from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import CycleTransformer, Transformer
 from damast.core.types import XDataFrame
