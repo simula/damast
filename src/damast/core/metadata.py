@@ -931,7 +931,7 @@ class MetaData:
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
 
-    def to_str(self, indent: int = 0, default_indent: str = " " * 4) -> str:
+    def to_str(self, columns: list[str] | None = None, indent: int = 0, default_indent: str = " " * 4) -> str:
         hspace = " " * indent
         txt_repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
@@ -939,6 +939,9 @@ class MetaData:
 
         for spec in self.columns:
             spec_dict = dict(spec)
+            if columns and spec_dict['name'] not in columns:
+                continue
+
             txt_repr.append(hspace + default_indent + f"{spec_dict['name']}:")
             for field_name, value in spec_dict.items():
                 if field_name == "name":

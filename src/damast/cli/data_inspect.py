@@ -34,6 +34,13 @@ class DataInspectParser(BaseParser):
         parser.add_argument("--head", type=int, default=10, help="First this number of rows, default is 10")
         parser.add_argument("--tail", type=int, default=10, help="Print number of rows from the end, default is 10")
 
+        parser.add_argument("--columns",
+                help="Show/Select these columns",
+                nargs="+",
+                type=str,
+                required=False
+        )
+
     def expand_filter_arg(self, adf: AnnotatedDataFrame, arg: str):
         if arg in adf.column_names:
             return f"pl.col('{arg}')"
@@ -71,9 +78,11 @@ class DataInspectParser(BaseParser):
 
                 adf._dataframe = eval(f"adf._dataframe{filter_values}")
 
-            print(adf.metadata.to_str())
+            print(adf.metadata.to_str(columns=args.columns))
             print(f"\n\nFirst {args.head} and last {args.tail} rows:")
             df = adf._dataframe
+            if args.columns:
+                df = df.select(args.columns)
 
             with pl.Config(tbl_rows=args.head):
                 print(df.head(n=args.head).collect())
