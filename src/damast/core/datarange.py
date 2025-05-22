@@ -2,13 +2,8 @@
 This module contains data range definitions.
 """
 import warnings
-from .data_description import (
-    CyclicMinMax,
-    DataRange,
-    DataElement,
-    ListOfValues,
-    MinMax
-)
+
+from .data_description import CyclicMinMax, DataElement, DataRange, ListOfValues, MinMax
 
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 

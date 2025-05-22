@@ -5,6 +5,7 @@ import pytest
 from astropy import units
 
 import damast
+from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import (
     DECORATED_INPUT_SPECS,
@@ -12,7 +13,6 @@ from damast.core.dataprocessing import (
     DataProcessingPipeline,
     PipelineElement,
     )
-from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import CycleTransformer, Transformer
 from damast.core.types import XDataFrame

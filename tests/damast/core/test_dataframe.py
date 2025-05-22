@@ -10,8 +10,8 @@ import polars.testing
 import pytest
 
 from damast.core.annotations import Annotation
-from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.data_description import MinMax
+from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,
