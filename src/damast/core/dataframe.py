@@ -186,6 +186,17 @@ class AnnotatedDataFrame(XDataFrame):
         pq.write_table(arrow_table, filename)
 
     @classmethod
+    def get_supported_format(suffix: str) -> str | None:
+        """
+        Get the name of the supported format from the suffix
+        """
+        for format_name, suffixes in DAMAST_SUPPORTED_FILE_FORMATS.items():
+            if suffix in suffixes:
+                return format_name
+
+        return None
+
+    @classmethod
     def from_files(cls,
             files: list[str|Path],
             metadata_required: bool = True,

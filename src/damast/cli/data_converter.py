@@ -1,4 +1,4 @@
-import glob
+import shutil
 import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
@@ -61,37 +61,45 @@ class DataConvertParser(BaseParser):
         metadata = None
 
         expanded_files = []
-        local_mount = Path(".local-mount")
+        local_mount = Path(".damast-mount")
         local_mount.mkdir(parents=True, exist_ok=True)
-        mounted_dirs = []
-        for file in files:
-            if Path(file).suffix in [".tar", ".gz", ".zip"]:
-                target_mount = local_mount / Path(file).name
-                target_mount.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["ratarmount", file, target_mount])
-                mounted_dirs.append(target_mount)
-
-                decompressed_files = [x for x in Path(target_mount).glob("*")]
-                expanded_files += decompressed_files
-
-        if expanded_files:
-            files = expanded_files
-
-        if args.metadata_input:
-            if not Path(args.metadata_input).exists():
-                raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
-            metadata = MetaData.load_yaml(filename=args.metadata_input)
-
-            try:
-                validation_mode = ValidationMode[args.validation_mode.upper()]
-            except KeyError:
-                raise ValueError(f"--validation-mode has invalid argument."
-                                 f" Select from: {[x.value.lower() for x in ValidationMode]}")
-            adf._metadata = metadata
-            adf.validate_metadata(validation_mode)
-
-        created_files = []
         try:
+            mounted_dirs = []
+            for file in files:
+                if Path(file).suffix in [".tar", ".gz", ".zip"]:
+                    target_mount = local_mount / Path(file).name
+                    target_mount.mkdir(parents=True, exist_ok=True)
+                    subprocess.run(["ratarmount", file, target_mount])
+                    mounted_dirs.append(target_mount)
+
+                    decompressed_files = [x for x in Path(target_mount).glob("*")]
+                    for idx, x in enumerate(decompressed_files):
+                        if Path(x).suffix in [".tar", ".gz", ".zip"]:
+                            inner_target_mount = Path(f".damast-mount-{idx}") / Path(file).name
+                            inner_target_mount.mkdir(parents=True, exist_ok=True)
+                            subprocess.run(["ratarmount", x, inner_target_mount])
+                            mounted_dirs.append(inner_target_mount)
+                            expanded_files = [x for x in Path(inner_target_mount).glob("*")]
+                        else:
+                            expanded_files += x
+
+            if expanded_files:
+                files = [x for x in expanded_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
+
+            if args.metadata_input:
+                if not Path(args.metadata_input).exists():
+                    raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
+                metadata = MetaData.load_yaml(filename=args.metadata_input)
+
+                try:
+                    validation_mode = ValidationMode[args.validation_mode.upper()]
+                except KeyError:
+                    raise ValueError(f"--validation-mode has invalid argument."
+                                     f" Select from: {[x.value.lower() for x in ValidationMode]}")
+                adf._metadata = metadata
+                adf.validate_metadata(validation_mode)
+
+            created_files = []
             if args.output_dir:
                 # Create multiple output files
                 output_dir = Path(args.output_dir)
@@ -119,10 +127,9 @@ class DataConvertParser(BaseParser):
         except Exception as e:
             raise
         finally:
-            for mounted_dir in mounted_dirs:
+            for mounted_dir in list(reversed(mounted_dirs)):
                 subprocess.run(["umount", mounted_dir])
 
-
-
-
+            for d in Path().glob(".damast-mount*"):
+                shutil.rmtree(d)
 
