@@ -33,6 +33,7 @@ class DataInspectParser(BaseParser):
         )
         parser.add_argument("--head", type=int, default=10, help="First this number of rows, default is 10")
         parser.add_argument("--tail", type=int, default=10, help="Print number of rows from the end, default is 10")
+        parser.add_argument("--column-count", type=int, default=10, help="Number of columns to show")
 
         parser.add_argument("--columns",
                 help="Show/Select these columns",
@@ -85,9 +86,9 @@ class DataInspectParser(BaseParser):
             if args.columns:
                 df = df.select(args.columns)
 
-            with pl.Config(tbl_rows=args.head):
+            with pl.Config(tbl_rows=args.head, tbl_cols=args.column_count):
                 print(df.head(n=args.head).collect())
-            with pl.Config(tbl_rows=args.tail):
+            with pl.Config(tbl_rows=args.tail, tbl_cols=args.column_count):
                 print(df.tail(n=args.tail).collect())
 
         except RuntimeError as e:
