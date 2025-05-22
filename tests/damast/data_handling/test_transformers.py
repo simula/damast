@@ -32,8 +32,8 @@ def test_timestamp(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: bool):
     adf_copy = adf.clone()
     new_adf = pipeline.transform(adf)
 
-    # Drop converted nan values
-    subset = new_adf.dataframe.drop_nans(subset=[ColumnName.TIMESTAMP])
+    # Drop remaining null values after conversion
+    subset = new_adf.drop_nulls(subset=[ColumnName.TIMESTAMP])
 
     # Drop missing values from input
     ref_subset = adf_copy.drop_nulls(subset=[ColumnName.DATE_TIME_UTC])
@@ -44,6 +44,6 @@ def test_timestamp(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: bool):
     assert XDataFrame(ref_lat_sorted).equals(XDataFrame(lat_sorted))
 
     if inplace:
-        assert len(adf.dataframe.drop_nans([ColumnName.TIMESTAMP]).collect()) == len(subset.collect())
+        assert len(adf.dataframe.drop_nulls([ColumnName.TIMESTAMP]).collect()) == len(subset.collect())
     else:
         assert not (ColumnName.TIMESTAMP in adf.column_names)
