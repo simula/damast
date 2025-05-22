@@ -578,7 +578,7 @@ class Experiment:
 
             filtered_groups = groups_with_sequence_length.filter(pl.col("sequence_length") > self.learning_task.sequence_length)
             permitted_values = filtered_groups.select(group_column).unique().collect()[:,0]
-            adf._dataframe = adf.filter(pl.col(group_column).is_in(permitted_values))
+            adf._dataframe = adf.filter(pl.col(group_column).is_in(permitted_values.implode()))
 
         features = self.compute_features(adf)
         train_group, test_group, validate_group = \
