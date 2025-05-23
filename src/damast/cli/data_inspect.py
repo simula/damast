@@ -7,6 +7,7 @@ import polars as pl
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.utils.io import Archive
 
 
 class DataInspectParser(BaseParser):
@@ -60,6 +61,11 @@ class DataInspectParser(BaseParser):
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
         try:
+            archive = Archive(filenames=files)
+            extracted_files = archive.mount()
+            if extracted_files:
+                files = [x for x in extracted_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
+
             adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
 
             if args.filter:
@@ -96,3 +102,5 @@ class DataInspectParser(BaseParser):
                 print(e)
             else:
                 raise
+        finally:
+            archive.umount()
