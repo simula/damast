@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import tempfile
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from tqdm import tqdm
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import MetaData, ValidationMode
+from damast.utils.io import Archive
 
 
 class DataConvertParser(BaseParser):
@@ -42,6 +44,7 @@ class DataConvertParser(BaseParser):
                             )
         parser.add_argument("--output-type",
                             help="The output file type: .parquet or .hdf5",
+                            default=".parquet",
                             required=False,
                             )
         parser.add_argument("--validation-mode",
@@ -59,45 +62,12 @@ class DataConvertParser(BaseParser):
             raise ValueError("--output-dir and --output-file cannot be used together")
 
         metadata = None
-
-        expanded_files = []
-        local_mount = Path(".damast-mount")
-        local_mount.mkdir(parents=True, exist_ok=True)
+        archive = None
         try:
-            mounted_dirs = []
-            for file in files:
-                if Path(file).suffix in [".tar", ".gz", ".zip"]:
-                    target_mount = local_mount / Path(file).name
-                    target_mount.mkdir(parents=True, exist_ok=True)
-                    subprocess.run(["ratarmount", file, target_mount])
-                    mounted_dirs.append(target_mount)
-
-                    decompressed_files = [x for x in Path(target_mount).glob("*")]
-                    for idx, x in enumerate(decompressed_files):
-                        if Path(x).suffix in [".tar", ".gz", ".zip"]:
-                            inner_target_mount = Path(f".damast-mount-{idx}") / Path(file).name
-                            inner_target_mount.mkdir(parents=True, exist_ok=True)
-                            subprocess.run(["ratarmount", x, inner_target_mount])
-                            mounted_dirs.append(inner_target_mount)
-                            expanded_files = [x for x in Path(inner_target_mount).glob("*")]
-                        else:
-                            expanded_files += x
-
-            if expanded_files:
-                files = [x for x in expanded_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
-
-            if args.metadata_input:
-                if not Path(args.metadata_input).exists():
-                    raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
-                metadata = MetaData.load_yaml(filename=args.metadata_input)
-
-                try:
-                    validation_mode = ValidationMode[args.validation_mode.upper()]
-                except KeyError:
-                    raise ValueError(f"--validation-mode has invalid argument."
-                                     f" Select from: {[x.value.lower() for x in ValidationMode]}")
-                adf._metadata = metadata
-                adf.validate_metadata(validation_mode)
+            archive = Archive(filenames=files)
+            extracted_files = archive.mount()
+            if extracted_files:
+                files = [x for x in extracted_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
 
             created_files = []
             if args.output_dir:
@@ -105,31 +75,39 @@ class DataConvertParser(BaseParser):
                 output_dir = Path(args.output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                for file in files:
-                    adf = AnnotatedDataFrame.from_files(
-                            files=file,
-                            metadata_required=False,
-                        )
-                    output_file = output_dir / f"{Path(file).stem}{args.output_type}"
-                    adf.save(filename=output_file)
-                    created_files.append(output_file)
-            else:
-                # Create single output file
-                adf = AnnotatedDataFrame.from_files(
-                        files=files,
+            for file in files:
+                adf = AnnotatedDataFrame.from_file(
+                        filename=file,
                         metadata_required=False,
                     )
-                adf.save(filename=args.output_file)
-                created_files.append(args.output_file)
 
-            print(adf.head(10).collect())
+                if args.output_dir:
+                    output_file = output_dir / f"{Path(file).stem}{args.output_type}"
+                else:
+                    output_file = Path(args.output_file)
+
+                adf.save(filename=output_file)
+                created_files.append(output_file)
+
+                if args.metadata_input:
+                    if not Path(args.metadata_input).exists():
+                        raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
+                    metadata = MetaData.load_yaml(filename=args.metadata_input)
+
+                    try:
+                        validation_mode = ValidationMode[args.validation_mode.upper()]
+                    except KeyError:
+                        raise ValueError(f"--validation-mode has invalid argument."
+                                         f" Select from: {[x.value.lower() for x in ValidationMode]}")
+                    adf._metadata = metadata
+                    adf.validate_metadata(validation_mode)
+
+                print(f"Filename: {output_file.resolve()}")
+                print(adf.head(10).collect())
+
             print(f"Written: {created_files}")
         except Exception as e:
             raise
         finally:
-            for mounted_dir in list(reversed(mounted_dirs)):
-                subprocess.run(["umount", mounted_dir])
-
-            for d in Path().glob(".damast-mount*"):
-                shutil.rmtree(d)
+            archive.umount()
 

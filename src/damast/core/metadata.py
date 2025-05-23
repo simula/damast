@@ -503,7 +503,7 @@ class DataSpecification:
 
             if cls.Key.value_stats.value in data:
                 if not str(spec.representation_type).lower().startswith("str"):
-                    spec.value_stats = NumericValueStats(**data[cls.Key.value_meanings.value])
+                    spec.value_stats = NumericValueStats(**data[cls.Key.value_stats.value])
 
         return spec
 
@@ -1164,7 +1164,7 @@ class MetaData:
             commonpath = Path(commonpath).parent
 
         commonprefix = os.path.commonprefix([Path(x).stem for x in files])
-        metadata_file_candidates = Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}")
+        metadata_file_candidates = [x for x in Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}")]
         for f in metadata_file_candidates:
             try:
                 return MetaData.load_yaml(filename=f), f, metadata_file_candidates

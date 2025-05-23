@@ -8,3 +8,5 @@ DAMAST_SUPPORTED_FILE_FORMATS: dict[str, list[str]] = {
     "hdf": [".h5", ".hdf", ".hdf5"],
     "csv": [".csv"],
 }
+
+DAMAST_MOUNT_PREFIX: str = "damast-mount"

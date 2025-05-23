@@ -186,7 +186,7 @@ class AnnotatedDataFrame(XDataFrame):
         pq.write_table(arrow_table, filename)
 
     @classmethod
-    def get_supported_format(suffix: str) -> str | None:
+    def get_supported_format(cls, suffix: str) -> str | None:
         """
         Get the name of the supported format from the suffix
         """
@@ -208,8 +208,8 @@ class AnnotatedDataFrame(XDataFrame):
 
         """
         metadata = None
-        if not files or len(files) == 0:
-            raise ValueError(f"{cls.__name__}.from_files: files required, but were {files}")
+        if not files or type(files) != list:
+            raise ValueError(f"{cls.__name__}.from_files: file list required, but were {files=}")
 
         suffixes = set()
         for f in files:
@@ -239,26 +239,27 @@ class AnnotatedDataFrame(XDataFrame):
             )
 
         if metadata is None:
-            _log.info("No metadata provided or found in file")
-            if metadata_required:
-                _log.info("Metadata is required, so searching now for an existing annotation file")
+            _log.info("No metadata provided or found in files - searching now for an existing spec file")
+            metadata, _ , metadata_file_candidates = MetaData.search(files)
 
-                metadata, _ , metadata_file_candidates = MetaData.search(files)
-
-                if metadata is None:
+            if metadata is None:
+                _log.info("Found no candidate for a spec file")
+                if metadata_required:
+                    _log.info("Metadata is required but not available")
                     head = df.head(10).collect()
-                    # metadata missing
                     raise RuntimeError(
                         f"{cls.__name__}.from_files:"
                         f" metadata is missing for {files=}"
                         f" and needs to be added'\n"
                         f"{head} - {[str(x) for x in metadata_file_candidates]}"
                     )
+                else:
+                    _log.info("Metadata is not available and not required, so inferring annotation")
+                    metadata = cls.infer_annotation(df)
+                    _log.info("Metadata inferring completed")
+                    return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE)
             else:
-                _log.info("Metadata is not available and not required, so inferring annotation")
-                metadata = cls.infer_annotation(df)
-                _log.info("Metadata inferring completed")
-                return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE)
+                _log.info(f"Found metadata: {[str(x) for x in metadata_file_candidates]}")
 
         return cls(dataframe=df, metadata=metadata)
 

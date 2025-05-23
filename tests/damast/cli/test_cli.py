@@ -2,6 +2,7 @@ import re
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 import yaml
@@ -83,3 +84,63 @@ def test_annotate(data_path, filename, spec_filename, tmp_path, script_runner):
         expected_spec = yaml.load(f, Loader=yaml.SafeLoader)
         expected_spec["annotations"]["source"] = [str(data_path / filename)]
     assert written_spec == expected_spec
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert(data_path, filename, spec_filename, tmp_path, script_runner):
+
+    output_file = Path(tmp_path) / (Path(filename).stem + ".parquet")
+
+    result = script_runner.run(['damast', 'convert', '-f', str(data_path / filename), '--output-dir', tmp_path])
+    assert result.returncode == 0
+    assert output_file
+
+    result = script_runner.run(['damast', 'convert', '-f', spec_filename, '--output-dir', tmp_path])
+    assert result.returncode != 0
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert_zip(data_path, filename, spec_filename, tmp_path, script_runner):
+    output_zip = tmp_path / f"{Path(filename)}.zip"
+    with ZipFile(output_zip, 'w') as f:
+        f.write(str(data_path / filename), arcname=filename)
+        f.write(str(data_path / spec_filename), arcname=spec_filename)
+
+
+    assert Path(output_zip).exists()
+
+    output_file = Path(tmp_path) / (Path(filename).stem + ".parquet")
+
+    result = script_runner.run(['damast', 'convert', '-f', output_zip, '--output-dir', tmp_path])
+    assert result.returncode == 0
+    assert output_file
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert_zip_zip(data_path, filename, spec_filename, tmp_path, script_runner):
+
+    output_zip = Path("/tmp") / f"{Path(filename)}.zip"
+    with ZipFile(output_zip, 'w') as f:
+        f.write(str(data_path / filename), arcname=filename)
+        f.write(str(data_path / spec_filename), arcname=spec_filename)
+
+    assert Path(output_zip).exists()
+
+    output_zip_zip = tmp_path / f"{Path(filename)}.zip.zip"
+    with ZipFile(output_zip_zip, 'w') as f:
+        f.write(output_zip, arcname=output_zip_zip.name)
+
+    assert Path(output_zip_zip).exists()
+
+    output_file = Path(tmp_path) / (Path(filename).stem + ".parquet")
+
+    result = script_runner.run(['damast', 'convert', '-f', output_zip_zip, '--output-dir', tmp_path])
+    assert result.returncode == 0
+    assert output_file
+
+
+

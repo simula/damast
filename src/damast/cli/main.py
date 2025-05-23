@@ -1,6 +1,7 @@
 """
 Main argument parser and CLI entry point.
 """
+import sys
 import traceback as tb
 import warnings
 from argparse import ArgumentParser
@@ -76,6 +77,7 @@ def run():
                 tb.print_exception(e)
             else:
                 print(f"\033[91mError: {e}\033[00m")
+            sys.exit(1)
     else:
         main_parser.print_help()
 
