@@ -75,7 +75,7 @@ class DataConvertParser(BaseParser):
                 output_dir = Path(args.output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-            for file in files:
+            for file in tqdm(files, desc="Files"):
                 adf = AnnotatedDataFrame.from_file(
                         filename=file,
                         metadata_required=False,
