@@ -2,6 +2,7 @@ import re
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+import sys
 from zipfile import ZipFile
 
 import pytest
@@ -99,6 +100,7 @@ def test_convert(data_path, filename, spec_filename, tmp_path, script_runner):
     result = script_runner.run(['damast', 'convert', '-f', spec_filename, '--output-dir', tmp_path])
     assert result.returncode != 0
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows")
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
@@ -118,6 +120,7 @@ def test_convert_zip(data_path, filename, spec_filename, tmp_path, script_runner
     assert output_file
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows")
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
