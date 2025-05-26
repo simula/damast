@@ -1,11 +1,19 @@
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
+import warnings
 from pathlib import Path
 from typing import ClassVar
 
-from ratarmountcore.compressions import supportedCompressions
+DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
+try:
+    from ratarmountcore.compressions import supportedCompressions
+    DAMAST_ARCHIVE_SUPPORT_AVAILABLE = True
+except Exception as e:
+    warnings.warn("ratarmount could not be loaded: archive supported is not available")
+
 
 from damast.core.constants import DAMAST_MOUNT_PREFIX
 from damast.core.dataframe import AnnotatedDataFrame
@@ -22,6 +30,9 @@ class Archive:
 
     @classmethod
     def supported_suffixes(cls):
+        if not DAMAST_ARCHIVE_SUPPORT_AVAILABLE:
+            return []
+
         if cls._supported_suffixes is not None:
             return cls._supported_suffixes
 
@@ -45,6 +56,12 @@ class Archive:
         """
         Call ratarmount to mount and archive
         """
+        if not DAMAST_ARCHIVE_SUPPORT_AVAILABLE:
+            raise RuntimeError("damast.utils.io.Archive: "
+                    "cannot load archive."
+                    " 'ratarmount' support is not available."
+                )
+
         response = subprocess.run(["ratarmount","--recursive",file, target])
         if response.returncode != 0:
             raise RuntimeError(f"Mounting archive failed with exitcode {response.returncode}")

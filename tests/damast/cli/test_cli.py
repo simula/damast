@@ -2,7 +2,6 @@ import re
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
-import sys
 from zipfile import ZipFile
 
 import pytest
@@ -117,7 +116,26 @@ def test_convert_zip(data_path, filename, spec_filename, tmp_path, script_runner
 
     result = script_runner.run(['damast', 'convert', '-f', output_zip, '--output-dir', tmp_path])
     assert result.returncode == 0
-    assert output_file
+    assert output_file.exists()
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_fail_convert_zip(data_path, filename, spec_filename, tmp_path, script_runner, monkeypatch):
+    import damast
+    monkeypatch.setattr(damast.utils.io, "DAMAST_ARCHIVE_SUPPORT_AVAILABLE", False)
+
+    output_zip = tmp_path / f"{Path(filename)}.zip"
+    with ZipFile(output_zip, 'w') as f:
+        f.write(str(data_path / filename), arcname=filename)
+        f.write(str(data_path / spec_filename), arcname=spec_filename)
+
+    assert Path(output_zip).exists()
+    output_file = Path(tmp_path) / (Path(filename).stem + ".parquet")
+
+    result = script_runner.run(['damast', 'convert', '-f', output_zip, '--output-dir', tmp_path])
+    assert result.returncode == 1
+    assert not output_file.exists()
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows")
@@ -143,7 +161,7 @@ def test_convert_zip_zip(data_path, filename, spec_filename, tmp_path, script_ru
 
     result = script_runner.run(['damast', 'convert', '-f', output_zip_zip, '--output-dir', tmp_path])
     assert result.returncode == 0
-    assert output_file
+    assert output_file.exists()
 
 
 
