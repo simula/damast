@@ -626,7 +626,7 @@ class DataSpecification:
                 min_value, max_value = xdf.minmax(column_name)
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
-                        self.value_range.merge(MinMax(min_value, max_value))
+                        self.value_range = self.value_range.merge(MinMax(min_value, max_value))
                 else:
                      warnings.warn(
                          f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
@@ -756,10 +756,14 @@ class DataSpecification:
             elif this_value == other_value:
                 setattr(ds, key.value, this_value)
             else:
-                raise ValueError(
-                    f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
-                    f" on self: '{this_value}' vs. other: '{other_value}'"
-                )
+                if hasattr(this_value, "merge"):
+                    merged_value = this_value.merge(other_value)
+                    setattr(ds, key.value, merged_value)
+                else:
+                    raise ValueError(
+                        f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
+                        f" on self: '{this_value}' vs. other: '{other_value}'"
+                    )
         return ds
 
     @classmethod
@@ -877,7 +881,9 @@ class MetaData:
         if annotations is None:
             self._annotations = {}
         else:
-            assert isinstance(annotations, list)
+            if not isinstance(annotations, list):
+                raise ValueError(f"Input annotations need to be a list, but was {annotations=}")
+
             unique_annotations = {annotation.name for annotation in annotations}
             if len(unique_annotations) != len(annotations):
                 raise ValueError(

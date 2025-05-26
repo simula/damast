@@ -4,6 +4,7 @@ This module contains data range definitions.
 from __future__ import annotations
 
 import datetime as dt
+import math
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -312,7 +313,7 @@ class MinMax(DataRange):
         """
         return f"{self.__class__.__name__}[{self.min}, {self.max}]"
 
-    def merge(self, other: MinMax):
+    def merge(self, other: MinMax) -> MinMax:
         """
         Extend the range based on another range definition.
 
@@ -321,12 +322,13 @@ class MinMax(DataRange):
 
         :param other: MinMax object to extend the bound of the current one
         """
-        self.min = min(self.min, other.min)
-        self.max = max(self.max, other.max)
-
-        # Since allow missing is by default true - explicitly disabling it should
-        # be propagated when merging
-        self.allow_missing = self.allow_missing and other.allow_missing
+        return MinMax(
+                min=min(self.min, other.min),
+                max=max(self.max, other.max),
+                # Since allow missing is by default true - explicitly disabling it should
+                # be propagated when merging
+                allow_missing=self.allow_missing and other.allow_missing
+        )
 
     def to_dict(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -350,3 +352,26 @@ class NumericValueStats(BaseModel):
     stddev: float = 0.0
     total_count: int  = 0
     null_count: int
+
+    def merge(self, other: NumericValueStats) -> NumericValueStats:
+        combined_mean = (
+                    self.mean*self.total_count
+                    + other.mean*other.total_count
+                )/(
+                    self.total_count
+                    +other.total_count
+                )
+        a = (self.total_count-1)*self.stddev**2+(other.total_count-1)*other.stddev**2
+        b = self.total_count*other.total_count/(self.total_count + other.total_count)
+        c = b*(self.mean - other.mean)**2
+        d = self.total_count + other.total_count -1
+        combined_stddev = math.sqrt((a + c)/d)
+
+        return NumericValueStats(
+            mean=combined_mean,
+            stddev=combined_stddev,
+            total_count=self.total_count+other.total_count,
+            null_count=self.null_count+other.null_count
+        )
+
+
