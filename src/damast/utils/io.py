@@ -1,13 +1,14 @@
-from ratarmountcore.compressions import supportedCompressions
 import logging
 import shutil
 import subprocess
 import tempfile
-from typing import ClassVar
 from pathlib import Path
+from typing import ClassVar
 
-from damast.core.dataframe import AnnotatedDataFrame
+from ratarmountcore.compressions import supportedCompressions
+
 from damast.core.constants import DAMAST_MOUNT_PREFIX
+from damast.core.dataframe import AnnotatedDataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +45,9 @@ class Archive:
         """
         Call ratarmount to mount and archive
         """
-        response = subprocess.run(f"ratarmount --recursive {file} {target}",
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE)
-
-        msg = f"ratarmount: {response.stdout.decode('UTF-8').strip()}"
-        if response.returncode == 0:
-            logger.debug(msg)
-        else:
-            logger.warn(msg)
+        response = subprocess.run(["ratarmount","--recursive",file, target])
+        if response.returncode != 0:
+            raise RuntimeError(f"Mounting archive failed with exitcode {response.returncode}")
 
         self._mounted_dirs.append(target)
 
