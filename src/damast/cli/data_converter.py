@@ -43,7 +43,7 @@ class DataConvertParser(BaseParser):
                             required=False,
                             )
         parser.add_argument("--output-type",
-                            help="The output file type: .parquet or .hdf5",
+                            help="The output file type: .parquet (default) or .hdf5 ",
                             default=".parquet",
                             required=False,
                             )
