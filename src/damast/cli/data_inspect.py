@@ -1,4 +1,5 @@
 import datetime as dt
+import logging
 import re
 from argparse import ArgumentParser
 from pathlib import Path
@@ -9,6 +10,7 @@ from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.utils.io import Archive
 
+logger = logging.getLogger(__name__)
 
 class DataInspectParser(BaseParser):
     """
