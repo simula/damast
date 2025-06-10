@@ -132,7 +132,7 @@ class JoinDataFrameByColumn(PipelineElement):
 
 class BallTreeAugmenter():
     """
-    A class for computation  in distance computation using BallTree.
+    A class for distance computation using BallTree.
 
     Uses the `sklearn.neighbours.BallTree` to compute the distance for any n-dimensional
     feature. The BallTree is created prior to being passed in as the lambda function of a
@@ -221,7 +221,7 @@ class AddLocalIndex(PipelineElement):
     Also compute the reverse index, i.e. how many entries in the group are after this message
     """
 
-    @damast.core.describe("Compute the ")
+    @damast.core.describe("Compute the local index for a timeseries (group)")
     @damast.core.input({"group": {"representation_type": int},
                         "sort": {}})
     @damast.core.output({"local_index": {"representation_type": int},
