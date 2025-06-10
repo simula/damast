@@ -41,7 +41,7 @@ class DeltaDistance(PipelineElement):
     def y_shift(self):
         return self._y_shift
 
-    @damast.core.describe("Compute the ")
+    @damast.core.describe("Compute the distance between lat/lon given positions")
     @damast.core.input({"group": {"representation_type": int},
                         "sort": {},
                         "x": {"unit": units.deg},
