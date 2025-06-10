@@ -675,6 +675,9 @@ class DataSpecification:
                     else:
                         fulfillment.status[key] = {"status": Status.OK}
             elif key == DataSpecification.Key.representation_type:
+                if hasattr(spec_value, "to_python"):
+                    spec_value = spec_value.to_python()
+
                 if not issubclass(spec_value, expected_value):
                     fulfillment.status[key] = {
                         "status": Status.FAIL,
@@ -748,6 +751,12 @@ class DataSpecification:
 
             this_value = getattr(self, key.value)
             other_value = getattr(other, key.value)
+
+            if key == self.Key.representation_type:
+                if hasattr(this_value, "to_python"):
+                    this_value = this_value.to_python()
+                if hasattr(other_value, "to_python"):
+                    other_value = other_value.to_python()
 
             if this_value is None:
                 setattr(ds, key.value, other_value)
