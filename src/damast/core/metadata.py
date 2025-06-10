@@ -943,7 +943,7 @@ class MetaData:
         for name, annotation in self.annotations.items():
             txt_repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
-        for spec in self.columns:
+        for spec in sorted(self.columns, key=lambda x: x.name):
             spec_dict = dict(spec)
             if columns and spec_dict['name'] not in columns:
                 continue
