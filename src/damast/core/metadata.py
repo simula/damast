@@ -761,7 +761,8 @@ class DataSpecification:
                     setattr(ds, key.value, merged_value)
                 else:
                     raise ValueError(
-                        f"{self.__class__.__name__}.merge cannot merge specs: value for '{key.value}' differs: "
+                        f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
+
                         f" on self: '{this_value}' vs. other: '{other_value}'"
                     )
         return ds
