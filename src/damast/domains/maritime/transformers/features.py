@@ -8,7 +8,10 @@ from damast.core.dataprocessing import PipelineElement
 from damast.core.types import DataFrame
 from damast.domains.maritime.math import great_circle_distance
 
-__all__ = ["DeltaDistance", ]
+__all__ = [
+    "DeltaDistance",
+    "Speed"
+]
 
 
 class DeltaDistance(PipelineElement):
@@ -91,5 +94,30 @@ class DeltaDistance(PipelineElement):
 
         new_spec = DataSpecification(self.get_name("out"), unit=units.km)
         df._metadata.columns.append(new_spec)
+
+        return df
+
+
+class Speed(PipelineElement):
+    """
+    Given a dataframe with delta time and delta distance compute the speed
+    """
+    @damast.core.describe("Compute the speed")
+    @damast.core.input({"delta_distance": {"unit": units.km},
+                        "delta_time": {}})
+    @damast.core.output({"speed": {}})
+    def transform(self,
+                  df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        """
+        Compute distance between adjacent messages
+        """
+        dataframe = df._dataframe
+
+        delta_distance = self.get_name("delta_distance")
+        delta_time = self.get_name("delta_time")
+
+        df._dataframe = dataframe.with_columns(
+                (pl.col(delta_distance) / (pl.col(delta_time).dt.total_seconds()/3600)).alias("speed")
+                        )
 
         return df
