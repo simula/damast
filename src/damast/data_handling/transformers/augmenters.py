@@ -20,6 +20,7 @@ from damast.core.dataprocessing import PipelineElement
 from damast.core.types import DataFrame, XDataFrame
 
 __all__ = [
+    "AddDeltaTime",
     "AddLocalIndex",
     "AddTimestamp",
     "AddUndefinedValue",
@@ -238,6 +239,43 @@ class AddLocalIndex(PipelineElement):
                     pl.int_range(start=pl.len()-1, end=-1, step=-1).over(group_column).alias(self.get_name("reverse_{{local_index}}"))
                 )
 
+        return df
+
+
+class AddDeltaTime(PipelineElement):
+    """
+    Compute the delta time between two subsequent timestamps
+    """
+
+    @damast.core.describe("Compute the delta time in s between two subsequent timestamps")
+    @damast.core.input({"group": {"representation_type": int},
+                        "time_column": {}})
+    @damast.core.output({"delta_time": {"representation_type": float}})
+    def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
+        dataframe = df._dataframe
+
+        group_column = self.get_name("group")
+        time_column = self.get_name("time_column")
+
+        dataframe = dataframe\
+               .sort(group_column, time_column)\
+               .with_columns(
+                    pl.col(time_column).shift(1).alias('previous_timestamp')
+               )
+
+        dataframe = dataframe\
+             .sort(group_column, time_column)\
+             .with_columns(
+                 (pl.col(time_column) - pl.col('previous_timestamp')).alias('delta_time')
+             ).drop("previous_timestamp")
+
+        dataframe = dataframe\
+             .sort(group_column, time_column)\
+             .with_columns(
+                pl.col('delta_time').fill_null(pl.duration(seconds=0)).alias('delta_time')
+             )
+
+        df._dataframe = dataframe
         return df
 
 
