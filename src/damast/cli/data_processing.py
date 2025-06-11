@@ -1,18 +1,54 @@
 from argparse import ArgumentParser
+from pathlib import Path
 
 from damast.cli.base import BaseParser
+from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataprocessing import DAMAST_PIPELINE_SUFFIX, DataProcessingPipeline
 
 
 class DataProcessingParser(BaseParser):
     def __init__(self, parser: ArgumentParser):
         super().__init__(parser=parser)
 
-        parser.description = "damast process - processing data subcommand called"
-        # parser.set_defaults(which='process')
-        parser.add_argument("-f", "--filter", dest="filter", action="store_true", default=False,
-                            help="Filter data")
+        parser.description = "damast process - apply an existing pipeline"
+
+        parser.add_argument("--input-data",
+                            help="Input file(s) to process",
+                            nargs="+",
+                            type=str,
+                            required=True
+        )
+        parser.add_argument("--pipeline", help="Pipeline (*.damast.ppl) file to apply to the data", required=True)
+
+        parser.add_argument("--output-file",
+                        help="Save the result in the given (*.parquet) file",
+                        required=False)
 
     def execute(self, args):
         super().execute(args)
 
-        print("This functionality has not yet been implemented")
+        adf = AnnotatedDataFrame.from_files(
+                args.input_data,
+                metadata_required=False
+        )
+
+        pipeline_path = Path(args.pipeline)
+        if not pipeline_path.exists():
+            raise FileNotFoundError(f"Pipeline {pipeline_path} does not exist")
+
+        if not str(pipeline_path).endswith(DAMAST_PIPELINE_SUFFIX):
+            raise ValueError(f"File suffix of pipeline file is not matching {DAMAST_PIPELINE_SUFFIX}")
+
+
+        pipeline = DataProcessingPipeline.load(pipeline_path)
+        new_adf = pipeline.transform(adf).collect()
+
+        print(new_adf.head())
+        print(new_adf.tail())
+
+        if args.output_file:
+            path = Path(args.output_file)
+            path.parent.resolve().mkdirs(parents=True, exist_ok=True)
+
+            new_adf.save(path)
+            print(f"Saved {path.resolved()}")

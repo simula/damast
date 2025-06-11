@@ -35,6 +35,19 @@ class DataAnnotateParser(BaseParser):
                             default=None,
                             required=False)
 
+        parser.add_argument("--set-units",
+                            help="Set units spec for the given columns ('<column_name>:<unit>')",
+                            nargs="+",
+                            type=str,
+                            required=False)
+
+        parser.add_argument("--inplace",
+                            help="Update the dataset inplace (only possible for a single file)",
+                            action="store_true",
+                            required=False)
+
+
+
 
     def execute(self, args):
         super().execute(args)
@@ -62,6 +75,12 @@ class DataAnnotateParser(BaseParser):
             metadata_filename = output_dir / metadata_filename.name
 
         metadata = AnnotatedDataFrame.infer_annotation(df=adf)
+
+        if args.set_units:
+            for unit in args.set_units:
+                column, column_unit = unit.split(":")
+                metadata[column].unit = column_unit
+
         metadata.add_annotation(
                 Annotation(
                     name=Annotation.Key.Source,
@@ -69,5 +88,16 @@ class DataAnnotateParser(BaseParser):
                 )
         )
         metadata.save_yaml(metadata_filename)
+
+        if args.set_units:
+            if len(args.files) == 1:
+                output_file = args.files[0]
+                adf._metadata = metadata
+                if not args.inplace:
+                    output_file = output_dir / Path(output_file).name
+                    print(f"Creating {output_file}")
+                else:
+                    print(f"Updating {output_file}")
+                adf.export(output_file)
 
         print(f"Created {metadata_filename}")
