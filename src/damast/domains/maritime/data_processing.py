@@ -192,7 +192,7 @@ class DataProcessing(DataProcessingPipeline):
         self.add("augment_vessel_type",
                  AddVesselType(dataset=vessel_type_csv,
                                right_on=ColumnName.MMSI,
-                               dataset_col=ColumnName.VESSEL_TYPE),
+                               dataset_column=ColumnName.VESSEL_TYPE),
                  name_mappings={"x": ColumnName.MMSI,
                                 "out": ColumnName.VESSEL_TYPE})
         self.add("Replace missing", AddUndefinedValue(vessel_types.Unspecified.to_id()),
@@ -201,7 +201,7 @@ class DataProcessing(DataProcessingPipeline):
         self.add("augment_fishing_vessel_type",
                  AddVesselType(dataset=fishing_vessel_type_csv,
                                right_on=ColumnName.MMSI.lower(),
-                               dataset_col=ColumnName.VESSEL_TYPE_GFW),
+                               dataset_column=ColumnName.VESSEL_TYPE_GFW),
                  name_mappings={"x": ColumnName.MMSI,
                                 "out": ColumnName.FISHING_TYPE})
         self.add("Replace missing", AddUndefinedValue(-1),

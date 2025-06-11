@@ -109,11 +109,6 @@ columns:
 - name: nav_status
   is_optional: false
   representation_type: Int64
-  value_range:
-    MinMax:
-      min: 0
-      max: 0
-      allow_missing: true
   value_stats:
     mean: 0.0
     stddev: 0.0

@@ -34,14 +34,22 @@ class ComputeClosestAnchorage(PipelineElement):
     """
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
 
+    dataset: str
+    columns: list[str]
+    sep: str
+
     @property
     def deg2rad(self) -> float:
         return np.pi/180.0
 
     def __init__(self,
-                 dataset: Union[str, Path, DataFrame],
-                 columns: List[str],
+                 dataset: str | Path,
+                 columns: list[str],
                  sep: str = ";"):
+        self.dataset = dataset
+        self.columns = columns
+        self.sep = sep
+
         if type(dataset) in [str, Path]:
             _dataset = self.load_data(dataset, sep)
         else:
@@ -128,36 +136,36 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
     It must be either a string corresponding to the snake_case class name, or the corresponding integer
 
     :param right_on: Name in data-set column to use for merging datasets
-    :param dataset_col: Column to add to input dataframe
+    :param dataset_column: Column to add to input dataframe
     :param dataset: Dataset or path to dataset
     :raise ValueError: when the input column that shall extend the dataset is neither int nor str
     """
 
     def __init__(self,
                  right_on: str,
-                 dataset_col: str,
+                 dataset_column: str,
                  dataset: Union[str, Path, DataFrame]
                  ):
 
         if type(dataset) in [str, Path]:
             dataset = XDataFrame.open(path=dataset)
 
-        column_dtype = XDataFrame(dataset).dtype(dataset_col)
-        name = f"{dataset_col}_mapped"
+        column_dtype = XDataFrame(dataset).dtype(dataset_column)
+        name = f"{dataset_column}_mapped"
         if str in [column_dtype, column_dtype.to_python()]:
             # VesselTypes should be mapped to integers
             mapping = VesselType.get_mapping()
             dataset = dataset.with_columns(
-                pl.col(dataset_col).replace_strict(mapping).alias(name)
+                pl.col(dataset_column).replace_strict(mapping).alias(name)
             )
         elif int in [column_dtype, column_dtype.to_python()]:
             dataset = dataset.with_columns(
-                    pl.col(dataset_col).alias(name)
+                    pl.col(dataset_column).alias(name)
             )
         else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: dtype of column '{dataset_col}',"
+            raise ValueError(f"{self.__class__.__name__}.__init__: dtype of column '{dataset_column}',"
                              f" must be either int or str, but was '{column_dtype}'")
-        super().__init__(dataset=dataset, right_on=right_on, dataset_col=name)
+        super().__init__(dataset=dataset, right_on=right_on, dataset_column=name)
 
     @damast.core.describe("Add vessel-type from other dataset to current dataset, "
                           "where the input x is the linking identifier")

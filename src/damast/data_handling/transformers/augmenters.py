@@ -55,38 +55,39 @@ class JoinDataFrameByColumn(PipelineElement):
         ANTI = 'anti'
         CROSS = 'cross'
 
-    _right_on: str
-    _dataset: DataFrame
-    _dataset_column: str
-    _join_how: JoinHowType
+    right_on: str
+    dataset_column: str
+    join_how: JoinHowType
+
+    dataset: DataFrame | Path
 
     def __init__(self,
                  dataset: Union[str, Path, XDataFrame],
                  right_on: str,
-                 dataset_col: str,
+                 dataset_column: str,
                  how: JoinHowType = JoinHowType.LEFT,
                  sep: str = ";"):
-        self._right_on: str = right_on
-        self._dataset_column = dataset_col
-        self._join_how = how
+        self.right_on: str = right_on
+        self.dataset_column = dataset_column
+        self.join_how = how
 
         # Load vessel type map
         if type(dataset) in [str, Path]:
             dataset = self.load_data(filename=dataset, sep=sep)
 
         # Check that the columns exist in dataset
-        for col_name in [self._right_on, self._dataset_column]:
+        for col_name in [self.right_on, self.dataset_column]:
             if col_name not in dataset.columns:
                 raise KeyError(f"Missing column: '{col_name}' in vessel type information: '{dataset.head()}'"
                                " - available are {','.join(vessel_type_data.columns)}")
 
-        column_dtype = XDataFrame(dataset).dtype(self._dataset_column)
+        column_dtype = XDataFrame(dataset).dtype(self.dataset_column)
         if int not in [column_dtype, column_dtype.to_python()]:
             raise ValueError(f"{self.__class__.__name__}.__init__:"
-                             f" column '{self._dataset_column}' must be of type int, "
+                             f" column '{self.dataset_column}' must be of type int, "
                              f", but was: {column_dtype}")
 
-        self._dataset = dataset
+        self.dataset = dataset
 
     @classmethod
     def load_data(cls,
@@ -112,21 +113,21 @@ class JoinDataFrameByColumn(PipelineElement):
 
         :returns: DataFrame with added column
         """
-        other_df = self._dataset.select(
-                pl.col(self._right_on),
-                pl.col(self._dataset_column)
+        other_df = self.dataset.select(
+                pl.col(self.right_on),
+                pl.col(self.dataset_column)
         ).lazy()
 
         dataframe = df._dataframe.join(
                 other=other_df,
                 left_on=self.get_name("x"),
-                right_on=self._right_on,
+                right_on=self.right_on,
                 #validate='1:1',
                 #https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join.html
-                how=self._join_how.value
+                how=self.join_how.value
             )
 
-        df._dataframe = dataframe.rename({self._dataset_column: self.get_name("out")})
+        df._dataframe = dataframe.rename({self.dataset_column: self.get_name("out")})
         return df
 
 

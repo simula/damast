@@ -191,7 +191,7 @@ def test_add_vessel_type(tmp_path, vessel_file_mode: str, inplace: bool,
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     transformer = AddVesselType(right_on=ColumnName.MMSI,
-                                dataset_col=ColumnName.VESSEL_TYPE,
+                                dataset_column=ColumnName.VESSEL_TYPE,
                                 dataset=vessel_data)
 
     pipeline = damast.core.DataProcessingPipeline(name="Add vessel type",

@@ -378,7 +378,12 @@ class PipelineElement(Transformer):
             parameter_name = p
             if not parameter_name in ['args', 'kwargs']:
                 # only process named parameters
-                parameters[parameter_name] = getattr(self, parameter_name)
+                try:
+                    parameters[parameter_name] = getattr(self, parameter_name)
+                except AttributeError as e:
+                    raise ValueError(f"PipelineElement: please ensure that {self.__class__.__name__}.__init__ keyword arguments"
+                            f" are saved in an attribute of the same name: missing '{parameter_name}'")
+
         self._parameters = parameters
 
         return specs
