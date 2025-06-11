@@ -299,6 +299,15 @@ class PipelineElement(Transformer):
             self._name_mappings = {}
         return self._name_mappings
 
+    @property
+    def parameters(self) -> Dict[str, str]:
+        """
+        Get the current list of parameter for initialization
+        """
+        if not hasattr(self, "_parameters"):
+            self._parameters = None
+        return self._parameters
+
     def get_name(self, name: str) -> Any:
         """
         Add the fully resolved input/output name for this key.
@@ -364,13 +373,22 @@ class PipelineElement(Transformer):
         for spec in specs:
             spec.name = self.get_name(spec.name)
 
+        parameters = {}
+        for p in inspect.signature(self.__init__).parameters:
+            parameter_name = p
+            if not parameter_name in ['args', 'kwargs']:
+                # only process named parameters
+                parameters[parameter_name] = getattr(self, parameter_name)
+        self._parameters = parameters
+
         return specs
 
     @classmethod
     def create_new(cls,
                    module_name: str,
                    class_name: str,
-                   name_mappings: Optional[Dict[str, Any]] = None) -> PipelineElement:
+                   name_mappings: Optional[Dict[str, Any]] = None,
+                   parameters: Optional[Dict[str, Any]] = {}) -> PipelineElement:
         """
         Create a new PipelineElement Subclass instance dynamically
 
@@ -393,8 +411,10 @@ class PipelineElement(Transformer):
             klass = getattr(p_module, class_name)
         else:
             raise ImportError(f"{cls.__name__}.create_new: could not load '{class_name}' from '{p_module}'")
-
-        instance = klass()
+        if parameters:
+            instance = klass(**parameters)
+        else:
+            instance = klass()
 
         if name_mappings is None:
             name_mappings = {}
@@ -404,6 +424,7 @@ class PipelineElement(Transformer):
     def __iter__(self):
         yield "module_name", f"{self.__class__.__module__}"
         yield "class_name", f"{self.__class__.__qualname__}"
+        yield "parameters", self.parameters
         yield "name_mappings", self.name_mappings
 
     def __eq__(self, other):
@@ -642,7 +663,9 @@ class DataProcessingPipeline(PipelineElement):
 
         :param dir: directory where to save this pipeline
         """
-        filename = dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
+        base_dir = Path(dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        filename = base_dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
         with open(filename, "w") as f:
             yaml.dump(dict(self), f)
         return filename
