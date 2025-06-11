@@ -334,7 +334,9 @@ class AnnotatedDataFrame(XDataFrame):
                 continue
             else:
                 min_value, max_value = df.compat.minmax(column)
-                data['value_range'] = MinMax(min_value, max_value)
+                if min_value and max_value:
+                    data['value_range'] = MinMax(min_value, max_value)
+
             ds = DataSpecification(**data)
             column_specs.append(ds)
 
