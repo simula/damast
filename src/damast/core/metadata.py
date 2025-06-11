@@ -239,7 +239,7 @@ class DataSpecification:
     missing_value: Any = None
 
     #: The unit of this data element
-    unit: Optional[Unit] = None
+    _unit: Optional[Unit] = None
     #: The precision of this data element
     # FIXME: The input to precision could be a `List[float]`, but this is not currently handled
     precision: Optional[float] = None
@@ -326,6 +326,22 @@ class DataSpecification:
                         f"{self.__class__.__name__}.validate: "
                         " value {k} is not in the defined value range"
                     )
+
+    @property
+    def unit(self):
+        return self._unit
+
+    @unit.setter
+    def unit(self, value: Unit | str | None):
+        if isinstance(value, str):
+            # This will include astropy and custom (damast) units
+            self._unit = Unit(value)
+        elif isinstance(value, units.UnitBase):
+            self._unit = value
+        elif value is None:
+            pass
+        else:
+            raise ValueError(f"MetaData: cannot set unit using {value=}")
 
     @classmethod
     def resolve_representation_type(cls, type_name: str) -> Any:

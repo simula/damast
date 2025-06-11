@@ -1,6 +1,5 @@
 import numpy as np
 import polars as pl
-from astropy import units
 
 import damast.core
 from damast.core import AnnotatedDataFrame, DataSpecification
@@ -44,9 +43,9 @@ class DeltaDistance(PipelineElement):
     @damast.core.describe("Compute the distance between lat/lon given positions")
     @damast.core.input({"group": {"representation_type": int},
                         "sort": {},
-                        "x": {"unit": units.deg},
-                        "y": {"unit": units.deg}})
-    @damast.core.output({"out": {"unit": units.km}})
+                        "x": {"unit": "deg" },
+                        "y": {"unit": "deg" }})
+    @damast.core.output({"out": {"description": "distance to previous coordinate", "unit": "km"}})
     def transform(self,
                   df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
@@ -88,13 +87,6 @@ class DeltaDistance(PipelineElement):
 
         # Drop/Hide unused columns
         df._dataframe = expanded.drop([shift_x, shift_y])
-
-        # Add unit and data-specification to dataframe
-        #dataframe.units[self.get_name("out")] = units.km
-
-        new_spec = DataSpecification(self.get_name("out"), unit=units.km)
-        df._metadata.columns.append(new_spec)
-
         return df
 
 
@@ -103,9 +95,9 @@ class Speed(PipelineElement):
     Given a dataframe with delta time and delta distance compute the speed
     """
     @damast.core.describe("Compute the speed")
-    @damast.core.input({"delta_distance": {"unit": units.km},
+    @damast.core.input({"delta_distance": {"unit": "km"},
                         "delta_time": {}})
-    @damast.core.output({"speed": {}})
+    @damast.core.output({"speed": {"description": "speed of object", "unit": "km / h"}})
     def transform(self,
                   df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
