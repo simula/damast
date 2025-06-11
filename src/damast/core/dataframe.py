@@ -347,7 +347,10 @@ class AnnotatedDataFrame(XDataFrame):
                         'representation_type': df.compat.dtype(column)
                 }
 
-                data['value_range'] = MinMax(results[column]["min_value"], results[column]["max_value"])
+                min_value = results[column]["min_value"]
+                max_value = results[column]["max_value"]
+                if min_value and max_value:
+                    data['value_range'] = MinMax(results[column]["min_value"], results[column]["max_value"])
                 data['value_stats'] = results[column]["stats"]
 
                 ds = DataSpecification(**data)

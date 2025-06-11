@@ -9,6 +9,7 @@ import numpy as np
 import polars
 import polars.api
 from polars import LazyFrame
+from pydantic import ValidationError
 
 from .data_description import NumericValueStats
 
@@ -156,12 +157,18 @@ class PolarsDataFrame(metaclass=Meta):
         for column in column_names:
             min_value = result[f"{column}_min_value"][0]
             max_value = result[f"{column}_max_value"][0]
-            stats = NumericValueStats(
-                mean=result[f"{column}_mean"][0],
-                stddev=result[f"{column}_stddev"][0],
-                total_count=result[f"{column}_total_count"][0],
-                null_count=result[f"{column}_null_count"][0],
-            )
+            try:
+                stats = NumericValueStats(
+                    mean=result[f"{column}_mean"][0],
+                    stddev=result[f"{column}_stddev"][0],
+                    total_count=result[f"{column}_total_count"][0],
+                    null_count=result[f"{column}_null_count"][0],
+                )
+            except ValidationError as e:
+                logger.warning(f"Unable to compute stats for {column=}")
+                logger.debug(f"Validation error for {column=} -- {e}")
+                stats = None
+
             results[column] = {
                     "min_value": min_value,
                     "max_value": max_value,

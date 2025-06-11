@@ -351,7 +351,7 @@ class NumericValueStats(BaseModel):
     mean: float = 0.0
     stddev: float = 0.0
     total_count: int  = 0
-    null_count: int
+    null_count: int = 0
 
     def merge(self, other: NumericValueStats) -> NumericValueStats:
         combined_mean = (
