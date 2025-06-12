@@ -1,5 +1,5 @@
 import re
-from argparse import ArgumentParser
+from argparse import Action, ArgumentParser
 from pathlib import Path
 
 from damast.cli.base import BaseParser
@@ -7,6 +7,20 @@ from damast.core.annotations import Annotation
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.core.metadata import DataSpecification, MetaData
 
+
+class SetTxtFieldAction(Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        name = option_string.lstrip('--set-')
+        if not hasattr(namespace, "update_metadata"):
+            setattr(namespace, "update_metadata", MetaData(columns=[]))
+
+        for value in values:
+            column, column_value = value.split(":")
+            if column not in namespace.update_metadata:
+                ds = DataSpecification(name=column)
+                namespace.update_metadata.columns.append(ds)
+
+            setattr(namespace.update_metadata[column], name, column_value)
 
 class DataAnnotateParser(BaseParser):
     """
@@ -35,18 +49,19 @@ class DataAnnotateParser(BaseParser):
                             default=None,
                             required=False)
 
-        parser.add_argument("--set-units",
-                            help="Set units spec for the given columns ('<column_name>:<unit>')",
-                            nargs="+",
-                            type=str,
-                            required=False)
+        str_options = ["description", "abbreviation", "unit"]
+        for field_name in str_options:
+            parser.add_argument(f"--set-{field_name}",
+                                nargs="+",
+                                action=SetTxtFieldAction,
+                                metavar="COLUMN:VALUE",
+                                help=f"Set {field_name} in spec for a column and value",
+                                required=False)
 
         parser.add_argument("--inplace",
                             help="Update the dataset inplace (only possible for a single file)",
                             action="store_true",
                             required=False)
-
-
 
 
     def execute(self, args):
@@ -76,10 +91,8 @@ class DataAnnotateParser(BaseParser):
 
         metadata = AnnotatedDataFrame.infer_annotation(df=adf)
 
-        if args.set_units:
-            for unit in args.set_units:
-                column, column_unit = unit.split(":")
-                metadata[column].unit = column_unit
+        if hasattr(args, "update_metadata"):
+            metadata = metadata.merge(args.update_metadata)
 
         metadata.add_annotation(
                 Annotation(
@@ -89,7 +102,7 @@ class DataAnnotateParser(BaseParser):
         )
         metadata.save_yaml(metadata_filename)
 
-        if args.set_units:
+        if hasattr(args, "update_metadata"):
             if len(args.files) == 1:
                 output_file = args.files[0]
                 adf._metadata = metadata

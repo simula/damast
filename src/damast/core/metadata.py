@@ -1184,6 +1184,9 @@ class MetaData:
                 )
         return md_fulfillment
 
+    def merge(self, other: MetaData) -> MetaData:
+        self.columns = DataSpecification.merge_lists(self.columns , other.columns)
+        return self
 
     @classmethod
     def search(cls, files: list[str | Path]) -> tuple[MetaData | None, str | None]:
