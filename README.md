@@ -18,8 +18,8 @@ class LatLonTransformer(PipelineElement):
     """
     @damast.core.describe("Lat/Lon cyclic transformation")
     @damast.core.input({
-        "lat": {"unit": units.deg},
-        "lon": {"unit": units.deg}
+        "lat": {"unit": "deg"},
+        "lon": {"unit": "deg"}
     })
     @damast.core.output({
         "lat_x": {"value_range": MinMax(-1.0, 1.0)},

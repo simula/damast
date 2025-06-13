@@ -8,6 +8,7 @@ parts:
   - caption: Documentation of Damast
     chapters:
       - file: docs/usage
+      - file: docs/cli
       - file: docs/experiments
       - file: docs/pipeline_elements
       - file: CONTRIBUTING
