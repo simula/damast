@@ -1194,7 +1194,12 @@ class MetaData:
         Search for the metadata specfile for a given list of files
         """
         logger.info("Metadata is required, so searching now for an existing annotation file")
-        commonpath = os.path.commonpath(files)
+        try:
+            commonpath = os.path.commonpath(files)
+        except Exception as e:
+            logger.debug(e)
+            return None, None, None
+
         if len(files) == 1:
             commonpath = Path(commonpath).parent
 
