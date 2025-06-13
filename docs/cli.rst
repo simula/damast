@@ -1,7 +1,7 @@
 Command Line Interface
 ========================
 
-The command line interface offers a number of workflow simplification that are encapsulated
+The command line interface offers a number of workflow simplifications that are encapsulated
 in sub-commands:
 
 **inspect**
@@ -24,7 +24,7 @@ Inspect
   :language: none
 
 
-Inspect allow to identify columns and properties of columns in a given dataset.
+Inspect allows to identify columns and properties of columns in a given dataset.
 The dataset can consists of one or more (zipped) files, either given as list of filenames or using file pattern.
 
 .. highlight:: python
@@ -155,41 +155,6 @@ Convert
 .. literalinclude:: ./examples/damast-convert-help.txt
   :language: none
 
-.. highlight:: python
-
-::
-
-    damast convert --help
-    usage: damast convert [-h] [-w WORKDIR] [-v] [--loglevel LOGLEVEL] [--logfile LOGFILE] -f FILES [FILES ...] [-m METADATA_INPUT] [-o OUTPUT_FILE] [--output-dir OUTPUT_DIR]
-                          [--output-type OUTPUT_TYPE] [--validation-mode {ignore,readonly,update_data,update_metadata}]
-                          {} ...
-
-    damast convert - data conversion subcommand called
-
-    positional arguments:
-      {}                    sub-command help
-
-    options:
-      -h, --help            show this help message and exit
-      -w WORKDIR, --workdir WORKDIR
-      -v, --verbose
-      --loglevel LOGLEVEL   Set loglevel to display
-      --logfile LOGFILE     Set file for saving log (default prints to terminal)
-      -f FILES [FILES ...], --files FILES [FILES ...]
-                            Files or patterns of the (annotated) data file that should be converted
-      -m METADATA_INPUT, --metadata-input METADATA_INPUT
-                            The metadata input file
-      -o OUTPUT_FILE, --output-file OUTPUT_FILE
-                            The output file either: .parquet, .hdf5
-      --output-dir OUTPUT_DIR
-                            The output directory
-      --output-type OUTPUT_TYPE
-                            The output file type: .parquet (default) or .hdf5
-      --validation-mode {ignore,readonly,update_data,update_metadata}
-                            Define the validation mode
-
-.. highlight:: none
-
 Examples
 ^^^^^^^^^
 
@@ -250,15 +215,16 @@ Examples
 Process
 ---------
 
+.. literalinclude:: ./examples/damast-process-help.txt
+  :language: none
+
+
 Once a DataProcessPipeline has been exported and saved, e.g., in the following example as *my-pipeline.damast.ppl*, it can be reapplied to an existing data set.
 The dataset needs to comply with the required input columns and metadata requirements, such as units, so that the pipeline can successfully run.
 Damast will check these requirements and raise an exception if these requirements are not satisfied.
 
 .. literalinclude:: ./examples/damast-process-pipeline.py
    :language: Python
-
-.. literalinclude:: ./examples/damast-process-help.txt
-  :language: none
 
 Examples
 ^^^^^^^^

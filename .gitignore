@@ -18,3 +18,4 @@ build/*
 inputs/*
 _autosummary/
 autoapi/
+docs/examples/damast-*-help.txt
