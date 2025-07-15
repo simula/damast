@@ -74,7 +74,7 @@ class Archive:
         Umount the archive
         """
         for mounted_dir in list(reversed(self._mounted_dirs)):
-            subprocess.run(["umount", mounted_dir])
+            subprocess.run(["fusermount", "-u", mounted_dir])
 
         for mounted_dir in self._mounted_dirs:
             shutil.rmtree(mounted_dir)
