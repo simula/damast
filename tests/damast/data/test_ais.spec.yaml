@@ -109,6 +109,11 @@ columns:
 - name: nav_status
   is_optional: false
   representation_type: Int64
+  value_range:
+    MinMax:
+      min: 0
+      max: 0
+      allow_missing: true
   value_stats:
     mean: 0.0
     stddev: 0.0
@@ -129,4 +134,4 @@ columns:
     null_count: 0
 annotations:
   source:
-  - tests/damast/data/test_ais.csv
+  - /opt/workspace/github/damast-polars/tests/damast/data/test_ais.csv

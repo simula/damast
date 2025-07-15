@@ -62,6 +62,12 @@ class DataAnnotateParser(BaseParser):
                             help="Update the dataset inplace (only possible for a single file)",
                             action="store_true",
                             required=False)
+        parser.add_argument("--apply",
+                help="Update the annotation inference an rewrite the metadata to the dataset",
+                action="store_true",
+                required=False,
+        )
+                
 
 
     def execute(self, args):
@@ -80,7 +86,7 @@ class DataAnnotateParser(BaseParser):
             output_dir.mkdir(parents=True, exist_ok=True)
 
         if args.output_spec_file:
-            spec_file = Path(args.output_spec_file)
+            spec_file = Path(args.output_spec_file.replace(DAMAST_SPEC_SUFFIX, ''))
             if spec_file.is_absolute():
                 spec_file.parent.mkdir(parents=True, exist_ok=True)
                 metadata_filename = spec_file.with_suffix(DAMAST_SPEC_SUFFIX)
@@ -102,7 +108,7 @@ class DataAnnotateParser(BaseParser):
         )
         metadata.save_yaml(metadata_filename)
 
-        if hasattr(args, "update_metadata"):
+        if hasattr(args, "update_metadata") or args.apply:
             if len(args.files) == 1:
                 output_file = args.files[0]
                 adf._metadata = metadata
@@ -112,5 +118,7 @@ class DataAnnotateParser(BaseParser):
                 else:
                     print(f"Updating {output_file}")
                 adf.export(output_file)
+            else:
+                raise ValueError("Cannot update metadata for multiple files")
 
         print(f"Created {metadata_filename}")

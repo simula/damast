@@ -924,6 +924,9 @@ class MetaData:
 
         self._annotations[annotation.name] = annotation
 
+    def set_annotation(self, annotation: Annotation):
+        self._annotations[annotation.name] = annotation
+
     @property
     def annotations(self) -> Dict[str, Annotation]:
         """Get dictionary of annotations"""
@@ -1224,3 +1227,34 @@ class MetaData:
         commonpath = os.path.commonpath(files)
         commonprefix = os.path.commonprefix([Path(x).stem for x in files])
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
+
+    def merge(self, other: Metadata) -> Metadata:
+        column_specs = DataSpecification.merge_lists(self.columns, other.columns)
+        annotations = []
+        for k,v in self.annotations.items():
+            try:
+                values = v.value
+                if v.value == other.annotations[k].value:
+                    pass
+                elif type(v.value) == type(other.annotations[k].value):
+                    if type(v.value) == str:
+                        values = [v.value, other.annotations[k].value]
+                    elif type(v.value) == list:
+                        values = v.value + other.annotations[k].value
+                    elif type(v.value) == dict:
+                        values = v.value.update(other.annotations[k].value)
+
+                elif type(v.value) == list:
+                    values = v.value + [other.annotations[k].value]
+                elif type(other.annotations[k].value) == list:
+                    values = [v.value] + other.annotations[k].value
+
+                annotations.append(Annotation(k, values))
+            except Exception as e:
+                logger.warning(e)
+
+        for k,v in other.annotations.items():
+            if k not in self.annotations:
+                annotations.append(v)
+
+        return MetaData(column_specs, annotations)

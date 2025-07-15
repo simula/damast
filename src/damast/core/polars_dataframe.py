@@ -303,7 +303,7 @@ class PolarsDataFrame(metaclass=Meta):
         return polars.LazyFrame(data), metadata
 
     @classmethod
-    def import_netcdf(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+    def import_netcdf(cls, path: list[str|Path]) -> Tuple[DataFrame, dict[str, MetaData]]:
         try:
             import dask
             import xarray
@@ -324,10 +324,10 @@ class PolarsDataFrame(metaclass=Meta):
         pandas_df = pd.concat(dataframes, ignore_index=True).reset_index()
         df = polars.from_pandas(pandas_df)
 
-        return df.lazy(), None
+        return df.lazy(), {}
 
     @classmethod
-    def import_hdf5(cls, files: str | Path | list[str|Path]) -> Tuple[DataFrame, MetaData]:
+    def import_hdf5(cls, files: str | Path | list[str|Path]) -> Tuple[DataFrame, dict[str,MetaData]]:
         """
         Import a dataframe stored as HDF5.
 
@@ -364,7 +364,7 @@ class PolarsDataFrame(metaclass=Meta):
             df = polars.from_pandas(pandas_df)
             warnings.resetwarnings()
 
-            return df.lazy(), None
+            return df.lazy(), {}
         except tables.exceptions.NoSuchNodeError as e:
             logger.debug(f"HDF5 {filename} cannot be imported with pandas")
 
@@ -372,7 +372,9 @@ class PolarsDataFrame(metaclass=Meta):
             raise RuntimeError("Loading from vaex is only supported with one file at a time")
 
         path = Path(files[0])
-        return cls.from_vaex_hdf5(path)
+        df, metadata = cls.from_vaex_hdf5(path)
+
+        return df, { path: metadata }
 
     @classmethod
     def export_hdf5(cls, df: DataFrame, path: str | Path) -> Path:
