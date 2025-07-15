@@ -241,7 +241,7 @@ class PolarsDataFrame(metaclass=Meta):
     def open(path: str | Path, sep = ',') -> DataFrame:
         path = Path(path)
         if path.suffix == ".csv":
-            return polars.scan_csv(path, sep=sep)
+            return polars.scan_csv(path, sep=sep, quotechar=None, infer_schema_length=None)
         elif path.suffix in [".h5", ".hdf5"]:
             import pandas as pd
 

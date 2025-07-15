@@ -295,11 +295,11 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_csv(cls, files) -> tuple[AnnotatedDataFrame, MetaData]:
         _log.info(f"Loading csv: {files=}")
-        df = polars.scan_csv(files, separator=";")
+        df = polars.scan_csv(files, separator=";", quote_char=None, infer_schema_length=None)
         if len(df.compat.column_names) <= 1:
             # unlikely that this frame has only one column, so trying with comma
-            df = polars.scan_csv(files, separator=",")
         return df, None
+            df = polars.scan_csv(files, separator=",", quote_char=None, infer_schema_length=None)
 
     @classmethod
     def from_file(cls,
@@ -381,7 +381,11 @@ class AnnotatedDataFrame(XDataFrame):
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
-        df = polars.scan_csv(sorted(csv_filenames), separator=csv_sep)
+        df = polars.scan_csv(sorted(csv_filenames),
+                            separator=csv_sep,
+                            quote_char=None,
+                            infer_schema_length=None
+            )
         adf = cls(dataframe=df, metadata=metadata)
 
         _log.info(f"Metadata: {dict(metadata)}")
