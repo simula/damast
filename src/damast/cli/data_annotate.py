@@ -67,7 +67,7 @@ class DataAnnotateParser(BaseParser):
                 action="store_true",
                 required=False,
         )
-                
+
 
 
     def execute(self, args):
