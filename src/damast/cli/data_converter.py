@@ -4,6 +4,8 @@ import tempfile
 from argparse import ArgumentParser
 from pathlib import Path
 
+import logging
+
 from tqdm import tqdm
 
 from damast.cli.base import BaseParser
@@ -11,6 +13,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import MetaData, ValidationMode
 from damast.utils.io import Archive
 
+logger = logging.getLogger(__name__)
 
 class DataConvertParser(BaseParser):
     """
@@ -109,5 +112,8 @@ class DataConvertParser(BaseParser):
         except Exception as e:
             raise
         finally:
-            archive.umount()
+            try:
+                archive.umount()
+            except Exception as e:
+                logger.warning(f"Unmount failed {e}")
 
