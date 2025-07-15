@@ -48,7 +48,7 @@ dependencies = [
     "pyais",
     "pyarrow",
     "pydantic>=2.0",
-    "ratarmount",
+    "ratarmount>=1.1",
     "scikit-learn",
     "tables",
     # BEGIN keras backends

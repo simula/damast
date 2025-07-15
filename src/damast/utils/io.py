@@ -3,16 +3,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
 from pathlib import Path
 from typing import ClassVar
 
 DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
 try:
-    from ratarmountcore.compressions import supportedCompressions
+    from ratarmountcore.compressions import COMPRESSION_FORMATS, ARCHIVE_FORMATS
     DAMAST_ARCHIVE_SUPPORT_AVAILABLE = True
 except Exception as e:
-    warnings.warn("ratarmount could not be loaded: archive supported is not available")
+    warnings.warn("ratarmount could not be loaded: archive support is not available")
 
 
 from damast.core.constants import DAMAST_MOUNT_PREFIX
@@ -37,9 +38,10 @@ class Archive:
             return cls._supported_suffixes
 
         cls._supported_suffixes = []
-        for k, v in supportedCompressions.items():
-            cls._supported_suffixes += v.suffixes
-            cls._supported_suffixes += v.doubleSuffixes
+        for k, v in COMPRESSION_FORMATS.items():
+            cls._supported_suffixes += v.extensions
+        for k, v in ARCHIVE_FORMATS.items():
+            cls._supported_suffixes += v.extensions
         return cls._supported_suffixes
 
 
@@ -74,10 +76,17 @@ class Archive:
         Umount the archive
         """
         for mounted_dir in list(reversed(self._mounted_dirs)):
-            subprocess.run(["fusermount", "-u", mounted_dir])
+            for count in range(0,5):
+                time.sleep(0.5)
+                response = subprocess.run(["fusermount", "-u", mounted_dir])
+                if response.returncode == 0:
+                    break
+                else:
+                    logger.debug(f"Retrying to unmount {mounted_dir}")
 
         for mounted_dir in self._mounted_dirs:
-            shutil.rmtree(mounted_dir)
+            if Path(mounted_dir).exists(): 
+                shutil.rmtree(mounted_dir)
 
     def mount(self) -> list[str]:
         """
