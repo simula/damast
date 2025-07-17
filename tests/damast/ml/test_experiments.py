@@ -37,7 +37,6 @@ class TransformerA(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         return df
 
-
 class LatLonTransformer(PipelineElement):
     @damast.core.describe("Lat/Lon cyclic transformation")
     @damast.core.input({
@@ -56,8 +55,7 @@ class LatLonTransformer(PipelineElement):
 
         _df = lat_cyclic_transformer.fit_transform(df=df)
         _df = lon_cyclic_transformer.fit_transform(df=_df)
-        df._dataframe = _df
-        return df
+        return _df
 
 
 class SimpleModel(BaseModel):

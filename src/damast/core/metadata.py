@@ -1124,7 +1124,7 @@ class MetaData:
             for a given range specification, map data within range.
         :raises: ValueError: If data-frame is missing a column in the Data-specification
         """
-        assert isinstance(df, pl.LazyFrame)
+        assert isinstance(df, pl.LazyFrame), f"Expected polars.LazyFrame, got {type(df)}"
 
         for column_spec in self.columns:
             columns = df.compat.column_names

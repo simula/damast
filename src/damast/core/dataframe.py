@@ -87,6 +87,14 @@ class AnnotatedDataFrame(XDataFrame):
         """Get the metadata for this dataframe"""
         return self._metadata
 
+    @classmethod
+    def ensure_type(cls, obj: any):
+        if not isinstance(obj, cls):
+            raise ValueError("Object {obj} is not an AnnotatedDataFrame")
+
+        if not isinstance(obj._dataframe, DataFrame):
+            raise ValueError(f"AnnotatedDataFrame._dataframe is not of type {DataFrame}")
+
     def validate_metadata(
         self, validation_mode: ValidationMode = ValidationMode.READONLY
     ) -> None:

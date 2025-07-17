@@ -110,10 +110,13 @@ class PolarsDataFrame(metaclass=Meta):
         """
         Tuple of min and max values of the given column
         """
-        result = self._dataframe.select([
-                polars.col(column_name).min().alias("min_value"),
-                polars.col(column_name).max().alias("max_value")
-            ]).collect()
+        try:
+            result = self._dataframe.select([
+                    polars.col(column_name).min().alias("min_value"),
+                    polars.col(column_name).max().alias("max_value")
+                ]).collect()
+        except polars.exceptions.InvalidOperationError as e:
+            raise ValueError(f"damast.core.polars_dataframe.minmax: cannot compute min/max for {column_name}") from e
 
         min_value = result["min_value"][0]
         max_value = result["max_value"][0]

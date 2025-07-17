@@ -332,7 +332,7 @@ def test_single_element_pipeline(tmp_path):
         @damast.core.input({"x": {"unit": units.deg}})
         @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
         def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            df[f"{self.get_name('x')}_suffix"] = df[self.get_name('x')]
+            df._dataframe = df._dataframe.with_columns(polars.col(self.get_name('x')).alias(f"{self.get_name('x')}_suffix"))
             return df
 
     pipeline = DataProcessingPipeline(name="TransformStatus",
@@ -341,7 +341,12 @@ def test_single_element_pipeline(tmp_path):
                  TransformX(),
                  name_mappings={"x": "status"})
 
-    pipeline.transform(df=adf)
+    adf = pipeline.transform(df=adf)
+
+    assert "status_suffix" in adf.column_names, "Expect 'status_suffix' to be a new column"
+
+    assert adf.metadata['status_suffix'], "Expect metadata to be available for 'status_suffix'"
+    assert adf.metadata['status_suffix'].representation_type == polars.Int64, "Expect representation_type Int64 for 'status_suffix'"
 
 @pytest.mark.parametrize("varname",["x","xyz"])
 def test_decorator_renaming(varname, tmp_path):
