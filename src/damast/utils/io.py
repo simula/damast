@@ -10,7 +10,7 @@ from typing import ClassVar
 
 DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
 try:
-    from ratarmountcore.compressions import COMPRESSION_FORMATS, ARCHIVE_FORMATS
+    from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS
     DAMAST_ARCHIVE_SUPPORT_AVAILABLE = True
 except Exception as e:
     warnings.warn("ratarmount could not be loaded: archive support is not available")
@@ -85,7 +85,7 @@ class Archive:
                     logger.debug(f"Retrying to unmount {mounted_dir}")
 
         for mounted_dir in self._mounted_dirs:
-            if Path(mounted_dir).exists(): 
+            if Path(mounted_dir).exists():
                 shutil.rmtree(mounted_dir)
 
     def mount(self) -> list[str]:
