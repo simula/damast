@@ -41,14 +41,14 @@ class DataProcessingParser(BaseParser):
 
 
         pipeline = DataProcessingPipeline.load(pipeline_path)
-        new_adf = pipeline.transform(adf).collect()
+        new_adf = pipeline.transform(adf)
 
-        print(new_adf.head())
-        print(new_adf.tail())
+        print(new_adf.head().collect())
+        print(new_adf.tail().collect())
 
         if args.output_file:
             path = Path(args.output_file)
-            path.parent.resolve().mkdirs(parents=True, exist_ok=True)
+            path.parent.resolve().mkdir(parents=True, exist_ok=True)
 
-            new_adf.save(path)
-            print(f"Saved {path.resolved()}")
+            new_adf.save(filename=path)
+            print(f"Saved {path.resolve()}")

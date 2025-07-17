@@ -358,19 +358,18 @@ class ChangeTypeColumn(PipelineElement):
 
     :param new_type: The new type of the column
     """
-    _new_type: Any
+    new_type: Any
 
     def __init__(self, new_type: Any):
         """Constructor"""
-        if type(new_type) == str:
+        if isinstance(new_type, pl.datatypes.classes.DataTypeClass):
+            self.new_type = new_type
+        elif type(new_type) == str:
             polar_type = new_type.capitalize()
             if not hasattr(pl.datatypes.classes, polar_type):
                 raise TypeError(f"Type {new_type} has not correspondence in 'polars'")
-            self._new_type = getattr(pl.datatypes.classes, polar_type)
 
-    @property
-    def new_type(self):
-        return self._new_type
+            self.new_type = getattr(pl.datatypes.classes, polar_type)
 
     @damast.core.describe("Create a new column from an existing column but with a new type")
     @damast.core.input({"x": {}})
@@ -383,6 +382,6 @@ class ChangeTypeColumn(PipelineElement):
         output_mapped_name = self.get_name("y")
 
         df._dataframe = df._dataframe.with_columns(
-            pl.col(input_mapped_name).cast(self._new_type).alias(output_mapped_name)
+            pl.col(input_mapped_name).cast(self.new_type).alias(output_mapped_name)
         )
         return df

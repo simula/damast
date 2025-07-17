@@ -306,7 +306,25 @@ class PipelineElement(Transformer):
         """
         if not hasattr(self, "_parameters"):
             self._parameters = None
+
+        self.prepare_parameters()
+
         return self._parameters
+
+    def prepare_parameters(self):
+        parameters = {}
+        for p in inspect.signature(self.__init__).parameters:
+            parameter_name = p
+            if not parameter_name in ['args', 'kwargs']:
+                # only process named parameters
+                try:
+                    parameters[parameter_name] = getattr(self, parameter_name)
+                except AttributeError as e:
+                    raise ValueError(f"PipelineElement: please ensure that {self.__class__.__name__}.__init__ keyword arguments"
+                            f" are saved in an attribute of the same name: missing '{parameter_name}'")
+
+        self._parameters = parameters
+
 
     def get_name(self, name: str) -> Any:
         """
@@ -372,19 +390,6 @@ class PipelineElement(Transformer):
         specs = copy.deepcopy(generic_spec)
         for spec in specs:
             spec.name = self.get_name(spec.name)
-
-        parameters = {}
-        for p in inspect.signature(self.__init__).parameters:
-            parameter_name = p
-            if not parameter_name in ['args', 'kwargs']:
-                # only process named parameters
-                try:
-                    parameters[parameter_name] = getattr(self, parameter_name)
-                except AttributeError as e:
-                    raise ValueError(f"PipelineElement: please ensure that {self.__class__.__name__}.__init__ keyword arguments"
-                            f" are saved in an attribute of the same name: missing '{parameter_name}'")
-
-        self._parameters = parameters
 
         return specs
 
@@ -493,6 +498,7 @@ class DataProcessingPipeline(PipelineElement):
 
     #: Name of the processing pipeline
     name: str
+    description: str
 
     #: Base path (which is forwarded to transformers, when calling
     #: transform)
@@ -514,6 +520,7 @@ class DataProcessingPipeline(PipelineElement):
 
     def __init__(self, *,
                  name: str,
+                 description: str = "",
                  base_dir: Union[str, Path] = tempfile.gettempdir(),
                  steps: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] = [],
                  inplace_transformation: bool = False,
@@ -523,6 +530,7 @@ class DataProcessingPipeline(PipelineElement):
         super().__init__()
 
         self.name = name
+        self.description = description
         self.base_dir = Path(base_dir)
 
         self._output_specs = []
@@ -671,12 +679,14 @@ class DataProcessingPipeline(PipelineElement):
         base_dir = Path(dir)
         base_dir.mkdir(parents=True, exist_ok=True)
         filename = base_dir / f"{self.name}{DAMAST_PIPELINE_SUFFIX}"
+
         with open(filename, "w") as f:
             yaml.dump(dict(self), f)
         return filename
 
     def __iter__(self):
         yield "name", self.name
+        yield "description", self.description
         yield "meta", self._meta
         yield "base_dir", str(self.base_dir)
         yield "steps", [[step_name, dict(pipeline_element)] for step_name, pipeline_element in self.steps]
@@ -841,6 +851,8 @@ class DataProcessingPipeline(PipelineElement):
 
         adf = pipeline.transform(df=in_df)
         assert isinstance(adf, AnnotatedDataFrame)
+
+        adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
         return adf
 
     def on_transform_start(self,
@@ -896,3 +908,15 @@ class DataProcessingPipeline(PipelineElement):
         :returns: String representation
         """
         return self.to_str()
+
+def polar_data_type_constructor(loader, tag_suffix, node):
+    module_whitelist = ["polars.datatypes.classes"]
+    for m in module_whitelist:
+        if tag_suffix.startswith(m):
+            module = importlib.import_module(m)
+            object_name = tag_suffix.replace(m + ".","")
+            return getattr(module, object_name)
+
+    raise ValueError(f"damast.core.dataprocessing: no constructor registered for {tag_suffix=}")
+
+yaml.SafeLoader.add_multi_constructor("tag:yaml.org,2002:python/name:", polar_data_type_constructor)
