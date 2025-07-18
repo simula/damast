@@ -44,9 +44,17 @@ class Archive:
             cls._supported_suffixes += v.extensions
         return cls._supported_suffixes
 
+    def __enter__(self) -> list[str]:
+        extracted_files = self.mount()
+        if extracted_files:
+            return extracted_files
+        return self.filenames
+
+    def __exit__(self):
+        self.umount()
 
     def __init__(self, filenames: list[str]):
-        self.filenames = filenames
+        self.filenames = sorted(filenames)
 
         self._mounted_dirs = []
         self._extracted_files = []

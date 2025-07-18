@@ -56,20 +56,16 @@ class DataConvertParser(BaseParser):
     def execute(self, args):
         super().execute(args)
 
-        files = args.files
-        files_stats = self.get_files_stats(files)
+        files_stats = self.get_files_stats(args.files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
         if args.output_dir and args.output_file:
             raise ValueError("--output-dir and --output-file cannot be used together")
 
-        metadata = None
-        archive = None
-        try:
-            archive = Archive(filenames=files)
-            extracted_files = archive.mount()
-            if extracted_files:
-                files = [x for x in extracted_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
+        with Archive(filenames=args.files) as input_files:
+            files = [x for x in input_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
+            if not files:
+                raise RuntimeError(f"Conversion is not supported for input files: {input_files=}")
 
             created_files = []
             if args.output_dir:
@@ -85,8 +81,11 @@ class DataConvertParser(BaseParser):
 
                 if args.output_dir:
                     output_file = output_dir / f"{Path(file).stem}{args.output_type}"
-                else:
+                elif args.output_file:
                     output_file = Path(args.output_file)
+                else:
+                    # Use current directory as output dir
+                    output_file = Path(Path(file).with_suffix(args.output_type).name)
 
                 adf.save(filename=output_file)
                 created_files.append(output_file)
@@ -108,11 +107,4 @@ class DataConvertParser(BaseParser):
                 print(adf.head(10).collect())
 
             print(f"Written: {created_files}")
-        except Exception as e:
-            raise
-        finally:
-            try:
-                archive.umount()
-            except Exception as e:
-                logger.warning(f"Unmount failed {e}")
 
