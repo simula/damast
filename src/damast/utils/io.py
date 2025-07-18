@@ -6,7 +6,7 @@ import tempfile
 import time
 import warnings
 from pathlib import Path
-from typing import ClassVar
+from typing import Callable, ClassVar
 
 DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
 try:
@@ -22,7 +22,11 @@ from damast.core.dataframe import AnnotatedDataFrame
 logger = logging.getLogger(__name__)
 
 class Archive:
+    """
+    Class to wrap and extract archive objects using ratarmount
+    """
     filenames: list[str]
+    filter_fn: Callable[[str], bool]
 
     _extracted_files: list[str]
     _mounted_dirs: list[Path]
@@ -31,6 +35,9 @@ class Archive:
 
     @classmethod
     def supported_suffixes(cls):
+        """
+        Get the list of suffixes for archives and compressed files which are supported
+        """
         if not DAMAST_ARCHIVE_SUPPORT_AVAILABLE:
             return []
 
@@ -45,16 +52,29 @@ class Archive:
         return cls._supported_suffixes
 
     def __enter__(self) -> list[str]:
+        """
+        Enter function for the contextmanager
+        """
         extracted_files = self.mount()
         if extracted_files:
             return extracted_files
         return self.filenames
 
     def __exit__(self):
+        """
+        Exit function for the contextmanager
+        """
         self.umount()
 
-    def __init__(self, filenames: list[str]):
+    def __init__(self,
+            filenames: list[str],
+            filter_fn: Callable[[str], bool] | None = None):
         self.filenames = sorted(filenames)
+
+        if filter_fn is None:
+            self.filter_fn = lambda x: False
+        else:
+            self.filter_fn = filter_fn
 
         self._mounted_dirs = []
         self._extracted_files = []
@@ -116,15 +136,15 @@ class Archive:
 
                 decompressed_files = [x for x in Path(target_mount).glob("**/*") if Path(x).is_file()]
                 for idx, x in enumerate(decompressed_files):
-                    if AnnotatedDataFrame.get_supported_format(Path(x).suffix) is not None:
-                        extracted_files += [ x ]
-                    else:
+                    if self.filter_fn(x):
                         logger.debug(f"Archive.mount: ignoring unsupported file={x}")
-            elif AnnotatedDataFrame.get_supported_format(Path(file).suffix) is not None:
+                    else:
+                        extracted_files += [ x ]
+            elif self.filter_fn(file):
+                logger.debug(f"Archive.mount: ignoring unsupported {file=}")
+            else:
                 # no extraction needed, and file suffix is supported
                 extracted_files += [ file ]
-            else:
-                logger.debug(f"Archive.mount: ignoring unsupported {file=}")
 
         self._extracted_files = extracted_files
         return self._extracted_files
