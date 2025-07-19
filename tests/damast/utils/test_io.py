@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -7,6 +8,7 @@ from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.utils.io import Archive
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows")
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
