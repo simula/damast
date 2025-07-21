@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 import datetime as dt
+import json
 import os
 import re
 import requests
@@ -78,13 +79,13 @@ def search(satellite: str | None = None,
     now = dt.datetime.utcnow()
     if start_date:
         params["startDate"] = dt.datetime.fromisoformat(start_date)
-    #else:
-    #    params["startDate"] =  now - dt.timedelta(days=7)
+    else:
+        params["startDate"] =  now - dt.timedelta(days=7)
 
     if end_date:
         params["completionDate"] = dt.datetime.fromisoformat(end_date)
-    #else:
-    #    params["completionDate"] = now
+    else:
+        params["completionDate"] = now
 
     for d in ["startDate", "completionDate"]:
         if d in params:
@@ -106,10 +107,10 @@ def search(satellite: str | None = None,
     params["sortParam"] = "startDate"
     params["maxRecords"] = max_records
 
-
     logger.info(f"Searching {search_path} with {params=}")
     response = requests.get(search_path, params=params)
     json = response.json()
+    return json
 
 
 def search_catalogue(
@@ -203,6 +204,9 @@ if __name__ == "__main__":
         help="Download folder"
     )
 
+    parser.add_argument("--download-thumbnails",
+            action="store_true",
+            help="Download thumbnails of images found")
 
     for p in range_parameters:
         parser.add_argument(f"--{p}-min",
@@ -255,9 +259,13 @@ if __name__ == "__main__":
         properties = results["properties"]
         features = results["features"]
 
+        base_dir = Path(args.download_dir) 
+        base_dir.mkdir(parents=True, exist_ok=True)
+
         minStartDate = None
         maxStartDate = None
-        for f in features:
+        collections = set()
+        for f in tqdm(features, desc="Processing features"):
             startDate = f['properties']['startDate']
             completionDate = f['properties']['completionDate']
 
@@ -271,11 +279,30 @@ if __name__ == "__main__":
             elif maxStartDate < startDate:
                 maxStartDate = startDate
 
+            collections.add(f['properties']['collection'])
+
+            thumbnail = f['properties']['thumbnail']
+            if thumbnail and args.download_thumbnails:
+                filename = Path(thumbnail).name
+                os.system(f"curl -L '{thumbnail}' --location-trusted --output {base_dir/filename} -s")
+
         count = len(features)
         if count:
-            print(f"Results found: {count} - {minStartDate=}  {maxStartDate=}")
+            collections = sorted(list(collections))
+            print(f"Results found: ")
+            print(f"    {count=}")
+            print(f"    {minStartDate=}  {maxStartDate=}")
+            print(f"    {collections=}")
+
+            results_file = base_dir / "search-copernicus.json"
+            with open(results_file, "w") as f:
+                f.write(json.dumps(features, indent=4))
+
+            print(f"Written: {results_file}")
         else:
             print(f"No matching records")
+
+
 
     else:
         if args.bbox:
@@ -300,7 +327,8 @@ if __name__ == "__main__":
                 kwargs["collections"] = [collection]
 
                 results = search_catalogue(**kwargs)
-
+                
+                next_ref = None
                 if 'links' in results:
                     links = results['links']
                     next_ref = [x['href'] for x in links if x['rel'] == 'next']
