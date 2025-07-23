@@ -141,7 +141,7 @@ For instance to extract:
 - all data in a time interval:
 
 .. highlight:: python
-   
+
 ::
 
     damast inspect -f 1.zip --filter 'reception_date >= dt.datetime.fromisoformat("2020-11-19 00:00:00")' --filter 'reception_date <= dt.datetime.fromisoformat("2020-11-20 00:00:00")'

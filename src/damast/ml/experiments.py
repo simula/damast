@@ -249,7 +249,11 @@ class Experiment:
             raise ValueError(f"{self.__class__.__name__}.__init__: learning_task must be either"
                              f"dict or LearningTask object")
 
-        self.input_data = Path(input_data)
+        if type(input_data) == list:
+            self.input_data = input_data
+        else:
+            self.input_data = [ Path(input_data) ]
+
         self.output_directory = Path(output_directory)
         self.label = label
 
@@ -392,7 +396,9 @@ class Experiment:
         if delta == 1:
             rand_idx = random.randint(0, len(partition_sizes) - 1)
             partition_sizes[rand_idx] += 1
-        assert len(groups) == sum(partition_sizes)
+
+        if len(groups) != sum(partition_sizes):
+            raise RuntimeError(f"Expected group_len == sum partition_sizes, but was {len(groups)} == {sum(partition_sizes)}")
 
         from_idx = 0
         partitions = []
@@ -558,7 +564,7 @@ class Experiment:
 
         # Load data and validate it by loading it into the annotated dataframe
         # We remove values that are outside the Min/Max value defined in the specification
-        adf = AnnotatedDataFrame.from_file(self.input_data)
+        adf = AnnotatedDataFrame.from_files(self.input_data)
 
         if not isinstance(self.learning_task, ForecastTask):
             raise NotImplementedError(

@@ -1,7 +1,6 @@
 import os
 from collections import OrderedDict
 from pathlib import Path
-from typing import List, Optional, Union
 
 import keras
 import pytest
@@ -73,7 +72,7 @@ class SimpleModel(BaseModel):
         "d": {"length": 1}
     })
 
-    def __init__(self, output_dir: Union[str, Path]):
+    def __init__(self, output_dir: str | Path):
         super().__init__(features=["a", "b", "c", "d"],
                          targets=["a", "b", "c", "d"],
                          output_dir=output_dir)
@@ -113,11 +112,11 @@ class Baseline(BaseModel):
     })
 
     def __init__(self,
-                 features: List[str],
+                 features: list[str],
                  timeline_length: int,
                  output_dir: Path,
                  name: str = "Baseline",
-                 targets: Optional[List[str]] = None):
+                 targets: list[str] | None = None):
         self.timeline_length = timeline_length
 
         super().__init__(name=name,

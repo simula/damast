@@ -211,9 +211,9 @@ class AnnotatedDataFrame(XDataFrame):
             validation_mode: ValidationMode = ValidationMode.READONLY
         ) -> AnnotatedDataFrame:
         """
-        Create an annotated dataframe from an hdf5 file.
+        Create an annotated dataframe by loading given files
 
-        :param filename: Filename to use for importing and creating the annotated dataframe
+        :param files: Files to use for importing and creating the annotated dataframe
 
         """
         metadata = None

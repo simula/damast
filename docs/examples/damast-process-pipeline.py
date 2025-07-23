@@ -1,15 +1,9 @@
 import damast
 from damast.core import DataProcessingPipeline
-
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.domains.maritime.transformers.features import (
-    DeltaDistance,
-    Speed
-)
-from damast.data_handling.transformers import (
-    DropMissingOrNan,
-    AddDeltaTime,
-)
+from damast.data_handling.transformers import AddDeltaTime, DropMissingOrNan
+from damast.domains.maritime.transformers.features import DeltaDistance, Speed
+
 
 class MyPipeline(DataProcessingPipeline):
     def __init__(self,
