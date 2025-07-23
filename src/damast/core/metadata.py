@@ -903,7 +903,7 @@ class MetaData:
         annotations: Optional[List[Annotation]] = None,
     ):
         assert isinstance(columns, list)
-        self.columns = columns
+        self.columns = sorted(columns, key=lambda x: x.name)
         if annotations is None:
             self._annotations = {}
         else:
@@ -972,7 +972,7 @@ class MetaData:
         for name, annotation in self.annotations.items():
             txt_repr.append(hspace + default_indent + f"{name}: {annotation.value}")
 
-        for spec in sorted(self.columns, key=lambda x: x.name):
+        for spec in self.columns:
             spec_dict = dict(spec)
             if columns and spec_dict['name'] not in columns:
                 continue
