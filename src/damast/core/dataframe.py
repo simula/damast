@@ -355,7 +355,8 @@ class AnnotatedDataFrame(XDataFrame):
             elif df.compat.is_numeric(column):
                 numeric_columns.append(column)
                 continue
-            else:
+
+            if 'value_range' not in data:
                 min_value, max_value = df.compat.minmax(column)
                 if min_value is not None and max_value is not None:
                     data['value_range'] = MinMax(min_value, max_value)
