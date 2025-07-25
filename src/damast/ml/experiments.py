@@ -637,7 +637,7 @@ class Experiment:
 
     def __iter__(self):
         yield "label", self.label
-        yield "input_data", str(self.input_data)
+        yield "input_data", [str(x) for x in self.input_data]
         yield "output_directory", str(self.output_directory)
         yield "learning_task", dict(self.learning_task)
         yield "batch_size", self._batch_size
