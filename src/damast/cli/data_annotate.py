@@ -15,7 +15,7 @@ class SetTxtFieldAction(Action):
             setattr(namespace, "update_metadata", MetaData(columns=[]))
 
         for value in values:
-            column, column_value = value.split(":")
+            column, column_value = value.split(":", 1)
             if column not in namespace.update_metadata:
                 ds = DataSpecification(name=column)
                 namespace.update_metadata.columns.append(ds)
