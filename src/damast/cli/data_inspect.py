@@ -72,19 +72,32 @@ class DataInspectParser(BaseParser):
                 if args.filter:
                     filter_values = ""
                     for filter_expression in args.filter:
-                        m = re.match(r"([^=<>]+)([=><]+)([^=<>]*)", filter_expression)
+                        m = re.match(r"([^!=<>]+)([!=><]+)([^!=<>]*)", filter_expression)
                         if m:
                             lhs = m.group(1).strip()
                             op = m.group(2).strip()
                             rhs = m.group(3).strip()
 
                             lhs = self.expand_filter_arg(adf, lhs)
-                            rhs = self.expand_filter_arg(adf, rhs)
 
-                            print(f"   .filter({lhs} {op} {rhs})")
-                            filter_values += f".filter({lhs} {op} {rhs})"
+                            new_filter = ""
+                            if rhs in ["null", "None"]:
+                                if op == "==":
+                                    new_filter = f"{lhs}.is_null()"
+                                elif op == "!=":
+                                    new_filter = f"{lhs}.is_not_null()"
+                                else:
+                                    logger.warning(f"Filter expression invalid: operator must be either '==' or '!='")
+                                    continue
+                            else:
+                                rhs = self.expand_filter_arg(adf, rhs)
+                                new_filter = f"{lhs} {op} {rhs}"
+
+                            print(f"   .filter({new_filter})")
+                            filter_values += f".filter({new_filter})"
                         else:
                             logger.warning(f"Filter expression invalid: {filter_expression}")
+
                     adf._dataframe = eval(f"adf._dataframe{filter_values}")
                     adf._metadata = AnnotatedDataFrame.infer_annotation(adf._dataframe)
 
