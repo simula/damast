@@ -59,6 +59,7 @@ def test_subparser(name, klass, script_runner):
 
 @pytest.mark.parametrize("filename", [
     "data.hdf5",
+    "test_ais.parquet",
     "test_ais.csv",
     "test_dataframe.csv",
     "test_dataframe.hdf5",
