@@ -94,7 +94,7 @@ class PolarsDataFrame(metaclass=Meta):
         idx = self.column_names.index(column_name)
         return self._dataframe.collect_schema().dtypes()[idx]
 
-    def set_dtype(self, column_name, representation_type) -> PolarsDataFrame:
+    def set_dtype(self, column_name, representation_type) -> polars.datatype.DataType:
         """
         Set the dtype for a column to the given representation type.
         Using polars cast functionality
@@ -102,9 +102,12 @@ class PolarsDataFrame(metaclass=Meta):
         """
         if representation_type == np.int64:
             representation_type = polars.Int64
+        elif type(representation_type) == str:
+            if hasattr(polars, representation_type):
+                representation_type = getattr(polars, representation_type)
 
-        self._df = self._dataframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
-        return self
+        self._dataframe = self._dataframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
+        return representation_type
 
     def minmax(self, column_name: str) -> Tuple[any, any]:
         """
@@ -124,7 +127,11 @@ class PolarsDataFrame(metaclass=Meta):
         return min_value, max_value
 
     def categories(self, column_name: str, max_count: int = 100) -> list[str]:
-        categories = self._dataframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
+        try:
+            categories = self._dataframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
+        except Exception as e:
+            raise RuntimeError(f"Failed to extract categories for column '{column_name}' -- {e}") from e
+
         if len(categories) <= max_count:
             timepoint_like = 0
             for c in categories[:10]:

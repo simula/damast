@@ -132,26 +132,37 @@ def test_data_specification_read_write(name, category, is_optional,
     assert ds_loaded == ds
 
 
-@pytest.mark.parametrize(["dataspec", "other_dataspec", "error_msg"],
+@pytest.mark.parametrize(["dataspec", "other_dataspec", "merge_strategy", "error_msg"],
                          [
-                             [DataSpecification(name="a",
-                                                unit=units.m),
+                             [DataSpecification(name="a",unit=units.m),
                               DataSpecification(name="a", category=DataCategory.DYNAMIC),
-                              None],
+                              None,None],
+                             [DataSpecification(name="a", representation_type=float),
+                              DataSpecification(name="a",
+                                                category=DataCategory.DYNAMIC,
+                                                representation_type=int),
+                              None, "'representation_type' differs"],
                              [DataSpecification(name="a",
                                                 representation_type=float),
                               DataSpecification(name="a",
                                                 category=DataCategory.DYNAMIC,
                                                 representation_type=int),
-                              "'representation_type' differs"]
+                              None, "'representation_type' differs"],
+                             [DataSpecification(name="a",
+                                                representation_type=float),
+                              DataSpecification(name="a",
+                                                category=DataCategory.DYNAMIC,
+                                                representation_type=int),
+                              DataSpecification.MergeStrategy.THIS, None
+                             ]
 ])
-def test_data_specification_merge(dataspec, other_dataspec, error_msg):
+def test_data_specification_merge(dataspec, other_dataspec, merge_strategy, error_msg):
     if error_msg is None:
-        dataspec.merge(other=other_dataspec)
+        dataspec.merge(other=other_dataspec, strategy=merge_strategy)
         assert dataspec.name == dataspec.name
     else:
         with pytest.raises(ValueError, match=error_msg):
-            dataspec.merge(other=other_dataspec)
+            dataspec.merge(other=other_dataspec, strategy=merge_strategy)
 
 
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "error_type"],

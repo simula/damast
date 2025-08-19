@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from zipfile import ZipFile
 
+import polars
 import pytest
 import yaml
 from pytest_console_scripts import ScriptRunner
@@ -164,5 +165,35 @@ def test_convert_zip_zip(data_path, filename, spec_filename, tmp_path, script_ru
     assert result.returncode == 0
     assert output_file.exists()
 
+def test_annotate_representation_type(tmp_path, script_runner):
+    """
+    Use case:
+        a column is automatically inferred to be of a numeric type, but should be actually of string type
+        the user corrects the type using damast annotate --set-representation_type column_name:String -f <filename>
+        user checks the result via damast inspect -f <filename>
+
+    While polar keeps autoinferring the type to int, the embedded schema will be used to
+    cast the data to the spec/expected type
+    """
+    df = polars.DataFrame({
+            "a": [1,2,3,4],
+            "b": ["A", "B", "C", "D"]
+        })
+
+    data_file = tmp_path / "test.parquet"
+    df.write_parquet(data_file)
+
+    result = script_runner.run(['damast', "annotate", "-f", data_file, "--set-representation_type", "a:String"])
+    expected_data_file = Path(tmp_path / "test-annotated.parquet")
+    expected_spec_file = Path(tmp_path / "test-annotated.spec.yaml")
+
+    assert expected_data_file.exists()
+    assert expected_spec_file.exists()
+
+    result = script_runner.run(['damast', "inspect", "-f", expected_data_file])
+
+    # The new representation type should now be str
+    assert re.search("a:\n\s+is_optional: False\n\s+representation_type: str",result.stdout)
+    assert result.returncode == 0
 
 

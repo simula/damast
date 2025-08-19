@@ -49,7 +49,7 @@ class DataAnnotateParser(BaseParser):
                             default=None,
                             required=False)
 
-        str_options = ["description", "abbreviation", "unit"]
+        str_options = ["description", "abbreviation", "unit", "representation_type"]
         for field_name in str_options:
             parser.add_argument(f"--set-{field_name}",
                                 nargs="+",
@@ -63,7 +63,7 @@ class DataAnnotateParser(BaseParser):
                             action="store_true",
                             required=False)
         parser.add_argument("--apply",
-                help="Update the annotation inference an rewrite the metadata to the dataset",
+                help="Update the annotation inference and rewrite the metadata to the dataset",
                 action="store_true",
                 required=False,
         )
@@ -98,7 +98,7 @@ class DataAnnotateParser(BaseParser):
         metadata = AnnotatedDataFrame.infer_annotation(df=adf)
 
         if hasattr(args, "update_metadata"):
-            metadata = metadata.merge(args.update_metadata)
+            metadata = metadata.merge(args.update_metadata, strategy=DataSpecification.MergeStrategy.OTHER)
 
         metadata.add_annotation(
                 Annotation(
@@ -106,14 +106,18 @@ class DataAnnotateParser(BaseParser):
                     value=args.files
                 )
         )
-        metadata.save_yaml(metadata_filename)
 
         if hasattr(args, "update_metadata") or args.apply:
             if len(args.files) == 1:
                 output_file = args.files[0]
+                for column_spec in args.update_metadata.columns:
+                    if column_spec.representation_type:
+                        representation_type = adf.set_dtype(column_spec.name, column_spec.representation_type)
+                        metadata[column_spec.name].representation_type = representation_type
+
                 adf._metadata = metadata
                 if not args.inplace:
-                    output_file = output_dir / Path(output_file).name
+                    output_file = output_dir / (Path(output_file).stem + "-annotated" + Path(output_file).suffix)
                     print(f"Creating {output_file}")
                 else:
                     print(f"Updating {output_file}")
@@ -121,4 +125,8 @@ class DataAnnotateParser(BaseParser):
             else:
                 raise ValueError("Cannot update metadata for multiple files")
 
+            metadata_filename = Path(output_file).parent / (Path(output_file).stem + DAMAST_SPEC_SUFFIX)
+            metadata.save_yaml(metadata_filename)
+        else:
+            metadata.save_yaml(metadata_filename)
         print(f"Created {metadata_filename}")

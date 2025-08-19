@@ -300,7 +300,7 @@ class AnnotatedDataFrame(XDataFrame):
                 schema = pq.read_schema(file)
                 if schema and hasattr(schema, "metadata"):
                     if schema.metadata is not None:
-                        if b"annotated_dataframe" in schema.metadata: 
+                        if b"annotated_dataframe" in schema.metadata:
                             data = schema.metadata[b"annotated_dataframe"]
                             m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
                             m.set_annotation(Annotation(name=Annotation.Key.Source, value=Path(file).name))

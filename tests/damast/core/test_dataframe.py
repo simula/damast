@@ -176,6 +176,19 @@ def test_annotated_dataframe_import_csv(data_path):
         name="height", abbreviation="height", category=DataCategory.STATIC,
         unit=units.m, value_range=MinMax(min=0, max=40), representation_type=int)
 
+def test_set_dtype(data_path):
+    """
+    Test if conversion from int -> str in representation_type is consistent
+    """
+    csv_path = data_path / "test_dataframe.csv"
+    adf = AnnotatedDataFrame.from_file(csv_path)
+
+    assert adf.dtype('height') != polars.String
+    assert polars.String == adf.set_dtype('height', polars.String)
+
+    assert adf.dtype('height') == polars.String
+
+
 def test_01_dataframe_composition(data_path):
     """
     Test the dataframe composition, i.e. metadata in combination with an actual dataframe

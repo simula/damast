@@ -223,6 +223,13 @@ class DataSpecification:
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}: '{self.missing_column}', known: {','.join(self.known_columns)}"
 
+    class MergeStrategy(str):
+        """
+        The types of available merge strategies
+        """
+        OTHER = "other"
+        THIS = "this"
+
     #: Name associated
     name: str
     #: Description of the data
@@ -746,11 +753,12 @@ class DataSpecification:
             required_specs.append(required_spec)
         return required_specs
 
-    def merge(self, other: DataSpecification) -> DataSpecification:
+    def merge(self, other: DataSpecification, strategy: MergeStrategy | None = None) -> DataSpecification:
         """Merge the current data-specification and one input specification
         into a single :class:`DataSpecification` object.
 
         :param other: The other data-specification
+        :param strategy to resolve: either this or other, default is none
         :raises ValueError: If :attr:`DataSpecification.name` differs between the two specs.
         :raises ValueError: If the data-specifications have overlapping attributes, that have distinct non-``None``
             values, the function throws an error.
@@ -784,6 +792,13 @@ class DataSpecification:
                 if hasattr(this_value, "merge"):
                     merged_value = this_value.merge(other_value)
                     setattr(ds, key.value, merged_value)
+                elif strategy:
+                    if strategy == DataSpecification.MergeStrategy.OTHER:
+                        setattr(ds, key.value, other_value)
+                    elif strategy == DataSpecification.MergeStrategy.THIS:
+                        setattr(ds, key.value, this_value)
+                    else:
+                        raise RuntimeError(f"DataSpecification.merge: Invalid merge strategy {strategy} provided")
                 else:
                     raise ValueError(
                         f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
@@ -794,7 +809,8 @@ class DataSpecification:
 
     @classmethod
     def merge_lists(
-        cls, a_specs: List[DataSpecification], b_specs: List[DataSpecification]
+        cls, a_specs: List[DataSpecification], b_specs: List[DataSpecification],
+        strategy: MergeStrategy | None = None
     ) -> List[DataSpecification]:
         """
         Merge two lists of data-specifications into a single list.
@@ -816,7 +832,7 @@ class DataSpecification:
                 # Need to check merge
                 b_column_spec = b_column_dict[column_name]
 
-                merged_spec = a_spec.merge(other=b_column_spec)
+                merged_spec = a_spec.merge(other=b_column_spec, strategy=strategy)
                 result_specs.append(merged_spec)
             else:
                 result_specs.append(a_spec)
@@ -1187,10 +1203,6 @@ class MetaData:
                 )
         return md_fulfillment
 
-    def merge(self, other: MetaData) -> MetaData:
-        self.columns = DataSpecification.merge_lists(self.columns , other.columns)
-        return self
-
     @classmethod
     def search(cls, files: list[str | Path]) -> tuple[MetaData | None, str | None]:
         """
@@ -1228,8 +1240,8 @@ class MetaData:
         commonprefix = os.path.commonprefix([Path(x).stem for x in files])
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
-    def merge(self, other: Metadata) -> Metadata:
-        column_specs = DataSpecification.merge_lists(self.columns, other.columns)
+    def merge(self, other: Metadata, strategy: DataSpecification.MergeStrategy | None = None) -> Metadata:
+        column_specs = DataSpecification.merge_lists(self.columns, other.columns, strategy)
         annotations = []
         for k,v in self.annotations.items():
             try:
