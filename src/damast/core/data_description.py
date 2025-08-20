@@ -197,6 +197,11 @@ class ListOfValues:
         """
         return dict(self)
 
+    def merge(self, other: ListOfValues) -> ListOfValues:
+        self.values = list(set(self.values + other.values))
+        self.values.sort(key=lambda e: (e is None, e))
+        return self
+
     def __iter__(self):
         yield self.__class__.__name__, self.values
 
