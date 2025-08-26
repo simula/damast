@@ -13,6 +13,7 @@ from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
+from damast import __version__ as damast_version
 
 
 class MainParser(ArgumentParser):
@@ -26,6 +27,9 @@ class MainParser(ArgumentParser):
         self.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
         self.add_argument("--logfile", dest="logfile", type=str, default=None,
                           help="Set file for saving log (default prints to terminal)")
+
+        self.add_argument("--version", action="store_true", default=False,
+                          help="Show current version of damast")
 
         self.subparsers = self.add_subparsers(help='sub-command help')
 
@@ -69,6 +73,10 @@ def run():
 
 
     args = main_parser.parse_args()
+    if args.version:
+        print(f"damast {damast_version}")
+        sys.exit(0)
+
     if hasattr(args, "active_subparser"):
         try:
             args.active_subparser.execute(args)
