@@ -145,11 +145,11 @@ class Worker:
 
         try:
             _log.info(f"{self.__class__.__name__}({job.id}): loading data")
-            start = dt.datetime.utcnow()
+            start = dt.datetime.now(dt.timezone.utc)
             df = pl.scan_parquet(job.data_filename)
             _log.info(
                 f"{self.__class__.__name__}({job.id}): loading data "
-                f"[done after {(dt.datetime.utcnow() - start).total_seconds()} seconds]")
+                f"[done after {(dt.datetime.now(dt.timezone.utc) - start).total_seconds()} seconds]")
 
             self.predict(job_id=job.id,
                          model_name=job.model_name,

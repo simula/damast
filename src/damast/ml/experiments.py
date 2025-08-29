@@ -225,7 +225,7 @@ class Experiment:
                  evaluation_steps=1,
                  split_data_ratios: List[float] = [1.6, 0.2, 0.2],
                  label: str = "damast-ml-experiment",
-                 timestamp: Union[str, datetime.datetime] = datetime.datetime.utcnow(),
+                 timestamp: Union[str, datetime.datetime] = datetime.datetime.now(datetime.timezone.utc),
                  evaluation={}
                  ):
         """
@@ -297,7 +297,7 @@ class Experiment:
         The created directory is prefixed with a time-stamp indicating when it was created.
 
         """
-        prefix = datetime.datetime.utcnow().strftime(cls.TIMESTAMP_FORMAT)
+        prefix = datetime.datetime.now(datetime.timezone.utc).strftime(cls.TIMESTAMP_FORMAT)
         experiment_dir = base_dir / f"{prefix}-{label}"
         experiment_dir.mkdir(exist_ok=False, parents=True)
 
@@ -622,7 +622,7 @@ class Experiment:
         self._evaluation_report = self.evaluate(test_generator=test_data_gen,
                                                 steps=self._evaluation_steps)
 
-        self._timestamp = datetime.datetime.utcnow()
+        self._timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         if report_filename is None:
             filename = experiment_dir / "experiment-report.yaml"
