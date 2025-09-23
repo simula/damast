@@ -7,12 +7,15 @@ from astropy import units
 import damast
 from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.dataprocessing import (
+from damast.core.decorators import (
     DECORATED_INPUT_SPECS,
-    DECORATED_OUTPUT_SPECS,
+    DECORATED_OUTPUT_SPECS
+)
+
+from damast.core.dataprocessing import (
     DataProcessingPipeline,
-    PipelineElement,
-    )
+    PipelineElement
+)
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import CycleTransformer, Transformer
 from damast.core.types import XDataFrame
@@ -390,7 +393,10 @@ def test_decorator_renaming(varname, tmp_path):
     assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
-    name, transformer = pipeline.steps[0]
+    for node in pipeline.processing_graph.nodes():
+        name = node.name
+        transformer = node.transformer
+
     assert transformer.input_specs[0].name == "status"
     assert transformer.output_specs[0].name == "status_suffix"
 

@@ -43,10 +43,10 @@ def test_remove_values(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: boo
     original_df_length = len(adf.filter(pl.col(ColumnName.SOURCE) == "g").collect())
     if inplace:
         # frame has been updated, so no invalid entries should be left
-        assert original_df_length == 0
+        assert original_df_length == 0, "Inplace update should remove all values"
     else:
         # frame has been not been updated inplace, so invalid entries should be still left
-        assert original_df_length == num_invalid_sources
+        assert original_df_length == num_invalid_sources, "Inplace update should keep invalid sources"
 
 
 @pytest.mark.parametrize("inplace", [True, False])

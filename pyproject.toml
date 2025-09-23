@@ -41,6 +41,7 @@ dependencies = [
     "cloudpickle",
     "keras>=3.0",
     "matplotlib",
+    "networkx",
     "numba",
     "numpy>=2",
     "polars>=1.20",
