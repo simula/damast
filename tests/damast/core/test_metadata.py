@@ -203,7 +203,7 @@ def test_change():
     assert c.title == title
     assert c.description == description
     assert type(c.timestamp) is datetime.datetime
-    assert c.timestamp < datetime.datetime.utcnow()
+    assert c.timestamp < datetime.datetime.now(datetime.timezone.utc)
 
 
 def test_history():

@@ -156,7 +156,7 @@ def height_dataframe():
     columns = [
         "height", "letter"
     ]
-    return polars.LazyFrame(data, columns)
+    return polars.LazyFrame(data, columns, orient="row")
 
 
 @pytest.fixture()
@@ -184,7 +184,7 @@ def lat_lon_dataframe():
     columns = [
         "latitude", "longitude"
     ]
-    return polars.LazyFrame(data, columns)
+    return polars.LazyFrame(data, columns, orient="row")
 
 
 @pytest.fixture()
@@ -326,7 +326,7 @@ def test_single_element_pipeline(tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df = polars.LazyFrame(data, column_names)
+    df = polars.LazyFrame(data, column_names, orient="row")
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):
@@ -361,7 +361,7 @@ def test_decorator_renaming(varname, tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df = polars.LazyFrame(data, column_names)
+    df = polars.LazyFrame(data, column_names, orient="row")
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):
@@ -418,7 +418,7 @@ def test_toplevel_decorators(tmp_path):
         DataSpecification(name="status", unit=units.deg)
     ]
 
-    df = polars.LazyFrame(data, column_names)
+    df = polars.LazyFrame(data, column_names, orient="row")
     adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
 
     class TransformX(PipelineElement):

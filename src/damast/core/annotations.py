@@ -8,12 +8,15 @@ Module to define Annotation object for data specification
 # SPDX-License-Identifier:    BSD-3-Clause
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
+import logging
+
 __all__ = ["Annotation", "Change", "History"]
 
+logger = logging.getLogger(__name__)
 
 class Annotation:
     """
@@ -125,15 +128,18 @@ class Change:
     :param timestamp: A timestamp for when the change was mede
     """
 
-    TIMESTAMP_FORMAT: ClassVar[str] = "%Y-%m-%d %H:%M:%S"
+    TIMESTAMP_FORMAT: ClassVar[str] = "%Y-%m-%d %H:%M:%S%z"
 
     title: str
     timestamp: datetime
     description: str
 
     def __init__(
-        self, title: str, description: str, timestamp: datetime = datetime.utcnow()
+        self, title: str, description: str, timestamp: datetime = datetime.now(timezone.utc)
     ):
+        if not timestamp or not timestamp.tzinfo:
+            raise ValueError(f"Change.__init__: timezone-aware timestamp required, but was '{timestamp}'")
+
         # Ensure that we only deal with the required precision
         timestamp_txt = timestamp.strftime(self.TIMESTAMP_FORMAT)
         self.timestamp = datetime.strptime(timestamp_txt, self.TIMESTAMP_FORMAT)
@@ -174,11 +180,14 @@ class Change:
         :param data: Input dictionary
         :return: A change object
         """
+        timestamp = datetime.fromisoformat(data["timestamp"])
+        if timestamp.tzinfo is None:
+            logger.info("Change.from_dict: encountered non-timezone-aware timestamp - assuming UTC")
+            timestamp.replace(tzinfo=timezone.utc)
+
         return cls(
             title=data["title"],
-            timestamp=datetime.strptime(
-                data["timestamp"], Change.TIMESTAMP_FORMAT
-            ),
+            timestamp=timestamp,
             description=data["description"],
         )
 
