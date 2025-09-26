@@ -7,13 +7,13 @@ import warnings
 from argparse import ArgumentParser
 from pathlib import Path
 
+from damast import __version__ as damast_version
 from damast.cli.base import BaseParser
 from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
-from damast import __version__ as damast_version
 
 
 class MainParser(ArgumentParser):

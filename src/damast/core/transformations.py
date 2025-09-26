@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from abc import abstractmethod
 import copy
-import inspect
 import importlib
+import inspect
+import re
+from abc import abstractmethod
+
 import numpy as np
 import polars
-import re
 
 from damast.core.dataframe import AnnotatedDataFrame
-from .formatting import DEFAULT_INDENT
+
 from .constants import (
+    DAMAST_DEFAULT_DATASOURCE,
+    DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
-    DECORATED_ARTIFACT_SPECS
-)
+    )
+from .formatting import DEFAULT_INDENT
+
 
 class Transformer:
     uuid: str
@@ -45,8 +49,9 @@ class PipelineElement(Transformer):
     parent_pipeline: DataProcessingPipeline
 
     #: Map names of input and outputs for a particular pipeline
-    _name_mappings: Dict[str, str]
+    _name_mappings: dict[str, dict[str, str]]
 
+    #: Map names of datasource (arguments) to a specific (extra) transformer arguments
     def set_parent(self, pipeline: DataProcessingPipeline):
         """
         Sets the parent pipeline for this pipeline element
@@ -56,12 +61,12 @@ class PipelineElement(Transformer):
         self.parent_pipeline = pipeline
 
     @property
-    def name_mappings(self) -> Dict[str, str]:
+    def name_mappings(self) -> dict[str, dict[str, str]]:
         """
         Get current name mappings for this instance
         """
         if not hasattr(self, "_name_mappings"):
-            self._name_mappings = {}
+            self._name_mappings = { DAMAST_DEFAULT_DATASOURCE: {}}
         return self._name_mappings
 
     @property
@@ -90,34 +95,48 @@ class PipelineElement(Transformer):
 
         self._parameters = parameters
 
+    def get_name(self, name: str, datasource: str | None = None) -> Any:
+        if datasource is None:
+            datasource = DAMAST_DEFAULT_DATASOURCE
 
-    def get_name(self, name: str) -> Any:
+        return self._get_name(name=name, datasource=datasource)
+
+    def _get_name(self, name: str, datasource: str | None) -> Any:
         """
         Add the fully resolved input/output name for this key.
 
         :param name: Name as used in the input spec, or pattern "{{x}}_suffix" in order to create a dynamic
                      output based an existing and renameable input
+        :param datasource: In cases of multiple input for a node, define the datasource that shall be used
         :return: Name for this input after resolving name mappings and references
         """
         if not isinstance(name, str):
             raise TypeError(f"{self.__class__.__name__}.get_name: provided transformer label is not a string: {name}")
 
-        if name in self.name_mappings:
+        if datasource is not None:
+            try:
+                name_mappings = self.name_mappings[datasource]
+            except KeyError as e:
+                raise RuntimeError(f"PipelineElement._get_name: not {datasource} in mappings: {self.name_mappings}")
+        else:
+            name_mappings = self.name_mappings
+
+        if name in name_mappings:
             # allow multiple levels of name resolution, e.g.,
             # x -> y, y -> z --> x -> z
-            mapped_name = self.name_mappings[name]
+            mapped_name = name_mappings[name]
             if mapped_name == name:
                 return name
 
-            return self.get_name(mapped_name)
+            return self._get_name(mapped_name, datasource=datasource)
 
         # Allow to use patterns, so that an existing input
         # reference can be reused for dynamic labelling
         while re.search("{{\\w+}}", name):
             for match in re.finditer("{{\\w+}}", name):
                 resolved_name = match.group()[2:-2]
-                if resolved_name in self.name_mappings:
-                    resolved_name = self.name_mappings[resolved_name]
+                if resolved_name in name_mappings:
+                    resolved_name = name_mappings[resolved_name]
 
                 name = name.replace(match.group(), resolved_name)
         return name
@@ -129,7 +148,7 @@ class PipelineElement(Transformer):
         """
 
     @property
-    def input_specs(self) -> List[DataSpecification]:
+    def input_specs(self) -> dict[str, List[DataSpecification]]:
         if not hasattr(self.transform, DECORATED_INPUT_SPECS):
             raise AttributeError(
                 f"{self.__class__.__name__}.validate: missing input specification"
@@ -138,8 +157,9 @@ class PipelineElement(Transformer):
 
         generic_spec = getattr(self.transform, DECORATED_INPUT_SPECS)
         specs = copy.deepcopy(generic_spec)
-        for spec in specs:
-            spec.name = self.get_name(spec.name)
+        for label, speclist in specs.items():
+            for spec in speclist:
+                spec.name = self.get_name(spec.name, label)
 
         return specs
 
@@ -154,6 +174,7 @@ class PipelineElement(Transformer):
         generic_spec = getattr(self.transform, DECORATED_OUTPUT_SPECS)
         specs = copy.deepcopy(generic_spec)
         for spec in specs:
+            # there will be only 1 dataframe as output
             spec.name = self.get_name(spec.name)
 
         return specs
@@ -162,8 +183,8 @@ class PipelineElement(Transformer):
     def create_new(cls,
                    module_name: str,
                    class_name: str,
-                   name_mappings: Optional[Dict[str, Any]] = None,
-                   parameters: Optional[Dict[str, Any]] = {}) -> PipelineElement:
+                   name_mappings: dict[str, dict[str, str]] | None = None,
+                   parameters: dict[str, any] | None = {}) -> PipelineElement:
         """
         Create a new PipelineElement Subclass instance dynamically
 
@@ -192,7 +213,8 @@ class PipelineElement(Transformer):
             instance = klass()
 
         if name_mappings is None:
-            name_mappings = {}
+            name_mappings = { DAMAST_DEFAULT_DATASOURCE: {}}
+
         instance._name_mappings = name_mappings
         return instance
 
@@ -251,7 +273,7 @@ class PipelineElement(Transformer):
              data += (
                      hspace + DEFAULT_INDENT * 2 + "description: " + description + "\n"
                 )
-    
+
         data += hspace + DEFAULT_INDENT * 2 + "input:\n"
         if hasattr(self.transform, DECORATED_INPUT_SPECS):
             data += DataSpecification.to_str(
@@ -265,7 +287,8 @@ class PipelineElement(Transformer):
             )
         return data
 
-class CycleTransformer(PipelineElement):
+# Only for internal use
+class MultiCycleTransformer(Transformer):
     def __init__(self, features: list[str], n: int):
         self.features = features
         self.n = n
@@ -284,3 +307,4 @@ class CycleTransformer(PipelineElement):
                     (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_y")
                 )
         return clone
+

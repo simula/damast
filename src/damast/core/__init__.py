@@ -5,6 +5,7 @@ This namespace contains the core modules that are required to define metadata.
 from .annotations import Annotation
 from .data_description import DataRange, MinMax
 from .dataframe import AnnotatedDataFrame
+from .dataprocessing import DataProcessingPipeline
 from .decorators import (
     DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
@@ -15,8 +16,6 @@ from .decorators import (
     input,
     output,
     )
-
-from .dataprocessing import DataProcessingPipeline
 from .metadata import (
     ArtifactSpecification,
     DataSpecification,

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import polars
@@ -7,17 +9,15 @@ from astropy import units
 import damast
 from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
 from damast.core.decorators import (
+    DAMAST_DEFAULT_DATASOURCE,
     DECORATED_INPUT_SPECS,
-    DECORATED_OUTPUT_SPECS
-)
-
-from damast.core.dataprocessing import (
-    DataProcessingPipeline,
-    PipelineElement
-)
+    DECORATED_OUTPUT_SPECS,
+    )
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
-from damast.core.transformations import CycleTransformer, Transformer
+from damast.core.transformations import MultiCycleTransformer, Transformer
+from damast.data_handling.transformers.cycle_transformer import CycleTransformer
 from damast.core.types import XDataFrame
 
 
@@ -37,8 +37,8 @@ class DataProcessorA(PipelineElement):
         "latitude_y": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        lat_cyclic_transformer = CycleTransformer(features=[self.get_name("latitude")], n=180.0)
-        lon_cyclic_transformer = CycleTransformer(features=[self.get_name("longitude")], n=360.0)
+        lat_cyclic_transformer = MultiCycleTransformer(features=[self.get_name("latitude")], n=180.0)
+        lon_cyclic_transformer = MultiCycleTransformer(features=[self.get_name("longitude")], n=360.0)
 
         df = lat_cyclic_transformer.fit_transform(df=df)
         df = lon_cyclic_transformer.fit_transform(df=df)
@@ -57,7 +57,7 @@ class DataProcessorAFail(PipelineElement):
         "latitude_xy": {"unit": None, "value_range": MinMax(0.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        transformer = CycleTransformer(features=["latitude", "longitude"], n=360)
+        transformer = MultiCycleTransformer(features=["latitude", "longitude"], n=360)
         return transformer.fit_transform(df)
 
 
@@ -86,8 +86,8 @@ class TransformerA(PipelineElement):
         "longitude_y": {"unit": units.deg}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        lat_cyclic_transformer = CycleTransformer(features=["latitude"], n=180.0)
-        lon_cyclic_transformer = CycleTransformer(features=["longitude"], n=360.0)
+        lat_cyclic_transformer = MultiCycleTransformer(features=["latitude"], n=180.0)
+        lon_cyclic_transformer = MultiCycleTransformer(features=["longitude"], n=360.0)
 
         df = lat_cyclic_transformer.fit_transform(df=df)
         df = lon_cyclic_transformer.fit_transform(df=df)
@@ -133,6 +133,30 @@ class TransformerC(PipelineElement):
         df._dataframe = df._dataframe.with_columns(
                 polars.lit("data-label").alias("label")
         )
+        return df
+
+class JoinByTimestamp(PipelineElement):
+    def __init__(self):
+        pass
+
+    @damast.core.describe("JoinByTimestamp")
+    @damast.core.input({
+                           "timestamp": {},
+                           "lon": {},
+                           "lat": {},
+                       })
+    @damast.core.input({
+                            "timestamp": {},
+                            "lat": {},
+                            "lon": {}
+                        }, label='other'
+    )
+    @damast.core.output({})
+    def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        other_timestamp = self.get_name('timestamp', datasource='other')
+        df_timestamp = self.get_name('timestamp')
+
+        df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
         return df
 
 
@@ -265,7 +289,7 @@ def test_access_decorator_info():
             return df
 
     assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_INPUT_SPECS) == \
-        DataSpecification.from_requirements(requirements=input_specs)
+            { DAMAST_DEFAULT_DATASOURCE: DataSpecification.from_requirements(requirements=input_specs) }
 
     assert getattr(CustomDataProcessor.apply_lat_lon_remove_col, damast.core.DECORATED_OUTPUT_SPECS) == \
         DataSpecification.from_requirements(requirements=output_specs)
@@ -373,7 +397,7 @@ def test_decorator_renaming(varname, tmp_path):
             df[f"{self.get_name(varname)}_suffix"] = df[self.get_name(varname)]
             return df
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[DAMAST_DEFAULT_DATASOURCE][0].name == varname
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
     with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
@@ -390,14 +414,14 @@ def test_decorator_renaming(varname, tmp_path):
                  TransformX(),
                  name_mappings={varname: "status"})
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[DAMAST_DEFAULT_DATASOURCE][0].name == varname
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
     for node in pipeline.processing_graph.nodes():
         name = node.name
         transformer = node.transformer
 
-    assert transformer.input_specs[0].name == "status"
+    assert transformer.input_specs[DAMAST_DEFAULT_DATASOURCE][0].name == "status"
     assert transformer.output_specs[0].name == "status_suffix"
 
     repr_before = pipeline.to_str()
@@ -405,7 +429,7 @@ def test_decorator_renaming(varname, tmp_path):
     repr_after = pipeline.to_str()
     assert repr_before == repr_after
 
-    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[0].name == varname
+    assert getattr(TransformX.transform, DECORATED_INPUT_SPECS)[DAMAST_DEFAULT_DATASOURCE][0].name == varname
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
 
@@ -471,3 +495,73 @@ def test_save_load_state(lat_lon_annotated_dataframe, lat_lon_metadata, tmp_path
     #for i in range(len(df_transformed)):
         #assert np.array_equiv(df_transformed[i], loaded_adf[i])
     assert XDataFrame(df_transformed).equals(XDataFrame(loaded_adf))
+
+def test_join_operation(data_path, tmp_path):
+    pipeline = DataProcessingPipeline(name="ais_preparation",
+                                      base_dir=tmp_path) \
+        .join("osint", JoinByTimestamp(),
+                  name_mappings = {
+                      'df': {
+                          "timestamp": "date_time_utc",
+                      },
+                      'other': {
+                          "timestamp": "timestamp",
+                          "lat": "latitude",
+                          "lon": "longitude",
+                      }
+                  },
+        )
+
+    ais_csv = data_path / "test_ais.csv"
+    ais_df = AnnotatedDataFrame.from_file(ais_csv)
+
+    osint_csv = data_path / "osint.csv"
+    osint_df = AnnotatedDataFrame.from_file(osint_csv, metadata_required=False)
+
+    with pytest.raises(TypeError, match="expected an annotated dataframe"):
+        new_adf = pipeline.transform(ais_csv, osint=osint_df)
+
+    joined_df = pipeline.transform(ais_df, osint=osint_df)
+
+    assert len(osint_df) != len(ais_df)
+    assert len(joined_df) == 1
+    for column in ["event_type", "lat", "latitude"]:
+        assert column in joined_df.columns
+
+
+def test_join_pipeline(data_path, tmp_path):
+    event_pipeline = DataProcessingPipeline(name="event_preparation",
+                                      base_dir=tmp_path) \
+                .add("lat_cycle_transform", CycleTransformer(n=180), name_mappings={'x': 'latitude'}) \
+                .add("lon_cycle_transform", CycleTransformer(n=90), name_mappings={'x': 'longitude'})
+
+    pipeline = DataProcessingPipeline(name="ais_preparation",
+                                      base_dir=tmp_path) \
+        .join("osint", JoinByTimestamp(), data_source=event_pipeline,
+                  name_mappings = {
+                      'df': {
+                          "timestamp": "date_time_utc",
+                      },
+                      'other': {
+                          "timestamp": "timestamp",
+                          "lat": "latitude",
+                          "lon": "longitude",
+                      }
+                  },
+        )
+
+    ais_csv = data_path / "test_ais.csv"
+    ais_df = AnnotatedDataFrame.from_file(ais_csv)
+
+    osint_csv = data_path / "osint.csv"
+    osint_df = AnnotatedDataFrame.from_file(osint_csv, metadata_required=False)
+
+    with pytest.raises(TypeError, match="expected an annotated dataframe"):
+        new_adf = pipeline.transform(ais_csv, osint=osint_df)
+
+    joined_df = pipeline.transform(ais_df, osint=osint_df)
+
+    assert len(osint_df) != len(ais_df)
+    assert len(joined_df) == 1
+    for column in ["event_type", "lat", "latitude"]:
+        assert column in joined_df.columns

@@ -10,7 +10,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
 from damast.core.datarange import CyclicMinMax, MinMax
 from damast.core.metadata import MetaData
-from damast.core.transformations import CycleTransformer
+from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
 from damast.ml.experiments import (
@@ -49,8 +49,8 @@ class LatLonTransformer(PipelineElement):
         "lon_y": {"value_range": MinMax(-1.0, 1.0)}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        lat_cyclic_transformer = CycleTransformer(features=["lat"], n=180.0)
-        lon_cyclic_transformer = CycleTransformer(features=["lon"], n=360.0)
+        lat_cyclic_transformer = MultiCycleTransformer(features=["lat"], n=180.0)
+        lon_cyclic_transformer = MultiCycleTransformer(features=["lon"], n=360.0)
 
         _df = lat_cyclic_transformer.fit_transform(df=df)
         _df = lon_cyclic_transformer.fit_transform(df=_df)
@@ -320,7 +320,6 @@ def test_to_and_from_file(tmp_path):
         Experiment.from_file("this-is-not-the-right-file")
 
     loaded_e = Experiment.from_file(filename)
-
     assert loaded_e == experiment
 
 def test_experiment_run(tmp_path):

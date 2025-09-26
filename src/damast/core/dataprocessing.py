@@ -5,24 +5,28 @@ from __future__ import annotations
 
 import copy
 import importlib
+import inspect
 import re
 import tempfile
+import traceback as tc
+from collections import OrderedDict
 from datetime import datetime, timezone
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import networkx as nx
 import yaml
 
 import damast.version
-from damast.core.transformations import PipelineElement
 from damast.core.processing_graph import Node, ProcessingGraph
-import traceback as tc
+from damast.core.transformations import PipelineElement
 
-from .transformations import PipelineElement
+from .constants import DAMAST_DEFAULT_DATASOURCE
 from .dataframe import AnnotatedDataFrame
 from .formatting import DEFAULT_INDENT
-from .metadata import MetaData, DataSpecification
+from .metadata import DataSpecification, MetaData
+from .transformations import PipelineElement
 
 __all__ = [
     "artifacts",
@@ -33,7 +37,7 @@ __all__ = [
     "PipelineElement",
 ]
 
-_log: Logger = getLogger(__name__)
+logger: Logger = getLogger(__name__)
 
 DAMAST_PIPELINE_SUFFIX: str = ".damast.ppl"
 """Suffix of :class:`DataProcessingPipeline` files created in :func:`DataProcessingPipeline.save`
@@ -75,10 +79,10 @@ class DataProcessingPipeline(PipelineElement):
     #: Check if the pipeline is ready to be run
     is_ready: bool
     # The processing graph that define this pipeline
-    processing_graph: ProcessingGraph 
+    processing_graph: ProcessingGraph
 
     _inplace_transformation: bool
-    _name_mappings: Dict[str, str]
+    _name_mappings: Dict[str, Dict[str, str]]
     _processing_stats: Dict[str, Dict[str, Any]]
 
     _meta: Dict[str, str]
@@ -89,7 +93,7 @@ class DataProcessingPipeline(PipelineElement):
                  base_dir: Union[str, Path] = tempfile.gettempdir(),
                  processing_graph: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] | ProcessingGraph = None,
                  inplace_transformation: bool = False,
-                 name_mappings: Dict[str, str] = {},
+                 name_mappings: Dict[str, Dict[str, str]] = { DAMAST_DEFAULT_DATASOURCE: {}},
                  meta: Dict[str, str] | None = None,
                  ):
         super().__init__()
@@ -163,7 +167,8 @@ class DataProcessingPipeline(PipelineElement):
         """
         transformer.set_parent(pipeline=self)
         if name_mappings is not None:
-            transformer._name_mappings = name_mappings
+            if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
+                transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings }
 
         self.processing_graph.add(
                 Node(name=name,
@@ -176,7 +181,7 @@ class DataProcessingPipeline(PipelineElement):
     def join(
             self,
             name: str,
-            operator: PipelineElement, 
+            operator: PipelineElement,
             data_source: DataProcessingPipeline | None = None,
             name_mappings: Optional[Dict[str, str]] = None,
     ) -> DataProcessingPipeline:
@@ -202,20 +207,26 @@ class DataProcessingPipeline(PipelineElement):
 
     @classmethod
     def validate(
-            cls, processing_graph: ProcessingGraph, metadata: MetaData
+            cls, processing_graph: ProcessingGraph, metadata: dict[str, MetaData]
     ) -> Dict[str, Any]:
         """
         Validate the existing pipeline and collect the minimal input and output data specification.
 
         :param steps: processing steps
-        :param metadata: the input metadata for this pipeline
+        :param metadata: the input metadata for this pipeline as dictionary of input datasource to metadata
         :return: The minimal output specification for this pipeline
         """
-        # Keep track of the expected (minimal) specs at each step in the pipeline
-        current_specs: Optional[List[DataSpecification]] = copy.deepcopy(
-            metadata.columns
-        )
-        for node in processing_graph.nodes():
+        processing_graph.clear_state()
+
+        current_specs: dict[list[DataSpecification]] = {}
+        for ds_name, ds_metadata in metadata.items():
+            # Keep track of the expected (minimal) specs at each step in the pipeline
+            current_specs[ds_name] = copy.deepcopy(
+                ds_metadata.columns
+            )
+
+        current_node_output_spec = {} # key -> node uuid
+        for idx, node in enumerate(processing_graph.nodes(), start=1):
             if node.name is None:
                 raise ValueError(
                     f"{cls.__name__}.validate: missing name processing step"
@@ -227,21 +238,46 @@ class DataProcessingPipeline(PipelineElement):
                     f" TransformerMixin requirements - no method 'fit_transform' found"
                 )
 
-            input_specs = node.transformer.input_specs
-            output_specs = node.transformer.output_specs
+            try:
+                logger.info("#{idx} validate {node}")
+                if node.name in current_specs and node.is_datasource():
+                    datasource = node.name
+                    md = MetaData(columns=current_specs[datasource], annotations=[])
+                    node_input_specs = list(node.transformer.input_specs.values())[0]
+                    fulfillment = md.get_fulfillment(expected_specs=node_input_specs)
+                    if not fulfillment.is_met():
+                        raise RuntimeError(
+                            f"{cls.__name__}.validate: Input requirements are not fulfilled (for datasource '{node.transformer}'). "
+                            f"Current input available (at step '{node.name}'): {fulfillment}"
+                        )
+                    node.validation_output_spec = DataSpecification.merge_lists(node_input_specs,
+                                                                                current_specs[datasource])
+                    current_node_output_spec = node.validation_output_spec
+                else:
+                    for i in node.inputs():
+                        for from_node,to_node,data in processing_graph._graph.in_edges(node, data=True):
+                            slot = data['slot']
 
-            md = MetaData(columns=current_specs, annotations=[])
-            fulfillment = md.get_fulfillment(expected_specs=input_specs)
-            if not fulfillment.is_met():
-                raise RuntimeError(
-                    f"{cls.__name__}.validate: Input requirements are not fulfilled. "
-                    f"Current input available (at step '{node.name}'): {fulfillment}"
-                )
+                            md = MetaData(columns=from_node.validation_output_spec, annotations=[])
+                            fulfillment = md.get_fulfillment(expected_specs=node.transformer.input_specs[slot])
+                            if not fulfillment.is_met():
+                                raise RuntimeError(
+                                    f"{cls.__name__}.validate: Input requirements are not fulfilled {node} (for {slot=}). "
+                                     f"Current input available (at step '{node.name}'): {fulfillment}"
+                                )
 
-            current_specs = DataSpecification.merge_lists(current_specs, input_specs)
-            current_specs = DataSpecification.merge_lists(current_specs, output_specs)
+                            if not node.validation_output_spec:
+                                node.validation_output_spec = DataSpecification.merge_lists(from_node.validation_output_spec, node.transformer.output_specs)
+                            else:
+                                node.validation_output_spec = DataSpecification.merge_lists(node.transformer.output_specs, node.validation_output_spec)
 
-        return {"processing_graph": processing_graph, "output_spec": current_specs}
+                            current_node_output_spec = node.validation_output_spec
+            except Exception as e:
+                msg = ''.join(tc.format_exception(e)[-2:])
+                raise RuntimeError(f"Validation of step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}"
+                                   f"{msg}")
+
+        return {"processing_graph": processing_graph, "output_spec": node.validation_output_spec}
 
     def save(self, dir: Union[str, Path]) -> Path:
         """
@@ -358,6 +394,7 @@ class DataProcessingPipeline(PipelineElement):
             raise RuntimeError("DataProcessingPipeline.prepare: missing dataframes")
 
         # At this stage, ensure that the dataframes conforms to their metadata
+        metadata = OrderedDict()
         for name, df in dataframes.items():
             try:
                 df.validate_metadata()
@@ -370,21 +407,24 @@ class DataProcessingPipeline(PipelineElement):
                     f" -- {e}"
                 ) from e
 
-        # The pipeline will define a name mapping (only for items in its interface)
-        for k, v in self._name_mappings.items():
-            for node in self.processing_graph:
-                pipeline_element = node.transformer
+            # The pipeline will define a name mapping (only for items in its interface)
+            if name in self._name_mappings:
+                for k, v in self._name_mappings[name].items():
+                    for node in self.processing_graph:
+                        pipeline_element = node.transformer
 
-                input_columns = [x.name for x in pipeline_element.input_specs]
-                output_columns = [x.name for x in pipeline_element.output_specs]
+                        input_columns = [x.name for x in pipeline_element.input_specs]
+                        output_columns = [x.name for x in pipeline_element.output_specs]
 
-                columns = input_columns + output_columns
-                for x in columns:
-                    if x == k:
-                        pipeline_element.name_mappings[x] = v
+                        columns = input_columns + output_columns
+                        for x in columns:
+                            if x == k:
+                                pipeline_element.name_mappings[name][x] = v
+
+            metadata[name] = df.metadata
 
         validation_result = self.validate(processing_graph=self.processing_graph,
-                                          metadata=df.metadata)
+                                          metadata=metadata)
         self.is_ready = True
 
         self.processing_graph = validation_result["processing_graph"]
@@ -403,7 +443,7 @@ class DataProcessingPipeline(PipelineElement):
         :param df: The input dataframe
         :returns: The transformed dataframe
         """
-        dataframes = { '__default__': df }
+        dataframes = { DAMAST_DEFAULT_DATASOURCE: df }
         for x in self.processing_graph.get_joins():
             if x.name not in kwargs:
                 raise RuntimeError("DataProcessingPipeline.transform: "
@@ -440,19 +480,23 @@ class DataProcessingPipeline(PipelineElement):
         return adf
 
     def _run(self, dataframes: dict[str, AnnotatedDataFrame]):
-        df = dataframes["__default__"]
         for idx, node in enumerate(self.processing_graph.nodes(), start=1):
+            # ensure clean state
+            if node.result:
+                self.processing_graph.clear_state()
+
             try:
-                if node.name in dataframes:
-                    df = node.transformer.fit_transform(df, dataframes[node.name])
+                logger.info("#{idx} run {node}")
+                if node.name in dataframes and node.is_datasource():
+                    node.result = node.transformer.fit_transform(dataframes[node.name])
+                    AnnotatedDataFrame.ensure_type(node.result)
                 else:
-                    df = node.transformer.fit_transform(df)
-                AnnotatedDataFrame.ensure_type(df)
+                    node.result = self.processing_graph.execute(node)
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
                 raise RuntimeError(f"Step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}\n\
                         {msg}")
-        return df
+        return node.result
 
 
     def on_transform_start(self,
@@ -466,7 +510,7 @@ class DataProcessingPipeline(PipelineElement):
         if hasattr(step, "transform_start"):
             return
 
-        _log.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
+        logger.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
         start_time = datetime.now(timezone.utc)
         setattr(step, "transform_start", start_time)
 
@@ -491,7 +535,7 @@ class DataProcessingPipeline(PipelineElement):
         end_time = datetime.now(timezone.utc)
         delta = (end_time - start).total_seconds()
         delattr(step, "transform_start")
-        _log.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: "
+        logger.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: "
                   f"{delta} seconds, {adf.shape[0]} remaining rows)")
 
         step_name = self.processing_graph[step.uuid].name

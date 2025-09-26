@@ -4,6 +4,7 @@ __all__ = [
     "DECORATED_INPUT_SPECS",
     "DECORATED_OUTPUT_SPECS",
 ]
+DAMAST_DEFAULT_DATASOURCE = "df"
 
 DECORATED_DESCRIPTION = "_damast_description"
 """Attribute description for :func:`describe`"""

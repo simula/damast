@@ -1,23 +1,24 @@
-from __future__ import annotations
-
 import functools
 import inspect
+from collections import OrderedDict
+
 from damast.core.dataframe import AnnotatedDataFrame
-from .metadata import ArtifactSpecification, DataSpecification
-from .transformations import PipelineElement
 
 from .constants import (
-    DECORATED_DESCRIPTION,
+    DAMAST_DEFAULT_DATASOURCE,
     DECORATED_ARTIFACT_SPECS,
+    DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
-    DECORATED_OUTPUT_SPECS
-)
+    DECORATED_OUTPUT_SPECS,
+    )
+from .metadata import ArtifactSpecification, DataSpecification
+from .transformations import PipelineElement
 
 
 def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     """
     Extract the dataframe from positional or keyword arguments
-
+    :param datasource: the expected name of the datasource
     :param args: positional arguments
     :param kwargs: keyword arguments
     :return: The annotated data frame
@@ -25,15 +26,24 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     :raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
     """
     _df: AnnotatedDataFrame
-    if len(args) >= 2 and isinstance(args[1], AnnotatedDataFrame):
-        _df = args[1]
-    elif "df" not in kwargs:
-        raise KeyError("Missing keyword argument 'df' to define the AnnotatedDataFrame")
-    elif not isinstance(kwargs["df"], AnnotatedDataFrame):
-        raise TypeError("Argument 'df' is not an AnnotatedDataFrame")
+
+    arguments = kwargs.copy()
+    if 'datasource_argname' in arguments:
+        argname = arguments['datasource_argname']
     else:
-        _df = kwargs["df"]
-    return _df
+        argname = DAMAST_DEFAULT_DATASOURCE
+
+    arg_index = 0
+    for parameter in inspect.signature(args[0].transform).parameters:
+        if parameter not in kwargs:
+            arg_index += 1
+            arguments[parameter] = args[arg_index]
+
+    datasource = arguments[argname]
+    if not isinstance(datasource, AnnotatedDataFrame):
+        raise TypeError(f"Argument {argname} is not an AnnotatedDataFrame")
+
+    return datasource
 
 def describe(description: str):
     """
@@ -51,7 +61,7 @@ def describe(description: str):
     return decorator
 
 
-def input(requirements: Dict[str, Any]):
+def input(requirements: dict[str, any], label: str | None = None):
     """
     Specify the input for the decorated function.
 
@@ -60,24 +70,46 @@ def input(requirements: Dict[str, Any]):
     :param requirements: List of input requirements
     """
 
+    if label is None:
+        label = DAMAST_DEFAULT_DATASOURCE
+
     required_input_specs = DataSpecification.from_requirements(
         requirements=requirements
     )
 
     def decorator(func):
-        setattr(func, DECORATED_INPUT_SPECS, required_input_specs)
+        if not hasattr(func, DECORATED_INPUT_SPECS):
+            setattr(func, DECORATED_INPUT_SPECS, OrderedDict())
+
+        input_specs = getattr(func, DECORATED_INPUT_SPECS)
+        if label in input_specs:
+            raise KeyError(f"input for '{label}' has already been specified")
+
+        parameters = list(inspect.signature(func).parameters.keys())
+        if label not in parameters:
+            for x,_ in parameters:
+                if x == label:
+                    break
+
+                if x not in input_specs:
+                    raise KeyError(f"input for '{x}' unknown, but needs to be before '{label}' - please validate decorator order")
+
+        input_specs[label] = required_input_specs
 
         @functools.wraps(func)
         def check(*args, **kwargs):
-            _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
+            _df: AnnotatedDataFrame = _get_dataframe(*args, datasource_argname=label, **kwargs)
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
 
             pipeline_element = args[0]
-            fulfillment = _df.get_fulfillment(expected_specs=pipeline_element.input_specs)
+            fulfillment = _df.get_fulfillment(expected_specs=pipeline_element.input_specs[label])
             if fulfillment.is_met():
                 if hasattr(pipeline_element, "parent_pipeline"):
-                    getattr(pipeline_element, "parent_pipeline").on_transform_start(pipeline_element, adf=_df)
+                    # if this is the last datasource parameter, this is also the last input decorators
+                    # so the transform can start
+                    if label == parameters[-1]:
+                        getattr(pipeline_element, "parent_pipeline").on_transform_start(pipeline_element, adf=_df)
                 return func(*args, **kwargs)
 
             raise RuntimeError(
@@ -89,7 +121,7 @@ def input(requirements: Dict[str, Any]):
     return decorator
 
 
-def output(requirements: Dict[str, Any]):
+def output(requirements: dict[str, any]):
     """
     Specify the output for the decorated function.
 
@@ -164,7 +196,7 @@ def output(requirements: Dict[str, Any]):
     return decorator
 
 
-def artifacts(requirements: Dict[str, Any]):
+def artifacts(requirements: dict[str, any]):
     """
     Specify the output for the decorated function.
 

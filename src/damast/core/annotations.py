@@ -8,11 +8,10 @@ Module to define Annotation object for data specification
 # SPDX-License-Identifier:    BSD-3-Clause
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Union
-
-import logging
 
 __all__ = ["Annotation", "Change", "History"]
 

@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-import networkx as nx
+import inspect
 import uuid as uuid_module
-from damast.core.transformations import PipelineElement
+
+import networkx as nx
+
 from damast.core.formatting import DEFAULT_INDENT
-from .decorators import (
-    artifacts,
-    describe,
-    output,
-    input
-)
+from damast.core.transformations import PipelineElement
+
+from .decorators import DAMAST_DEFAULT_DATASOURCE, artifacts, describe, input, output
+
 
 class DataSource(PipelineElement):
+    """
+    PipelineElement that marks a datasource, e.g.,
+    an annotated dataframe that needs to be processed
+    """
     def __init__(self):
         pass
 
-    @describe("Node for DataSource")
+    @describe("Node for marking a plain data entry")
     @input({})
     @output({})
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
@@ -26,6 +30,11 @@ class Node:
     name: str
     transformer: PipelineElement
 
+    #: Cache computation results
+    result: AnnotatedDataFrame
+    #: Cache validation results
+    validation_output_spec: list[DataSpecification]
+
     def __init__(self, name: str, transformer: PipelineElement, uuid: str | None = None):
         self.name = name
         self.transformer = transformer
@@ -35,9 +44,21 @@ class Node:
         else:
             self.transformer.set_uuid(uuid)
 
-
     def __repr__(self):
         return f"name={self.name} {self.transformer.__class__.__name__} (uuid={self.uuid})"
+
+    def inputs(self) -> list[str]:
+        """
+        Get all inputs for AnnotatedDataFrame
+        """
+        inputs = []
+        for x, y in inspect.signature(self.transformer.transform).parameters.items():
+            if y.annotation == 'AnnotatedDataFrame' or y.annotation.__name__ == 'AnnotatedDataFrame':
+                inputs.append(x)
+        return inputs
+
+    def is_datasource(self) -> bool:
+        return type(self.transformer) == DataSource
 
     @property
     def uuid(self):
@@ -75,10 +96,27 @@ class ProcessingGraph:
     _root_node: Node
     _leaf_node: Node
 
-    def __init__(self):
+    def __init__(self, with_datasource: bool = True):
         self._graph = nx.DiGraph()
-        self._leaf_node = None
         self._root_node = None
+        self._leaf_node = None
+
+        if with_datasource:
+            self.add_datasource()
+
+    def add_datasource(self):
+        """
+        Add a datasource node as root node to the graph
+        (only if the root node has not been set)
+        """
+        if self._root_node:
+            raise RuntimeError("ProcessingGraph.add_datasource: adding a "
+                               " datasource is only possible for an empty graph")
+
+        self._root_node = Node(DAMAST_DEFAULT_DATASOURCE, DataSource())
+        self._graph.add_node(self._root_node)
+
+        self._leaf_node = self._root_node
 
     def __getitem__(self, uuid: str):
         for n in self._graph.nodes():
@@ -92,14 +130,19 @@ class ProcessingGraph:
         yield "edges", [{'from': str(x[0].uuid), 'to': str(x[1].uuid)} for x in self._graph.edges()]
 
     @classmethod
-    def from_dict(cls, data: dict[str, any]): 
-        if 'nodes' not in data: 
+    def from_dict(cls, data: dict[str, any]):
+        """
+        Load the graph from dictionary containing nodes and edges.
+        Note, that no internal states can be loaded.
+        """
+        if 'nodes' not in data:
             raise KeyError("ProcessingGraph.from_dict: missing 'nodes'")
 
-        if 'edges' not in data: 
+        if 'edges' not in data:
             raise KeyError("ProcessingGraph.from_dict: missing 'edges'")
 
-        graph = cls()
+        graph = cls(with_datasource=False)
+
         for node_dict in data['nodes']:
             node = Node.from_dict(node_dict)
             graph.add(node)
@@ -113,46 +156,78 @@ class ProcessingGraph:
         return graph
 
     def __eq__(self, other: ProcessingGraph) -> bool:
+        """
+        Compares the underlying graphs
+        """
         return nx.utils.graphs_equal(self._graph, other._graph)
 
     def add(self, node: Node):
+        """
+        Add (or rather appaned) a node to the current graph
+        It will attach to the graph's current leaf node
+        """
         if not self._root_node:
             self._root_node = node
 
         self._graph.add_node(node)
-        # automatically create an edge between the nodes
-        if self._leaf_node is not None:
-            self._graph.add_edge(self._leaf_node, node)
 
+        required_slots = node.inputs()
+        if len(required_slots) != 1:
+            raise RuntimeError(f"{node} needs to have exactly one dataframe input argument",
+                               " found {required_slots}")
+
+        if self._leaf_node is not None:
+            self._graph.add_edge(self._leaf_node, node, slot=required_slots[0])
         self._leaf_node = node
 
     def join(self, name: str, operator: PipelineOperator, processing_graph: ProcessingGraph | None = None):
+        """
+        Join another processing graph into the current one.
+        This will an new 'join' node for the given operator.
+        If no processing_graph is given, then a DataSource node will be created and added to the
+        graph label by :name
+        """
         leaf_node = None
+
+        # if this is to join a processing graph
+        # add all nodes and edges
         if processing_graph:
             for n in processing_graph.nodes():
+                # Reset the source node of this processing graph
+                # to the name of this join
+                if n.is_datasource():
+                    n.name = name
+
                 self._graph.add_node(n)
                 if self._graph.out_degree(n) == 0:
                     leaf_node = n
 
-            for e in processing_graph.edges():
-                self._graph.add_edge(e)
+            for from_n, to_n, data in processing_graph.edges(data=True):
+                self._graph.add_edge(from_n, to_n, **data)
 
         if not leaf_node:
             # we require at least a data loader stub node
-            leaf_node = Node(f"__{name}__", DataSource())
+            # by convention name after the 'join' node
+            leaf_node = Node(name, DataSource())
             self._graph.add_node(leaf_node)
 
+        # we consider order here and assume max 2
         node = Node(name, operator)
+        required_slots = node.inputs()
+        if len(required_slots) != 2:
+            raise RuntimeError(f"ProcessingGraph.join: requires exactly two dataframe argument, but found {required_slots}")
+
         self._graph.add_node(node)
 
-        self._graph.add_edge(leaf_node, node)
-        self._graph.add_edge(self._leaf_node, node)
+        # Allow to point to the argument in the transformer / operator which will
+        # receive the input from the connection predecessor
+        self._graph.add_edge(leaf_node, node, slot=required_slots[1])
+        self._graph.add_edge(self._leaf_node, node, slot=required_slots[0])
 
         self._leaf_node = node
 
     def to_str(self, indent_level = 0):
         return '\n'.join(list(nx.generate_network_text(self._graph, ascii_only=True)))
-
         data = ""
         #nx.write_network_text(self._graph)
         #reversed_graph = self._graph.reverse()
@@ -163,14 +238,56 @@ class ProcessingGraph:
         ##nx.write_network_text(reversed_graph)
         #return data
 
-    def get_joins(self):
+    def get_joins(self, in_degree: int = 2):
+        """
+        Get nodes, that have an in_degree of :degree (default is two)
+        """
+        if in_degree < 2:
+            raise ValueError("ProcessingGraph.get_joins: no join nodes with an in degree"
+                             " of less than 2 possible")
         joins = []
         for n in self._graph.nodes():
-            if self._graph.in_degree(n) == 2:
+            if self._graph.in_degree(n) == in_degree:
                 joins.append(n)
         return joins
 
     def __getattr__(self, name):
+        # forward calls to the underlying graph
         return getattr(self._graph, name)
+
+    def inputs_ready(self, node: Node) -> bool:
+        """
+        Check if the results from predecessor nodes that this
+        node computation depends upon are ready for ingestion
+        """
+        for i in node.inputs():
+            for x,y in self._graph.in_edges(node):
+                if not hasattr(x, 'result') or x.result is None:
+                    return False
+
+        return True
+
+    def clear_state(self):
+        """
+        Clear the internal state including computation and validation results
+        """
+        for n in self._graph.nodes():
+            n.result = None
+            n.validation_output_spec = None
+
+    def execute(self, node: Node) -> AnnotatedDataFrame:
+        """
+        Run the transformation of this node
+        :raise RuntimeError when the results from other nodes are not yet available
+        """
+        kwargs = {}
+        if not self.inputs_ready(node):
+            raise RuntimeError(f"ProcessingGraph.node: {node} inputs are not ready")
+
+        for i in node.inputs():
+            for from_node,to_node,data in self._graph.in_edges(node, data=True):
+                if data['slot'] == i:
+                    kwargs[data['slot']] = from_node.result
+        return node.transformer.fit_transform(**kwargs)
 
 
