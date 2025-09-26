@@ -623,8 +623,8 @@ class DataSpecification:
 
             if self.value_range:
                 if self.missing_value is None:
-                    warnings.warn(
-                        f"Filtering out for column '{column_name}' values that are out of range."
+                    logger.info(
+                            f"Filtering out for column '{column_name}' values that are out of range: {self.value_range}."
                     )
                     xdf._dataframe = xdf._dataframe.filter(
                             (pl.col(column_name) >= self.value_range.min) &
@@ -651,7 +651,7 @@ class DataSpecification:
                     if isinstance(self.value_range, MinMax):
                         self.value_range = self.value_range.merge(MinMax(min_value, max_value))
                 else:
-                     warnings.warn(
+                     logger.info(
                          f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
                      )
                      self.value_range = MinMax(min_value, max_value)
