@@ -183,7 +183,7 @@ class Change:
         timestamp = datetime.fromisoformat(data["timestamp"])
         if timestamp.tzinfo is None:
             logger.info("Change.from_dict: encountered non-timezone-aware timestamp - assuming UTC")
-            timestamp.replace(tzinfo=timezone.utc)
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
 
         return cls(
             title=data["title"],

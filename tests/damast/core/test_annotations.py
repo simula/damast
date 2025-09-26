@@ -1,5 +1,5 @@
 import time
-from datetime import datetime as dt
+import datetime as dt
 
 import pytest
 
@@ -31,9 +31,16 @@ def test_annotation():
                            value=a.value)
 
 def test_change():
-    created = dt.fromisoformat("2024-01-01 00:00:01")
+    with pytest.raises(ValueError, match="timezone-aware"):
+        c = Change(title="a-change-name",
+                   description="a-change-description",
+                   timestamp=dt.datetime.now()
+                   )
+
+    created = dt.datetime.fromisoformat("2024-01-01 00:00:01")
+    created = created.replace(tzinfo=dt.timezone.utc)
     timestamp_txt = created.strftime(Change.TIMESTAMP_FORMAT)
-    timestamp = dt.strptime(timestamp_txt, Change.TIMESTAMP_FORMAT)
+    timestamp = dt.datetime.strptime(timestamp_txt, Change.TIMESTAMP_FORMAT)
 
     c = Change(title="a-change-name",
                description="a-change-description",
