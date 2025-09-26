@@ -376,7 +376,7 @@ class DataSpecification:
             exceptions.append(e)
 
         try:
-            m = re.match("(.*)\((.*)\)", type_name)
+            m = re.match(r"(.*)\((.*)\)", type_name)
             call_args = None
             if m is not None:
                 type_name = m.group(1)
