@@ -10,6 +10,8 @@ from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.utils.io import Archive
 
+from damast.utils import fromisoformat
+
 logger = logging.getLogger(__name__)
 
 class DataInspectParser(BaseParser):
@@ -51,7 +53,7 @@ class DataInspectParser(BaseParser):
 
         m = re.match(r"datetime\((.*)\)", arg)
         if m:
-            return f"dt.datetime.fromisoformat({m.group(1)})"
+            return f"damast.utils.fromisoformat({m.group(1)})"
 
         return arg
 

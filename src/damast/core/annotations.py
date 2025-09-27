@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
+from damast.utils import fromisoformat
+
 __all__ = ["Annotation", "Change", "History"]
 
 logger = logging.getLogger(__name__)
@@ -179,7 +181,7 @@ class Change:
         :param data: Input dictionary
         :return: A change object
         """
-        timestamp = datetime.fromisoformat(data["timestamp"])
+        timestamp = fromisoformat(data["timestamp"])
         if timestamp.tzinfo is None:
             logger.info("Change.from_dict: encountered non-timezone-aware timestamp - assuming UTC")
             timestamp = timestamp.replace(tzinfo=timezone.utc)

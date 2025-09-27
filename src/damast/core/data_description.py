@@ -12,6 +12,8 @@ import numpy as np
 import polars as pl
 from pydantic import BaseModel, Field
 
+from damast.utils import fromisoformat
+
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 
 
@@ -32,7 +34,7 @@ class DataElement:
             dtype = dtype.to_python()
         elif isinstance(dtype, pl.datatypes.Datetime):
             if type(value) == str:
-                value = dt.datetime.fromisoformat(value)
+                value = fromisoformat(value)
             return dtype.to_python().fromtimestamp(value.timestamp())
 
         return dtype(value)
