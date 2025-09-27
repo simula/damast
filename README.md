@@ -36,6 +36,35 @@ class LatLonTransformer(PipelineElement):
         return _df
 ```
 
+Pipeline can also be designed with join / merge operations:
+
+```
+class JoinByTimestamp(PipelineElement):
+    def __init__(self):
+        pass
+
+    @damast.core.describe("Join data for matching timestamp")
+    @damast.core.input({
+                           "timestamp": {},
+                           "lon": {},
+                           "lat": {},
+                       })
+    @damast.core.input({
+                            "timestamp": {},
+                            "lat": {},
+                            "lon": {},
+                            "event_type": {}
+                        }, label='other'
+    )
+    @damast.core.output({ "event_type": {}})
+    def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        other_timestamp = self.get_name('timestamp', datasource='other')
+        df_timestamp = self.get_name('timestamp')
+
+        df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+        return df
+```
+
 For detailed examples, check the documentation at: https://simula.github.io/damast
 
 ## Installation and Development Setup
