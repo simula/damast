@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import importlib
 import inspect
+import os
 import re
 import tempfile
 import traceback as tc
@@ -17,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import networkx as nx
 import yaml
+from tqdm import tqdm
 
 import damast.version
 from damast.core.processing_graph import Node, ProcessingGraph
@@ -432,7 +434,10 @@ class DataProcessingPipeline(PipelineElement):
 
         return self
 
-    def transform(self, df: AnnotatedDataFrame, **kwargs) -> AnnotatedDataFrame:
+    def transform(self,
+                  df: AnnotatedDataFrame,
+                  verbose: bool = False,
+                  **kwargs) -> AnnotatedDataFrame:
         """
         Apply pipeline on given annotated dataframe
 
@@ -473,14 +478,20 @@ class DataProcessingPipeline(PipelineElement):
         else:
             in_dataframes = {x: copy.deepcopy(y) for x,y in dataframes.items()}
 
-        adf = self._run(in_dataframes)
+        adf = self._run(in_dataframes, verbose=verbose)
         assert isinstance(adf, AnnotatedDataFrame)
 
         adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
         return adf
 
-    def _run(self, dataframes: dict[str, AnnotatedDataFrame]):
-        for idx, node in enumerate(self.processing_graph.nodes(), start=1):
+    def _run(self,
+             dataframes: dict[str, AnnotatedDataFrame],
+             verbose: bool = True) -> AnnotatedDataFrame:
+        iterator = enumerate(self.processing_graph.nodes(), start=1)
+        if not verbose:
+            iterator = tqdm(iterator, desc="Step ", total=len(self.processing_graph))
+
+        for idx, node in iterator:
             # ensure clean state
             if node.result:
                 self.processing_graph.clear_state()
@@ -492,8 +503,20 @@ class DataProcessingPipeline(PipelineElement):
                     AnnotatedDataFrame.ensure_type(node.result)
                 else:
                     node.result = self.processing_graph.execute(node)
+
+                if verbose:
+                    print(f"Preview step #{idx} {node} (1 row)")
+                    print(f"{node.result.head(1).collect()}")
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
+                for slot, df in self.processing_graph.get_current_inputs(node):
+                    msg += "{slot=} "
+                    msg += "     {df.head(1).collect)}"
+
+                if 'DAMAST_INTERACTIVE' in os.environ:
+                    if str(os.environ['DAMAST_INTERACTIVE']).lower() == "true":
+                        breakpoint()
+
                 raise RuntimeError(f"Step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}\n\
                         {msg}")
         return node.result

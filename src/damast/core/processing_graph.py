@@ -267,6 +267,17 @@ class ProcessingGraph:
 
         return True
 
+    def get_current_inputs(self, node: Node) -> bool:
+        """
+        Get the current inputs
+        """
+        inputs = {}
+        for i in node.inputs():
+            for x,y,data in self._graph.in_edges(node, data=True):
+                if hasattr(x, 'result'):
+                    inputs[data['slot']] = x.result
+        return inputs
+
     def clear_state(self):
         """
         Clear the internal state including computation and validation results
@@ -274,6 +285,9 @@ class ProcessingGraph:
         for n in self._graph.nodes():
             n.result = None
             n.validation_output_spec = None
+
+    def __len__(self) -> int:
+        return len(self._graph)
 
     def execute(self, node: Node) -> AnnotatedDataFrame:
         """
