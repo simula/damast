@@ -18,6 +18,7 @@ import damast.core
 from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
 from damast.core.types import DataFrame, XDataFrame
+from damast.utils import fromisoformat
 
 __all__ = [
     "AddDeltaTime",
@@ -251,7 +252,7 @@ class AddDeltaTime(PipelineElement):
     @damast.core.describe("Compute the delta time in s between two subsequent timestamps")
     @damast.core.input({"group": {"representation_type": int},
                         "time_column": {}})
-    @damast.core.output({"delta_time": {"representation_type": float}})
+    @damast.core.output({"delta_time": {"representation_type": float, "unit": "s"}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
         dataframe = df._dataframe
 
@@ -284,14 +285,13 @@ def convert_to_datetime(date_string: str) -> float:
     """
     Convert date-time to timestamp (float)
 
-    :param date_string: String representation of date, expected format is
-        ``YYYY-MM-DD HH:MM:SS``
+    :param date_string: String representation of date, expected format is of iso8601 format
     :return: Time-stamp as float. Returns `nan`
     """
     try:
         return datetime.datetime.timestamp(
-            datetime.datetime.strptime(
-                date_string, "%Y-%m-%d %H:%M:%S"))
+            fromisoformat(date_string)
+        )
     except TypeError:
         return float(np.nan)
 
