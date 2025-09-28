@@ -8,9 +8,8 @@ import polars as pl
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.utils.io import Archive
-
 from damast.utils import fromisoformat
+from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
 

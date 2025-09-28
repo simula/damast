@@ -17,8 +17,8 @@ from damast.core.decorators import (
     )
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer, Transformer
-from damast.data_handling.transformers.cycle_transformer import CycleTransformer
 from damast.core.types import XDataFrame
+from damast.data_handling.transformers.cycle_transformer import CycleTransformer
 
 
 class DataProcessorA(PipelineElement):
