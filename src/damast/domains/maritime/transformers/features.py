@@ -96,7 +96,7 @@ class Speed(PipelineElement):
     """
     @damast.core.describe("Compute the speed")
     @damast.core.input({"delta_distance": {"unit": "km"},
-                        "delta_time": {}})
+                        "delta_time": {"unit": "s"}})
     @damast.core.output({"speed": {"description": "speed of object", "unit": "km / h"}})
     def transform(self,
                   df: AnnotatedDataFrame) -> AnnotatedDataFrame:
@@ -109,7 +109,6 @@ class Speed(PipelineElement):
         delta_time = self.get_name("delta_time")
 
         df._dataframe = dataframe.with_columns(
-                (pl.col(delta_distance) / (pl.col(delta_time).dt.total_seconds()/3600)).alias("speed")
-                        )
-
+                (pl.col(delta_distance) / (pl.col(delta_time)/3600.0)).alias("speed")
+        )
         return df
