@@ -293,7 +293,7 @@ class AnnotatedDataFrame(XDataFrame):
     def load_parquet(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
             _log.info(f"Loading parquet: {files=}")
             metadata = None
-            df = polars.scan_parquet(files, allow_missing_columns=True)
+            df = polars.scan_parquet(files, missing_columns='insert')
 
             metadata_per_file = {}
             for file in files:
