@@ -170,7 +170,7 @@ class DataProcessingPipeline(PipelineElement):
         transformer.set_parent(pipeline=self)
         if name_mappings is not None:
             if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
-                transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings }
+                transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings.copy() }
 
         self.processing_graph.add(
                 Node(name=name,
@@ -197,7 +197,7 @@ class DataProcessingPipeline(PipelineElement):
         """
         operator.set_parent(pipeline=self)
         if name_mappings is not None:
-            operator._name_mappings = name_mappings
+            operator._name_mappings = name_mappings.copy()
 
         self.processing_graph.join(
                 name=name,
@@ -384,7 +384,9 @@ class DataProcessingPipeline(PipelineElement):
         df._dataframe = df.dataframe.deserialize(filename)
         return df
 
-    def prepare(self, **dataframes) -> DataProcessingPipeline:
+    def prepare(self,
+                name_mappings: dict[str, dict[str, any]] | None = None,
+                **dataframes) -> DataProcessingPipeline:
         """
         Prepare the pipeline by applying necessary name mapping and validating all steps that define the pipeline.
 
@@ -394,6 +396,16 @@ class DataProcessingPipeline(PipelineElement):
         """
         if not dataframes:
             raise RuntimeError("DataProcessingPipeline.prepare: missing dataframes")
+
+        pipeline = copy.deepcopy(self)
+
+        # Update the pipeline mapping with a temporary overlay
+        if name_mappings:
+            for df_name, df_name_mapping in name_mappings.items():
+                if df_name in pipeline.name_mappings:
+                    pipeline.name_mappings[df_name].update(name_mappings[df_name])
+                else:
+                    pipeline.name_mappings[df_name] = name_mappings[df_name]
 
         # At this stage, ensure that the dataframes conforms to their metadata
         metadata = OrderedDict()
@@ -410,32 +422,30 @@ class DataProcessingPipeline(PipelineElement):
                 ) from e
 
             # The pipeline will define a name mapping (only for items in its interface)
-            if name in self._name_mappings:
-                for k, v in self._name_mappings[name].items():
-                    for node in self.processing_graph:
+            if name in pipeline.name_mappings:
+                for k, v in pipeline.name_mappings[name].items():
+                    for node in pipeline.processing_graph.nodes():
                         pipeline_element = node.transformer
 
-                        input_columns = [x.name for x in pipeline_element.input_specs]
-                        output_columns = [x.name for x in pipeline_element.output_specs]
-
-                        columns = input_columns + output_columns
-                        for x in columns:
-                            if x == k:
-                                pipeline_element.name_mappings[name][x] = v
+                        for dataset, mapping in pipeline_element.name_mappings.items():
+                            for from_val, to_val in mapping.items():
+                                if to_val == k:
+                                    pipeline_element.name_mappings[dataset][from_val] = v
 
             metadata[name] = df.metadata
 
-        validation_result = self.validate(processing_graph=self.processing_graph,
+        validation_result = pipeline.validate(processing_graph=pipeline.processing_graph,
                                           metadata=metadata)
-        self.is_ready = True
 
-        self.processing_graph = validation_result["processing_graph"]
-        self._output_specs: List[DataSpecification] = validation_result["output_spec"]
+        pipeline.processing_graph = validation_result["processing_graph"]
+        pipeline._output_specs: List[DataSpecification] = validation_result["output_spec"]
 
-        return self
+        pipeline.is_ready = True
+        return pipeline
 
     def transform(self,
                   df: AnnotatedDataFrame,
+                  name_mappings: dict[str, dict[str,any]] | None = None,
                   verbose: bool = False,
                   **kwargs) -> AnnotatedDataFrame:
         """
@@ -464,8 +474,7 @@ class DataProcessingPipeline(PipelineElement):
                     f"got {type(df)}"
                 )
 
-        if not self.is_ready:
-            self.prepare(**dataframes)
+        pipeline = self.prepare(name_mappings=name_mappings, **dataframes)
 
         for name, df in dataframes.items():
             if df.is_empty():
@@ -473,12 +482,12 @@ class DataProcessingPipeline(PipelineElement):
                     f"{self.__class__.__name__}.transform: there is no data available to transform using datasource '{name}'"
             )
 
-        if self._inplace_transformation:
+        if pipeline._inplace_transformation:
             in_dataframes = dataframes
         else:
             in_dataframes = {x: copy.deepcopy(y) for x,y in dataframes.items()}
 
-        adf = self._run(in_dataframes, verbose=verbose)
+        adf = pipeline._run(in_dataframes, verbose=verbose)
         assert isinstance(adf, AnnotatedDataFrame)
 
         adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
@@ -562,11 +571,11 @@ class DataProcessingPipeline(PipelineElement):
                   f"{delta} seconds, {adf.shape[0]} remaining rows)")
 
         step_name = self.processing_graph[step.uuid].name
-        self._processing_stats[step_name] = {
+        self._processing_stats[step_name].update({
             "processing_time_in_s": delta,
             "output_dataframe_length": adf.shape[0],
             "end_time": end_time
-        }
+        })
 
     def __repr__(self) -> str:
         """
@@ -578,6 +587,15 @@ class DataProcessingPipeline(PipelineElement):
 
     def to_str(self, indent_level: int = 0) -> str:
         return self.processing_graph.to_str(indent_level=indent_level)
+
+    def __deepcopy__(self, memo) -> DataProcessingPipeline:
+        pipeline = copy.copy(self)
+
+        pipeline._name_mappings = copy.deepcopy(self._name_mappings)
+        pipeline._processing_stats = copy.deepcopy(self._processing_stats)
+        pipeline.processing_graph = copy.deepcopy(self.processing_graph)
+        pipeline._output_specs = [copy.deepcopy(x) for x in self._output_specs]
+        return pipeline
 
 def polar_data_type_constructor(loader, tag_suffix, node):
     module_whitelist = ["polars.datatypes.classes"]

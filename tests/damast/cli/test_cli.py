@@ -68,7 +68,7 @@ def test_subparser(name, klass, script_runner):
 def test_inspect(data_path, filename, script_runner):
     result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename)])
 
-    assert re.search("Loading dataframe \(1 files\)", result.stdout) is not None, "Process dataframe"
+    assert re.search(r"Loading dataframe \(1 files\)", result.stdout) is not None, "Process dataframe"
     assert re.search("shape:", result.stdout) is not None, "Show dataframe"
 
 @pytest.mark.parametrize("filename, spec_filename", [
@@ -193,7 +193,7 @@ def test_annotate_representation_type(tmp_path, script_runner):
     result = script_runner.run(['damast', "inspect", "-f", expected_data_file])
 
     # The new representation type should now be str
-    assert re.search("a:\n\s+is_optional: False\n\s+representation_type: str",result.stdout)
+    assert re.search(r"a:\n\s+is_optional: False\n\s+representation_type: str",result.stdout)
     assert result.returncode == 0
 
 

@@ -42,9 +42,6 @@ class Transformer:
             return self.transform(df,other)
 
 class PipelineElement(Transformer):
-    """
-    Allow to get the reference to a parent pipeline
-    """
     #: Pipeline in which context this processor will be run
     parent_pipeline: DataProcessingPipeline
 
@@ -286,6 +283,11 @@ class PipelineElement(Transformer):
                 self.output_specs, indent_level=indent_level + 4
             )
         return data
+
+    def __deepcopy__(self, memo) -> PipelineElement:
+        new_element = copy.copy(self)
+        new_element._name_mappings = copy.deepcopy(self.name_mappings)
+        return new_element
 
 # Only for internal use
 class MultiCycleTransformer(Transformer):

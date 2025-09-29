@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import inspect
 import uuid as uuid_module
 
@@ -17,7 +18,7 @@ class DataSource(PipelineElement):
     an annotated dataframe that needs to be processed
     """
     def __init__(self):
-        pass
+        super().__init__()
 
     @describe("Node for marking a plain data entry")
     @input({})
@@ -288,6 +289,19 @@ class ProcessingGraph:
 
     def __len__(self) -> int:
         return len(self._graph)
+
+    def __deepcopy__(self, memo) -> ProcessingGraph:
+        new_graph = ProcessingGraph(with_datasource=False)
+        node_map = {}
+        for n in self._graph.nodes():
+            new_node = Node(name=f"{n.name}", transformer=copy.deepcopy(n.transformer), uuid=f"{n.uuid}")
+            new_graph.add_node(new_node)
+
+        for from_n, to_n, data in self._graph.edges(data=True):
+            new_graph.add_edge(new_graph[from_n.uuid], new_graph[to_n.uuid], **data.copy())
+
+        return new_graph
+
 
     def execute(self, node: Node) -> AnnotatedDataFrame:
         """

@@ -8,13 +8,59 @@ import polars as pl
 import pytest
 
 import damast.core
-from damast.core import units
+from damast.core import AnnotatedDataFrame, units
+from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.types import DataFrame, XDataFrame
+from damast.data_handling.transformers import (
+    AddDeltaTime,
+    AddTimestamp,
+    DropMissingOrNan,
+    )
 from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import CleanseAndSanitise, DataProcessing
 from damast.domains.maritime.data_specification import ColumnName
+from damast.domains.maritime.transformers.features import DeltaDistance, Speed
 
 logging.basicConfig(level=logging.INFO)
+
+class MyPipeline(DataProcessingPipeline):
+    def __init__(self,
+                 workdir: str | pathlib.Path,
+                 name: str = "my-pipeline",
+                 name_mappings: dict[str, str] = {}):
+        super().__init__(name=name,
+                         base_dir=workdir,
+                         name_mappings=name_mappings)
+        self.add("Timestamp",
+                 AddTimestamp(),
+                 name_mappings={
+                     "from": "date_time_utc",
+                     "to": "timestamp"
+                 }
+        )
+        self.add("Delta Time",
+                 AddDeltaTime(),
+                 name_mappings={
+                     "group": "mmsi",
+                     "time_column": "timestamp"
+                })
+
+        self.add("Delta Distance",
+                 DeltaDistance(x_shift=True, y_shift=True),
+                 name_mappings={
+                     "group": "mmsi",
+                     "sort": "timestamp",
+                     "x": "lat",
+                     "y": "lon",
+                     "out": "delta_distance",
+                })
+
+        self.add("Speed",
+                 Speed(),
+                 name_mappings={
+                     "delta_distance": "delta_distance",
+                     "delta_time": "delta_time",
+                })
 
 
 @pytest.fixture()
@@ -137,3 +183,47 @@ def test_data_processing(workdir,
     assert ColumnName.DISTANCE_CLOSEST_ANCHORAGE in processed_column_names
     assert ColumnName.HISTORIC_SIZE in processed_column_names
     assert ColumnName.HISTORIC_SIZE_REVERSE in processed_column_names
+
+def test_aggregate(data_path, tmp_path):
+    path = data_path / "test_ais.csv"
+    adf = AnnotatedDataFrame.from_file(path, metadata_required=False)
+
+    adf.metadata['lat'].unit = 'deg'
+    adf.metadata['lon'].unit = 'deg'
+
+    print("\nPRE-PROCESSING")
+    print(adf.collect().head(10))
+
+    pipeline = MyPipeline(workdir=tmp_path)
+    df = pipeline.transform(adf, verbose=True)
+
+    path = data_path / "test_ais.csv"
+
+def test_aggregate_with_name_mapping(data_path, tmp_path):
+    path = data_path / "test_ais.csv"
+    df = polars.read_csv(path, separator=";")
+    renamed_df = df.rename(lambda c: "latitude" if c == "lat" else c)
+    renamed_path = tmp_path / "test_ais.renamed.csv"
+
+    renamed_df.write_csv(renamed_path)
+
+    adf = AnnotatedDataFrame.from_file(renamed_path, metadata_required=False)
+
+    adf.metadata['latitude'].unit = 'deg'
+    adf.metadata['lon'].unit = 'deg'
+
+    print("\nPRE-PROCESSING")
+    print(adf.collect().head(10))
+    pipeline = MyPipeline(workdir=tmp_path)
+
+    with pytest.raises(RuntimeError):
+        pipeline.transform(adf, verbose=True)
+
+    assert not pipeline.name_mappings
+    df = pipeline.transform(adf, verbose=True, name_mappings={ 'df': {'lat': 'latitude'}})
+
+    # Name mappings are temporary, so
+    # ensure that not changes persist and affect following runs
+    assert not pipeline.name_mappings
+    with pytest.raises(RuntimeError):
+        pipeline.transform(adf, verbose=True)

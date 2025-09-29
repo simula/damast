@@ -313,18 +313,23 @@ def test_data_processing_valid_pipeline(lat_lon_dataframe, lat_lon_metadata, hei
     adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
                              metadata=lat_lon_metadata)
 
-    pipeline.prepare(df=adf)
+    prepared_pipeline_a = pipeline.prepare(df=adf)
+    prepared_pipeline_b = pipeline.prepare(df=adf)
 
-    assert pipeline.output_specs is not None
+    assert prepared_pipeline_a.processing_graph != prepared_pipeline_b.processing_graph
 
-    output_columns = [x.name for x in pipeline.output_specs]
+    with pytest.raises(RuntimeError, match="is not yet ready"):
+        assert pipeline.output_specs is None
+
+    assert prepared_pipeline_a.output_specs is not None
+    output_columns = [x.name for x in prepared_pipeline_a.output_specs]
     for column in ["longitude", "latitude",
                    "latitude_x", "latitude_y",
                    "delta_longitude", "delta_latitude",
                    "label"]:
         assert column in output_columns
 
-    representation = pipeline.to_str(indent_level=0)
+    representation = prepared_pipeline_a.to_str(indent_level=0)
     print("\n")
     print(representation)
     assert representation != ""
