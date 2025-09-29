@@ -1176,6 +1176,7 @@ class MetaData:
 
         raise KeyError(
             f"{self.__class__.__name__}.__getitem__: failed to find column by name '{column_name}'"
+            f" - known are {sorted([x.name for x in self.columns])}"
         )
 
     def get_fulfillment(self, expected_specs: List[DataSpecification]) -> Fulfillment:
