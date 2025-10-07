@@ -18,7 +18,9 @@ from damast.core.decorators import (
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer, Transformer
 from damast.core.types import XDataFrame
+from damast.utils import fromisoformat
 from damast.data_handling.transformers.cycle_transformer import CycleTransformer
+from damast.domains.maritime.math.spatial import great_circle_distance
 
 
 class DataProcessorA(PipelineElement):
@@ -157,6 +159,71 @@ class JoinByTimestamp(PipelineElement):
         df_timestamp = self.get_name('timestamp')
 
         df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+        return df
+
+class JoinSpatioTemporal(PipelineElement):
+    distance_in_km: float
+    before_time_in_s: float
+    after_time_in_s: float
+
+    def __init__(self,
+                 distance_in_km: float,
+                 before_time_in_s: float,
+                 after_time_in_s: float):
+        self.distance_in_km = distance_in_km
+        self.before_time_in_s = before_time_in_s
+        self.after_time_in_s = after_time_in_s
+        pass
+
+    @damast.core.describe("JoinSpatioTemporal")
+    @damast.core.input({
+                           "mmsi": {},
+                           "timestamp": { 'unit': 's'},
+                           "lon": { 'unit': 'deg'},
+                           "lat": { 'unit': 'deg' },
+                       })
+    @damast.core.input({
+                            "timestamp": { 'unit': 's'},
+                            "lat": { 'unit': 'deg' },
+                            "lon": { 'unit': 'deg' }
+                        }, label='other'
+    )
+    @damast.core.output({
+        'event_timestamp': { 'unit': 's' },
+        'event_type': {},
+        'event_delta_distance': { 'description': "Distance between vessel and event", 'unit': 'km'},
+        'event_delta_time': {},  #'description': "Timedelta between event and vessel message", 'unit': 's'},
+    })
+    def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        import polars as pl
+        import polars.selectors as cs
+
+        other_timestamp = self.get_name('timestamp', datasource='other')
+        df_timestamp = self.get_name('timestamp')
+
+        filtered_df = df.join_where(other._dataframe, \
+                                      (pl.col(df_timestamp) - self.before_time_in_s) <= pl.col(other_timestamp), \
+                                      (pl.col(df_timestamp) + self.after_time_in_s) >= pl.col(other_timestamp), \
+                                      great_circle_distance(pl.col(self.get_name('lat')),
+                                                            pl.col(self.get_name('lon')),
+                                                            pl.col(self.get_name('lat', datasource='other')),
+                                                            pl.col(self.get_name('lon', datasource='other'))) <= self.distance_in_km
+                    )
+        df._dataframe = df.join(filtered_df,
+                    how="left",
+                    left_on=[self.get_name('mmsi'), df_timestamp],
+                    right_on=[self.get_name('mmsi'), df_timestamp],
+                    suffix="_redundant",
+                    ).drop(cs.ends_with("_redundant"))
+
+        df._dataframe = df.with_columns(
+                  event_delta_distance = great_circle_distance(pl.col(self.get_name('lat')),
+                                        pl.col(self.get_name('lon')),
+                                        pl.col(self.get_name('lat', datasource='other')),
+                                        pl.col(self.get_name('lon', datasource='other'))
+                  ),
+                  event_delta_time = pl.col(other_timestamp) - pl.col(df_timestamp)
+                  )
         return df
 
 
@@ -570,3 +637,95 @@ def test_join_pipeline(data_path, tmp_path):
     assert len(joined_df) == 1
     for column in ["event_type", "lat", "latitude"]:
         assert column in joined_df.columns
+
+def test_join_spatio_temporal_pipeline(data_path, tmp_path):
+
+    from damast.data_handling.transformers import AddTimestamp
+
+
+    distance_in_km=50
+    after_time_in_s=3600*24*7
+    before_time_in_s=3600*24
+
+    event_pipeline = DataProcessingPipeline(name="event_preparation",
+                                      base_dir=tmp_path
+        ).add("event_timestamp",
+                 AddTimestamp(),
+                 name_mappings={
+                     "from": "timestamp",
+                     "to": "event_timestamp"
+                 }
+        )
+
+    pipeline = DataProcessingPipeline(name="ais_preparation",
+                                      base_dir=tmp_path
+        ).add("message_timestamp",
+                 AddTimestamp(),
+                 name_mappings={
+                     "from": "date_time_utc",
+                     "to": "message_timestamp"
+                 }
+        ).join("osint", JoinSpatioTemporal(
+                distance_in_km=distance_in_km,
+                after_time_in_s=after_time_in_s,
+                before_time_in_s=before_time_in_s,
+            ), data_source=event_pipeline,
+                  name_mappings = {
+                      'df': {
+                          "timestamp": "message_timestamp",
+                      },
+                      'other': {
+                          "timestamp": "event_timestamp",
+                          "lat": "latitude",
+                          "lon": "longitude",
+                      }
+                  },
+        )
+
+    ais_csv = data_path / "test_ais.csv"
+    ais_df = AnnotatedDataFrame.from_file(ais_csv)
+    ais_df.metadata['lon'].unit = 'deg'
+    ais_df.metadata['lat'].unit = 'deg'
+
+    osint_csv = data_path / "osint.csv"
+    osint_df = AnnotatedDataFrame.from_file(osint_csv, metadata_required=False)
+    osint_df.metadata['longitude'].unit = 'deg'
+    osint_df.metadata['latitude'].unit = 'deg'
+
+    event_type_messages = {}
+    for e in osint_df.collected().rows(named=True):
+        event_type = e['event_type']
+        event_longitude = e['longitude']
+        event_latitude = e['latitude']
+        event_timestamp = e['timestamp']
+
+        matches = []
+        for msg in ais_df.collected().rows(named=True):
+            msg_latitude = msg['lat']
+            msg_longitude = msg['lon']
+            msg_timestamp = msg['date_time_utc']
+
+            time_delta = (fromisoformat(msg_timestamp) - fromisoformat(event_timestamp)).total_seconds()
+            if time_delta > -before_time_in_s and time_delta < after_time_in_s:
+                delta_distance_in_km = great_circle_distance(msg_latitude, msg_longitude,
+                                      event_latitude, event_longitude)
+                if delta_distance_in_km <= distance_in_km:
+                    matches.append(msg)
+
+        event_type_messages[event_type] = matches
+
+
+    joined_df = pipeline.transform(ais_df, osint=osint_df)
+    for column in ["event_type", "lat", "latitude"]:
+        assert column in joined_df.columns
+
+    for column in joined_df.columns:
+        assert not column.endswith("_redundant")
+
+    assert len(joined_df) == len(ais_df)
+    messages_with_events = joined_df.filter(polars.col("event_type").is_not_null())
+    for e in messages_with_events.collect().rows(named=True):
+        event_type = e['event_type']
+        assert len([x for x in event_type_messages[event_type] if x['lat'] == e['lat'] and x['lon'] == e['lon'] and x['date_time_utc'] == e['date_time_utc']]) == 1
+
+

@@ -305,10 +305,10 @@ class AddTimestamp(PipelineElement):
 
     @damast.core.describe("Add Timestamp")
     @damast.core.input({"from": {"representation_type": str}})
-    @damast.core.output({"to": {"representation_type": float}})
+    @damast.core.output({"to": {"representation_type": float, 'unit': 's'}})
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
-        Add Timestamp from datetimeUTC
+        Add timestamp from datetime (UTC)
         """
         from_mapped_name = self.get_name("from")
         to_mapped_name = self.get_name("to")

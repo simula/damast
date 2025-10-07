@@ -128,7 +128,7 @@ def great_circle_distance(lat_1: npt.NDArray[np.float64],
                           lat_2: npt.NDArray[np.float64],
                           lon_2: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     """
-    Computes the great circle distance between two points.
+    Computes the great circle distance between two points in km
 
     Uses the :math:`(\\phi_1, \\lambda_1)`, :math:`(\\phi_2, \\lambda_2)` using the
     `Haversine formula <https://en.wikipedia.org/wiki/Haversine_formula>`_.
