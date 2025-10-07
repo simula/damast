@@ -518,7 +518,7 @@ class DataProcessingPipeline(PipelineElement):
                     print(f"{node.result.head(1).collect()}")
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
-                for slot, df in self.processing_graph.get_current_inputs(node):
+                for slot, df in self.processing_graph.get_current_inputs(node).items():
                     msg += "{slot=} "
                     msg += "     {df.head(1).collect)}"
 
