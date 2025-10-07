@@ -184,6 +184,8 @@ def output(requirements: dict[str, any]):
                 txt = f"Failed to update metadata in pipeline element: {pipeline_element}"
                 if parent_pipeline:
                     txt += f" in pipeline '{parent_pipeline.name}' ({type(parent_pipeline)})"
+                txt += f" -- {e}"
+
                 raise RuntimeError(txt) from e
 
             if parent_pipeline:
