@@ -81,6 +81,13 @@ class PolarsDataFrame(metaclass=Meta):
         """
         return self._dataframe.select(column_name)
 
+    def ensure_column(self, column_name: str):
+        """
+        Ensure that a column exist, raise ValueError otherwise
+        """
+        if column_name not in self.column_names:
+            raise ValueError("PolarsDataFrame.set_dtype: column '{column_name}' does not exist")
+
     @property
     def column_names(self) -> list[str]:
         """
@@ -101,6 +108,8 @@ class PolarsDataFrame(metaclass=Meta):
         Using polars cast functionality
         :return: The updated object
         """
+        self.ensure_column(column_name)
+
         if representation_type == np.int64:
             representation_type = polars.Int64
         elif type(representation_type) == str:
@@ -114,6 +123,8 @@ class PolarsDataFrame(metaclass=Meta):
         """
         Tuple of min and max values of the given column
         """
+        self.ensure_column(column_name)
+
         try:
             result = self._dataframe.select([
                     polars.col(column_name).min().alias("min_value"),
@@ -128,6 +139,8 @@ class PolarsDataFrame(metaclass=Meta):
         return min_value, max_value
 
     def categories(self, column_name: str, max_count: int = 100) -> list[str]:
+        self.ensure_column(column_name)
+
         try:
             categories = self._dataframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
         except Exception as e:
@@ -190,6 +203,8 @@ class PolarsDataFrame(metaclass=Meta):
 
 
     def stats(self, column_name: str) -> NumericValueStats:
+        self.ensure_column(column_name)
+
         result = self._dataframe.select([
             polars.col(column_name).mean().alias("mean"),
             polars.col(column_name).std().alias("stddev"),

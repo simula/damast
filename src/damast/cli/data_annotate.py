@@ -98,7 +98,11 @@ class DataAnnotateParser(BaseParser):
         metadata = AnnotatedDataFrame.infer_annotation(df=adf)
 
         if hasattr(args, "update_metadata"):
-            metadata = metadata.merge(args.update_metadata, strategy=DataSpecification.MergeStrategy.OTHER)
+            metadata = metadata.merge(args.update_metadata,
+                                      strategy=DataSpecification.MergeStrategy.OTHER)
+            for x in metadata.columns:
+                if x.name not in adf.column_names:
+                    raise ValueError(f"Column '{x.name}' does not exist")
 
         metadata.add_annotation(
                 Annotation(

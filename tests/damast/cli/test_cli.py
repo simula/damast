@@ -90,6 +90,16 @@ def test_annotate(data_path, filename, spec_filename, tmp_path, script_runner):
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
+def test_annotate_non_existing_column(data_path, filename, spec_filename, tmp_path, script_runner):
+    result = script_runner.run(['damast', 'annotate', '-f', str(data_path / filename), '-o', tmp_path, '--set-unit', 'no-column:deg'])
+
+    assert result.returncode == 1
+    assert re.search(r"'no-column' does not exist", result.stdout) is not None, "Error on missing column presented"
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
 def test_convert(data_path, filename, spec_filename, tmp_path, script_runner):
 
     output_file = Path(tmp_path) / (Path(filename).stem + ".parquet")
