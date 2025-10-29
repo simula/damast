@@ -18,9 +18,9 @@ from damast.core.decorators import (
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer, Transformer
 from damast.core.types import XDataFrame
-from damast.utils import fromisoformat
 from damast.data_handling.transformers.cycle_transformer import CycleTransformer
 from damast.domains.maritime.math.spatial import great_circle_distance
+from damast.utils import fromisoformat
 
 
 class DataProcessorA(PipelineElement):
@@ -192,7 +192,7 @@ class JoinSpatioTemporal(PipelineElement):
         'event_timestamp': { 'unit': 's' },
         'event_type': {},
         'event_delta_distance': { 'description': "Distance between vessel and event", 'unit': 'km'},
-        'event_delta_time': {},  #'description': "Timedelta between event and vessel message", 'unit': 's'},
+        'event_delta_time': { 'description': "Timedelta between event and vessel message", 'unit': 's'},
     })
     def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
         import polars as pl
