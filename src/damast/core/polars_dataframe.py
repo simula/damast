@@ -11,6 +11,7 @@ import polars.api
 from polars import LazyFrame
 from pydantic import ValidationError
 
+from .constants import DAMAST_CSV_DEFAULT_ARGS
 from .data_description import NumericValueStats
 
 logger = logging.getLogger(__name__)
@@ -251,7 +252,10 @@ class PolarsDataFrame(metaclass=Meta):
     def open(path: str | Path, sep = ',') -> DataFrame:
         path = Path(path)
         if path.suffix == ".csv":
-            return polars.scan_csv(path, sep=sep, quotechar=None, infer_schema_length=None)
+            return polars.scan_csv(path,
+                                   sep=sep,
+                                   **DAMAST_CSV_DEFAULT_ARGS
+            )
         elif path.suffix in [".h5", ".hdf5"]:
             import pandas as pd
 

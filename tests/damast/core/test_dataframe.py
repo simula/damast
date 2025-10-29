@@ -169,7 +169,9 @@ def test_annotated_dataframe_import_csv(data_path):
 
     adf = AnnotatedDataFrame.from_file(csv_path)
     assert adf.column_names == ["height", "letter"]
-    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path)))
+    assert adf.dtype('height') == polars.Int64, "None types should be properly handled"
+
+    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(

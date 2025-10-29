@@ -8,6 +8,7 @@ columns:
     MinMax:
       min: 0
       max: 40
+      allow_missing: true
   representation_type: int
 - name: letter
   is_optional: false

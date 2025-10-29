@@ -19,7 +19,11 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from .annotations import Annotation
-from .constants import DAMAST_SPEC_SUFFIX, DAMAST_SUPPORTED_FILE_FORMATS
+from .constants import (
+    DAMAST_CSV_DEFAULT_ARGS,
+    DAMAST_SPEC_SUFFIX,
+    DAMAST_SUPPORTED_FILE_FORMATS,
+    )
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame
@@ -320,10 +324,12 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_csv(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
         _log.info(f"Loading csv: {files=}")
-        df = polars.scan_csv(files, separator=";", quote_char=None, infer_schema_length=None)
+        df = polars.scan_csv(files, separator=";",
+                             **DAMAST_CSV_DEFAULT_ARGS)
         if len(df.compat.column_names) <= 1:
             # unlikely that this frame has only one column, so trying with comma
-            df = polars.scan_csv(files, separator=",", quote_char=None, infer_schema_length=None)
+            df = polars.scan_csv(files, separator=",",
+                                **DAMAST_CSV_DEFAULT_ARGS)
         return df, {}
 
     @classmethod
@@ -407,11 +413,11 @@ class AnnotatedDataFrame(XDataFrame):
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
-        df = polars.scan_csv(sorted(csv_filenames),
-                            separator=csv_sep,
-                            quote_char=None,
-                            infer_schema_length=None
-            )
+        df = polars.scan_csv(
+            sorted(csv_filenames),
+            separator=csv_sep,
+            **DAMAST_CSV_DEFAULT_ARGS
+        )
         adf = cls(dataframe=df, metadata=metadata)
 
         _log.info(f"Metadata: {dict(metadata)}")
