@@ -5,7 +5,6 @@ Module which collect all filters that filter the existing data.
 from typing import Any
 
 import polars as pl
-import polars.selectors as cs
 
 import damast.core
 from damast.core import AnnotatedDataFrame

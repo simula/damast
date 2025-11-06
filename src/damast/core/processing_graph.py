@@ -6,10 +6,12 @@ import uuid as uuid_module
 
 import networkx as nx
 
+from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.formatting import DEFAULT_INDENT
+from damast.core.metadata import DataSpecification
 from damast.core.transformations import PipelineElement
 
-from .decorators import DAMAST_DEFAULT_DATASOURCE, artifacts, describe, input, output
+from .decorators import DAMAST_DEFAULT_DATASOURCE, describe, input, output
 
 
 class DataSource(PipelineElement):
@@ -59,7 +61,7 @@ class Node:
         return inputs
 
     def is_datasource(self) -> bool:
-        return type(self.transformer) == DataSource
+        return type(self.transformer) is DataSource
 
     @property
     def uuid(self):
@@ -181,7 +183,7 @@ class ProcessingGraph:
             self._graph.add_edge(self._leaf_node, node, slot=required_slots[0])
         self._leaf_node = node
 
-    def join(self, name: str, operator: PipelineOperator, processing_graph: ProcessingGraph | None = None):
+    def join(self, name: str, operator: PipelineElement, processing_graph: ProcessingGraph | None = None):
         """
         Join another processing graph into the current one.
         This will an new 'join' node for the given operator.
@@ -229,7 +231,7 @@ class ProcessingGraph:
 
     def to_str(self, indent_level = 0):
         return '\n'.join(list(nx.generate_network_text(self._graph, ascii_only=True)))
-        data = ""
+        #data = ""
         #nx.write_network_text(self._graph)
         #reversed_graph = self._graph.reverse()
         #for node in nx.bfs_tree(reversed_graph, self._leaf_node):
@@ -292,7 +294,6 @@ class ProcessingGraph:
 
     def __deepcopy__(self, memo) -> ProcessingGraph:
         new_graph = ProcessingGraph(with_datasource=False)
-        node_map = {}
         for n in self._graph.nodes():
             new_node = Node(name=f"{n.name}", transformer=copy.deepcopy(n.transformer), uuid=f"{n.uuid}")
             new_graph.add_node(new_node)

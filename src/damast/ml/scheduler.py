@@ -9,7 +9,7 @@ import select
 import socket
 import tempfile
 from enum import Enum
-from logging import INFO, Logger, getLogger
+from logging import Logger, getLogger
 from pathlib import Path
 from threading import Thread
 from time import sleep

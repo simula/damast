@@ -1,4 +1,3 @@
-import re
 from argparse import Action, ArgumentParser
 from pathlib import Path
 

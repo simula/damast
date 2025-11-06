@@ -7,7 +7,6 @@ from zipfile import ZipFile
 import polars
 import pytest
 import yaml
-from pytest_console_scripts import ScriptRunner
 
 import damast.cli.main as cli_main
 from damast.cli.data_annotate import DataAnnotateParser

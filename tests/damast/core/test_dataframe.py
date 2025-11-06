@@ -1,7 +1,6 @@
 import copy
 from pathlib import Path
 
-import astropy
 import astropy.units as units
 import numpy as np
 import pandas as pd

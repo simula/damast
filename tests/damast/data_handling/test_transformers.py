@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 import damast.core
@@ -46,4 +45,4 @@ def test_timestamp(tmpdir, adf: damast.core.AnnotatedDataFrame, inplace: bool):
     if inplace:
         assert len(adf.dataframe.drop_nulls([ColumnName.TIMESTAMP]).collect()) == len(subset.collect())
     else:
-        assert not (ColumnName.TIMESTAMP in adf.column_names)
+        assert ColumnName.TIMESTAMP not in adf.column_names

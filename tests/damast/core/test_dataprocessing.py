@@ -1,7 +1,4 @@
-from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import polars
 import pytest
 from astropy import units
@@ -16,7 +13,7 @@ from damast.core.decorators import (
     DECORATED_OUTPUT_SPECS,
     )
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
-from damast.core.transformations import MultiCycleTransformer, Transformer
+from damast.core.transformations import MultiCycleTransformer
 from damast.core.types import XDataFrame
 from damast.data_handling.transformers.cycle_transformer import CycleTransformer
 from damast.domains.maritime.math.spatial import great_circle_distance

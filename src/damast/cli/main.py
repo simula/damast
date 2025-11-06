@@ -3,7 +3,6 @@ Main argument parser and CLI entry point.
 """
 import sys
 import traceback as tb
-import warnings
 from argparse import ArgumentParser
 from pathlib import Path
 

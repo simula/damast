@@ -11,6 +11,8 @@ import polars.api
 from polars import LazyFrame
 from pydantic import ValidationError
 
+from damast.utils import ensure_packages
+
 from .constants import DAMAST_CSV_DEFAULT_ARGS
 from .data_description import NumericValueStats
 
@@ -36,7 +38,7 @@ class PolarsDataFrame(metaclass=Meta):
     _dataframe_collected: polars.DataFrame
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
-        if type(df) == polars.DataFrame:
+        if type(df) is polars.DataFrame:
             self._dataframe = df.lazy()
         else:
             self._dataframe = df
@@ -112,14 +114,14 @@ class PolarsDataFrame(metaclass=Meta):
 
         if representation_type == np.int64:
             representation_type = polars.Int64
-        elif type(representation_type) == str:
+        elif type(representation_type) is str:
             if hasattr(polars, representation_type):
                 representation_type = getattr(polars, representation_type)
 
         self._dataframe = self._dataframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
         return representation_type
 
-    def minmax(self, column_name: str) -> Tuple[any, any]:
+    def minmax(self, column_name: str) -> tuple[any, any]:
         """
         Tuple of min and max values of the given column
         """
@@ -243,7 +245,7 @@ class PolarsDataFrame(metaclass=Meta):
         :param key: Column name
         :param value: Value to set the column to
         """
-        if type(values) == polars.LazyFrame:
+        if type(values) is polars.LazyFrame:
             values = values.collect().to_numpy()
 
         self._dataframe = self._dataframe.with_columns(
@@ -264,7 +266,8 @@ class PolarsDataFrame(metaclass=Meta):
     def equals(self, other: PolarsDataFrame) -> bool:
         return self.collected().equals(other.collected())
 
-    def open(path: str | Path, sep = ',') -> DataFrame:
+    @classmethod
+    def open(cls, path: str | Path, sep = ',') -> polars.LazyFrame:
         path = Path(path)
         if path.suffix == ".csv":
             return polars.scan_csv(path,
@@ -284,7 +287,7 @@ class PolarsDataFrame(metaclass=Meta):
         raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
 
     @classmethod
-    def from_vaex_hdf5(cls, path: str | Path) -> Tuple[DataFrame, MetaData]:
+    def from_vaex_hdf5(cls, path: str | Path) -> tuple[polars.LazyFrame, 'MetaData']:
         """
         Load hdf5 file and (damast) metadata if found in the file.
         """
@@ -300,7 +303,7 @@ class PolarsDataFrame(metaclass=Meta):
         annotations = []
         column_specifications = []
         with tables.open_file(str(path)) as hdf5file:
-            if not VAEX_HDF5_ROOT in hdf5file:
+            if VAEX_HDF5_ROOT not in hdf5file:
                 raise TypeError(f"This HDF5 file '{hdf5file}' has not been exported with vaex")
 
             table_attrs = hdf5file.get_node(VAEX_HDF5_ROOT)._v_attrs
@@ -332,19 +335,14 @@ class PolarsDataFrame(metaclass=Meta):
         return polars.LazyFrame(data), metadata
 
     @classmethod
-    def import_netcdf(cls, path: list[str|Path]) -> Tuple[DataFrame, dict[str, MetaData]]:
-        try:
-            import dask
-            import xarray
-        except ImportError as e:
-            raise RuntimeError("Loading netcdf files requires to 'pip install xarray dask'"
-                    ", additionally either netcdf4 or h5netcdf") from e
+    def import_netcdf(cls, path: list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]:
 
-        try:
-            import pandas as pd
-        except ImportError as e:
-            raise RuntimeError("Loading netcdf files requires pandas, "
-                " e.g., run 'pip install pandas'") from e
+        ensure_packages(pkgs=["dask", "xarray", "pandas"],
+                        required_for="Loading netcdf files",
+                        hints=", additionally either netcdf4 or h5netcdf have to be installed")
+
+        import pandas as pd
+        import xarray
 
         dataframes = []
         for f in path:
@@ -356,24 +354,21 @@ class PolarsDataFrame(metaclass=Meta):
         return df.lazy(), {}
 
     @classmethod
-    def import_hdf5(cls, files: str | Path | list[str|Path]) -> Tuple[DataFrame, dict[str,MetaData]]:
+    def import_hdf5(cls, files: str | Path | list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]:
         """
         Import a dataframe stored as HDF5.
 
         This method tries to load using pandas first, then falls back to reading a vaex-based format
         using pytables.
         """
-        try:
-            import tables
-        except ImportError as e:
-            raise RuntimeError("Could not load pytables -- please install 'tables' to use hdf5 functionality") from e
+        ensure_packages(["tables", "pandas"],
+                        required_for="Loading hdf5 files",
+                        install={"tables": "pytables"})
 
-        try:
-            import pandas
-        except ImportError as e:
-            raise RuntimeError("Could not load pandas -- please install 'pandas' to use hdf5 functionality") from e
+        import pandas
+        import tables
 
-        if type(files) != list:
+        if type(files) is not list:
             files = [files]
 
         try:
@@ -394,7 +389,7 @@ class PolarsDataFrame(metaclass=Meta):
             warnings.resetwarnings()
 
             return df.lazy(), {}
-        except tables.exceptions.NoSuchNodeError as e:
+        except tables.exceptions.NoSuchNodeError:
             logger.debug(f"HDF5 {filename} cannot be imported with pandas")
 
         if len(files) > 1:
@@ -406,15 +401,14 @@ class PolarsDataFrame(metaclass=Meta):
         return df, { path: metadata }
 
     @classmethod
-    def export_hdf5(cls, df: DataFrame, path: str | Path) -> Path:
+    def export_hdf5(cls, df: polars.DataFrame | polars.LazyFrame, path: str | Path) -> Path:
         """
         Export the dataframe as hdf5. Please use only if really needed, otherwise, stick with the
         default format (parquet).
         """
-        try:
-            import pandas
-        except ImportError as e:
-            raise RuntimeError("Could not load pandas -- please install pandas to use hdf5 functionality")
+        ensure_packages(pkgs=["pandas"],
+                        required_for="Loading hdf5 files")
+
 
         from damast.core.metadata import DAMAST_HDF5_ROOT
 

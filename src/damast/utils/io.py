@@ -1,23 +1,20 @@
 import logging
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import warnings
 from pathlib import Path
 from typing import Callable, ClassVar
 
+from damast.core.constants import DAMAST_MOUNT_PREFIX
+
 DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
 try:
     from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS
     DAMAST_ARCHIVE_SUPPORT_AVAILABLE = True
-except Exception as e:
+except Exception:
     warnings.warn("ratarmount could not be loaded: archive support is not available")
-
-
-from damast.core.constants import DAMAST_MOUNT_PREFIX
-from damast.core.dataframe import AnnotatedDataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +57,7 @@ class Archive:
             return extracted_files
         return self.filenames
 
-    def __exit__(self):
+    def __exit__(self, exc_type, exc_val, exc_tb):
         """
         Exit function for the contextmanager
         """
@@ -78,9 +75,6 @@ class Archive:
 
         self._mounted_dirs = []
         self._extracted_files = []
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.umount()
 
     def ratarmount(self, file, target):
         """

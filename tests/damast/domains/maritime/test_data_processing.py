@@ -2,7 +2,6 @@ import logging
 import pathlib
 from typing import Tuple
 
-import numpy as np
 import polars
 import polars as pl
 import pytest
@@ -11,11 +10,7 @@ import damast.core
 from damast.core import AnnotatedDataFrame, units
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.types import DataFrame, XDataFrame
-from damast.data_handling.transformers import (
-    AddDeltaTime,
-    AddTimestamp,
-    DropMissingOrNan,
-    )
+from damast.data_handling.transformers import AddDeltaTime, AddTimestamp
 from damast.domains.maritime.ais.data_generator import AISTestData
 from damast.domains.maritime.data_processing import CleanseAndSanitise, DataProcessing
 from damast.domains.maritime.data_specification import ColumnName

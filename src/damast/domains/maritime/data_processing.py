@@ -20,7 +20,6 @@ from damast.data_handling.transformers import (
     RemoveValueRows,
     )
 from damast.data_handling.transformers.augmenters import AddLocalIndex
-from damast.data_handling.transformers.visualisers import PlotLatLon
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import AddVesselType, ComputeClosestAnchorage
 

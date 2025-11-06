@@ -1,7 +1,6 @@
 import select
 import socket
 import sys
-from time import sleep
 from typing import Iterable
 
 import pytest

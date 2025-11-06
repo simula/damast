@@ -1,7 +1,5 @@
-import damast
 from damast.core import DataProcessingPipeline
-from damast.core.dataframe import AnnotatedDataFrame
-from damast.data_handling.transformers import AddDeltaTime, DropMissingOrNan
+from damast.data_handling.transformers import AddDeltaTime
 from damast.domains.maritime.transformers.features import DeltaDistance, Speed
 
 

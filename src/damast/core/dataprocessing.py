@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import copy
 import importlib
-import inspect
 import os
-import re
 import tempfile
 import traceback as tc
 from collections import OrderedDict
@@ -16,7 +14,6 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import networkx as nx
 import yaml
 from tqdm import tqdm
 
@@ -26,15 +23,9 @@ from damast.core.transformations import PipelineElement
 
 from .constants import DAMAST_DEFAULT_DATASOURCE
 from .dataframe import AnnotatedDataFrame
-from .formatting import DEFAULT_INDENT
 from .metadata import DataSpecification, MetaData
-from .transformations import PipelineElement
 
 __all__ = [
-    "artifacts",
-    "input",
-    "output",
-    "describe",
     "DataProcessingPipeline",
     "PipelineElement",
 ]
@@ -227,7 +218,6 @@ class DataProcessingPipeline(PipelineElement):
                 ds_metadata.columns
             )
 
-        current_node_output_spec = {} # key -> node uuid
         for idx, node in enumerate(processing_graph.nodes(), start=1):
             if node.name is None:
                 raise ValueError(
@@ -254,7 +244,6 @@ class DataProcessingPipeline(PipelineElement):
                         )
                     node.validation_output_spec = DataSpecification.merge_lists(node_input_specs,
                                                                                 current_specs[datasource])
-                    current_node_output_spec = node.validation_output_spec
                 else:
                     for i in node.inputs():
                         for from_node,to_node,data in processing_graph._graph.in_edges(node, data=True):
@@ -273,7 +262,6 @@ class DataProcessingPipeline(PipelineElement):
                             else:
                                 node.validation_output_spec = DataSpecification.merge_lists(node.transformer.output_specs, node.validation_output_spec)
 
-                            current_node_output_spec = node.validation_output_spec
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
                 raise RuntimeError(f"Validation of step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}"

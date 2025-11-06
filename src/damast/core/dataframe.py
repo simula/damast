@@ -4,14 +4,11 @@ Module to define an annotated dataframe, i.e. the combination of data and metada
 from __future__ import annotations
 
 import copy
-import gc
 import json
 import logging
-import os
 from logging import INFO, Logger, getLogger
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any, Callable, List, Optional, Union
+from typing import Callable, Union
 
 import polars
 import pyarrow
@@ -120,7 +117,7 @@ class AnnotatedDataFrame(XDataFrame):
         return self._dataframe is None
 
     def get_fulfillment(
-        self, expected_specs: List[DataSpecification]
+        self, expected_specs: list[DataSpecification]
     ) -> MetaData.Fulfillment:
         """
         Get the :class:`MetaData.Fulfillment` with respect to the given expected specification.
@@ -130,7 +127,7 @@ class AnnotatedDataFrame(XDataFrame):
         """
         return self._metadata.get_fulfillment(expected_specs=expected_specs)
 
-    def update(self, expectations: List[DataSpecification]):
+    def update(self, expectations: list[DataSpecification]):
         """
         Update the metadata based on a set of validated expectations.
 
@@ -221,7 +218,7 @@ class AnnotatedDataFrame(XDataFrame):
 
         """
         metadata = None
-        if not files or type(files) != list:
+        if not files or type(files) is not list:
             raise ValueError(f"{cls.__name__}.from_files: file list required, but were {files=}")
 
         suffixes = set()
@@ -296,7 +293,6 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_parquet(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
             _log.info(f"Loading parquet: {files=}")
-            metadata = None
             df = polars.scan_parquet(files, missing_columns='insert')
 
             metadata_per_file = {}
@@ -350,7 +346,7 @@ class AnnotatedDataFrame(XDataFrame):
         column_specs: list[DataSpecification] = []
 
         numeric_columns: list[str] = []
-        for column in tqdm(df.compat.column_names, desc=f"Extract str and categorical column metadata"):
+        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata"):
             data = {'name': column,
                     'is_optional': False,
                     'representation_type': df.compat.dtype(column)
@@ -395,11 +391,11 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def convert_csv_to_adf(
         cls,
-        csv_filenames: List[Union[Path, str]],
-        metadata_filename: Union[Path, str],
-        output_filename: Union[Path, str],
+        csv_filenames: list[Path | str],
+        metadata_filename: Path | str,
+        output_filename: Path | str,
         validation_mode: ValidationMode = ValidationMode.READONLY,
-        progress: Optional[Callable[[float], None]] = None,
+        progress: Callable[[float], None] | None = None,
         csv_sep: str = ";",
     ):
         """

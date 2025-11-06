@@ -2,11 +2,10 @@
 Module which collects transformers that add / augment the existing data
 """
 from pathlib import Path
-from typing import Callable, List, Union
+from typing import Callable, Union
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import polars as pl
 
 import damast.core
@@ -73,7 +72,7 @@ class ComputeClosestAnchorage(PipelineElement):
         """
         try:
             return XDataFrame.open(path=filename, sep=sep)
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             raise RuntimeError(f"{cls}: Vessel type information not accessible. File {vessel_type_csv} not found")
 
     @damast.core.describe("Compute distance from dataset to closest anchorage")

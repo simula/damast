@@ -15,21 +15,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import numpy as np
 import polars as pl
 import yaml
 
 from .annotations import Annotation, History
-from .constants import (
-    DAMAST_HDF5_COLUMNS,
-    DAMAST_HDF5_ROOT,
-    DAMAST_SPEC_SUFFIX,
-    DAMAST_SUPPORTED_FILE_FORMATS,
-    )
+from .constants import DAMAST_HDF5_COLUMNS, DAMAST_HDF5_ROOT, DAMAST_SPEC_SUFFIX
 from .data_description import DataElement, DataRange, MinMax, NumericValueStats
 from .formatting import DEFAULT_INDENT
 from .types import DataFrame, XDataFrame
-from .units import Unit, unit_registry, units
+from .units import Unit, units
 
 __all__ = [
     "ArtifactSpecification",
@@ -1163,7 +1157,7 @@ class MetaData:
         """
         Drop specification by column name
         """
-        columns = [columns] if type(columns) == str else columns
+        columns = [columns] if type(columns) is str else columns
         self.columns = [x for x in self.columns if x.name not in columns]
 
     def __getitem__(self, column_name: str) -> DataSpecification:
@@ -1241,7 +1235,7 @@ class MetaData:
         commonprefix = os.path.commonprefix([Path(x).stem for x in files])
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
-    def merge(self, other: Metadata, strategy: DataSpecification.MergeStrategy | None = None) -> Metadata:
+    def merge(self, other: MetaData, strategy: DataSpecification.MergeStrategy | None = None) -> MetaData:
         column_specs = DataSpecification.merge_lists(self.columns, other.columns, strategy)
         annotations = []
         for k,v in self.annotations.items():
@@ -1249,17 +1243,17 @@ class MetaData:
                 values = v.value
                 if v.value == other.annotations[k].value:
                     pass
-                elif type(v.value) == type(other.annotations[k].value):
-                    if type(v.value) == str:
+                elif type(v.value) is type(other.annotations[k].value):
+                    if type(v.value) is str:
                         values = [v.value, other.annotations[k].value]
-                    elif type(v.value) == list:
+                    elif type(v.value) is list:
                         values = v.value + other.annotations[k].value
-                    elif type(v.value) == dict:
+                    elif type(v.value) is dict:
                         values = v.value.update(other.annotations[k].value)
 
-                elif type(v.value) == list:
+                elif type(v.value) is list:
                     values = v.value + [other.annotations[k].value]
-                elif type(other.annotations[k].value) == list:
+                elif type(other.annotations[k].value) is list:
                     values = [v.value] + other.annotations[k].value
 
                 annotations.append(Annotation(k, values))

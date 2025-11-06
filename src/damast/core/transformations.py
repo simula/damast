@@ -10,10 +10,10 @@ import numpy as np
 import polars
 
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.metadata import DataSpecification
 
 from .constants import (
     DAMAST_DEFAULT_DATASOURCE,
-    DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
@@ -43,13 +43,13 @@ class Transformer:
 
 class PipelineElement(Transformer):
     #: Pipeline in which context this processor will be run
-    parent_pipeline: DataProcessingPipeline
+    parent_pipeline: 'DataProcessingPipeline'
 
     #: Map names of input and outputs for a particular pipeline
     _name_mappings: dict[str, dict[str, str]]
 
     #: Map names of datasource (arguments) to a specific (extra) transformer arguments
-    def set_parent(self, pipeline: DataProcessingPipeline):
+    def set_parent(self, pipeline: 'DataProcessingPipeline'):
         """
         Sets the parent pipeline for this pipeline element
 
@@ -67,7 +67,7 @@ class PipelineElement(Transformer):
         return self._name_mappings
 
     @property
-    def parameters(self) -> Dict[str, str]:
+    def parameters(self) -> dict[str, str]:
         """
         Get the current list of parameter for initialization
         """
@@ -82,23 +82,23 @@ class PipelineElement(Transformer):
         parameters = {}
         for p in inspect.signature(self.__init__).parameters:
             parameter_name = p
-            if not parameter_name in ['args', 'kwargs']:
+            if parameter_name not in ['args', 'kwargs']:
                 # only process named parameters
                 try:
                     parameters[parameter_name] = getattr(self, parameter_name)
-                except AttributeError as e:
+                except AttributeError:
                     raise ValueError(f"PipelineElement: please ensure that {self.__class__.__name__}.__init__ keyword arguments"
                             f" are saved in an attribute of the same name: missing '{parameter_name}'")
 
         self._parameters = parameters
 
-    def get_name(self, name: str, datasource: str | None = None) -> Any:
+    def get_name(self, name: str, datasource: str | None = None) -> any:
         if datasource is None:
             datasource = DAMAST_DEFAULT_DATASOURCE
 
         return self._get_name(name=name, datasource=datasource)
 
-    def _get_name(self, name: str, datasource: str | None) -> Any:
+    def _get_name(self, name: str, datasource: str | None) -> any:
         """
         Add the fully resolved input/output name for this key.
 
@@ -113,7 +113,7 @@ class PipelineElement(Transformer):
         if datasource is not None:
             try:
                 name_mappings = self.name_mappings[datasource]
-            except KeyError as e:
+            except KeyError:
                 raise RuntimeError(f"PipelineElement._get_name: not {datasource} in mappings: {self.name_mappings}")
         else:
             name_mappings = self.name_mappings
@@ -145,7 +145,7 @@ class PipelineElement(Transformer):
         """
 
     @property
-    def input_specs(self) -> dict[str, List[DataSpecification]]:
+    def input_specs(self) -> dict[str, list[DataSpecification]]:
         if not hasattr(self.transform, DECORATED_INPUT_SPECS):
             raise AttributeError(
                 f"{self.__class__.__name__}.validate: missing input specification"
@@ -161,7 +161,7 @@ class PipelineElement(Transformer):
         return specs
 
     @property
-    def output_specs(self) -> List[DataSpecification]:
+    def output_specs(self) -> list[DataSpecification]:
         if not hasattr(self.transform, DECORATED_OUTPUT_SPECS):
             raise AttributeError(
                 f"{self.__class__.__name__}.validate: missing output specification"
@@ -225,7 +225,7 @@ class PipelineElement(Transformer):
         return dict(self) == dict(other)
 
     @classmethod
-    def get_types(cls) -> List[PipelineElement]:
+    def get_types(cls) -> list[PipelineElement]:
         """
         Get all available PipelineElement implementations
 
@@ -238,7 +238,7 @@ class PipelineElement(Transformer):
         return klasses
 
     @classmethod
-    def _subclasses(cls) -> List[PipelineElement]:
+    def _subclasses(cls) -> list[PipelineElement]:
         """
         Generate the list of subclasses for the calling class
         """
@@ -296,7 +296,7 @@ class MultiCycleTransformer(Transformer):
         self.n = n
 
     def transform(self, df: AnnotatedDataFrame):
-        if type(df) != AnnotatedDataFrame:
+        if type(df) is not AnnotatedDataFrame:
             raise ValueError(f"Transformer requires 'AnnotatedDataFrame',"
                     f" but got '{type(df)}")
         clone = df.copy()

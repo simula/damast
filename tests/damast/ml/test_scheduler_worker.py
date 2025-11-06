@@ -4,7 +4,6 @@ from functools import partial
 from pathlib import Path
 from time import sleep
 
-import numpy as np
 import pandas as pd
 import polars
 import psutil
@@ -72,7 +71,7 @@ def test_scheduler_worker(monkeypatch, job, worker_process):
         try:
             job_scheduler.start(job)
             break
-        except Exception as e:
+        except Exception:
             pass
         finally:
             sleep(1)

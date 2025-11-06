@@ -8,7 +8,7 @@ import pytest
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
-from damast.core.datarange import CyclicMinMax, MinMax
+from damast.core.datarange import MinMax
 from damast.core.metadata import MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units

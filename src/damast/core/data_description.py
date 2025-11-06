@@ -3,14 +3,13 @@ This module contains data range definitions.
 """
 from __future__ import annotations
 
-import datetime as dt
 import math
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 import numpy as np
 import polars as pl
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from damast.utils import fromisoformat
 
@@ -33,7 +32,7 @@ class DataElement:
         if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
             dtype = dtype.to_python()
         elif isinstance(dtype, pl.datatypes.Datetime):
-            if type(value) == str:
+            if type(value) is str:
                 value = fromisoformat(value)
             return dtype.to_python().fromtimestamp(value.timestamp())
 

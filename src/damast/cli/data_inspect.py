@@ -1,4 +1,3 @@
-import datetime as dt
 import logging
 import re
 from argparse import ArgumentParser
@@ -8,7 +7,6 @@ import polars as pl
 
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.utils import fromisoformat
 from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
@@ -88,7 +86,7 @@ class DataInspectParser(BaseParser):
                                 elif op == "!=":
                                     new_filter = f"{lhs}.is_not_null()"
                                 else:
-                                    logger.warning(f"Filter expression invalid: operator must be either '==' or '!='")
+                                    logger.warning("Filter expression invalid: operator must be either '==' or '!='")
                                     continue
                             else:
                                 rhs = self.expand_filter_arg(adf, rhs)

@@ -1,10 +1,8 @@
-import numpy as np
 import polars as pl
 
 import damast.core
-from damast.core import AnnotatedDataFrame, DataSpecification
+from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
-from damast.core.types import DataFrame
 from damast.domains.maritime.math import great_circle_distance
 
 __all__ = [
