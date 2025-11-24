@@ -71,7 +71,7 @@ dev = [
     "astroid<3",
     "flake8-gl-codeclimate",
     "isort",
-    "jupyter-book",
+    "jupyter-book<2",
     "pre-commit",
     "pydot",
     # With sphinx-autoapi NamedTuple is not
