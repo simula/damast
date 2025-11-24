@@ -21,6 +21,14 @@ jobs:
         python-version: ['3.10','3.11','3.12']
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Remove unnecessary tools (Linux)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # when set to "true" but frees about 6 GB
+          tool-cache: true
+
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
