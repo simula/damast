@@ -14,7 +14,8 @@ from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
-from damast.core.dataframe import DAMAST_SPEC_SUFFIX
+from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
+from damast.domains.maritime.ais.data_generator import AISTestData
 
 
 @pytest.fixture
@@ -173,6 +174,59 @@ def test_convert_zip_zip(data_path, filename, spec_filename, tmp_path, script_ru
     result = script_runner.run(['damast', 'convert', '-f', output_zip_zip, '--output-dir', tmp_path])
     assert result.returncode == 0
     assert output_file.exists()
+
+def test_convert_n_to_1(tmp_path, script_runner):
+    input_files = []
+    output_file = Path(tmp_path) / "test-convert-n-to-1.parquet"
+
+    number_of_trajectories = 10
+    max_range = 3
+    for i in range(0, max_range):
+        input_file = Path(tmp_path) / f"{i}.csv"
+        input_files.append(input_file.resolve())
+
+        ais_test_data = AISTestData(number_of_trajectories=number_of_trajectories)
+        ais_test_data.dataframe.write_csv(str(input_file))
+
+    run_cmd = ['damast', 'convert', '-f']
+    run_cmd += input_files
+    run_cmd += ['--output-file', str(output_file)]
+
+    result = script_runner.run(run_cmd)
+    assert result.returncode == 0
+    assert output_file
+
+    df = AnnotatedDataFrame.from_file(output_file, metadata_required=False)
+    number_of_mmsis = len(set(df.mmsi.collect().to_series()))
+    assert number_of_mmsis <= number_of_trajectories*max_range
+    assert number_of_mmsis >= number_of_trajectories*(max_range-1)
+
+def test_convert_n_to_n(tmp_path, script_runner):
+    input_files = []
+
+    number_of_trajectories = 10
+    max_range = 3
+    for i in range(0, max_range):
+        input_file = Path(tmp_path) / f"{i}.csv"
+        input_files.append(input_file.resolve())
+
+        ais_test_data = AISTestData(number_of_trajectories=number_of_trajectories)
+        ais_test_data.dataframe.write_csv(str(input_file))
+
+    run_cmd = ['damast', 'convert', '-f']
+    run_cmd += input_files
+    run_cmd += ['--output-dir', str(tmp_path)]
+
+    result = script_runner.run(run_cmd)
+    assert result.returncode == 0
+    for f in input_files:
+        output_file = tmp_path / f"{f.stem}.parquet"
+        assert output_file
+
+        df = AnnotatedDataFrame.from_file(output_file, metadata_required=False)
+        number_of_mmsis = len(set(df.mmsi.collect().to_series()))
+        assert number_of_mmsis == number_of_trajectories
+
 
 def test_annotate_representation_type(tmp_path, script_runner):
     """
