@@ -40,7 +40,6 @@ dependencies = [
     "astropy",
     "cloudpickle",
     "iso8601;python_version<'3.11'",
-    "keras>=3.0",
     "matplotlib",
     "networkx",
     "numba",
@@ -53,10 +52,7 @@ dependencies = [
     "ratarmount>=1.1",
     "scikit-learn",
     "tables",
-    # BEGIN keras backends
-    "torch",
     "tqdm",
-    # END backends
 ]
 
 [project.urls]
@@ -81,8 +77,12 @@ dev = [
 ]
 
 ml = [
+    "keras>=3.0",
+    # BEGIN keras backends
+    "torch",
     "jax[cpu]",
     "tensorflow"
+    # END backends
 ]
 
 cuda = [
@@ -91,6 +91,7 @@ cuda = [
 ]
 
 test = [
+    "damast[ml]",
     "coverage",
     "pandas>=2",
     "pytest",
