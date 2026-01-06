@@ -91,6 +91,23 @@ Create your venv and activate it:
     source damast-venv/bin/activate
 ```
 
+### From PyPi
+
+To install the package from pypi use:
+
+```
+    pip install damast
+```
+
+Note that machine-learning related elements required additional dependencies, and to install
+keras and all supported backends (jax, torch, tensorflow) you can use:
+
+```
+    pip install damast[ml]
+```
+
+### From Source
+
 Clone the repo and install:
 
 ```
@@ -145,7 +162,7 @@ This project is licensed under the [BSD-3-Clause License](https://github.com/sim
 
 ## Copyright
 
-Copyright (c) 2023-2025 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/research-departments)
+Copyright (c) 2023-2026 [Simula Research Laboratory, Oslo, Norway](https://www.simula.no/research/research-departments)
 
 ## Acknowledgments
 
