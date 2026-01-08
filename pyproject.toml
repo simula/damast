@@ -44,7 +44,7 @@ dependencies = [
     "networkx",
     "numba",
     "numpy>=2",
-    "polars>=1.20",
+    "polars>=1.36.1",
     "psutil",
     "pyais",
     "pyarrow",

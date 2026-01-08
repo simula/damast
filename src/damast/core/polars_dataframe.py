@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
+polars.Config.set_engine_affinity("streaming")
+
 class Meta(type):
     _base_impl: ClassVar["str"] = "polars"
 
