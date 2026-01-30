@@ -56,7 +56,7 @@ def bearing(lat_1: npt.NDArray[np.float64],
 def reverse_bearing(lat_1: npt.NDArray[np.float64],
                     lon_1: npt.NDArray[np.float64],
                     distance: npt.NDArray[np.float64],
-                    bearing: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+                    bearing: npt.NDArray[np.float64]) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Compute the position of an object, given its initial position, the initial bearing, and the distance
     it will travel.
@@ -79,7 +79,7 @@ def reverse_bearing(lat_1: npt.NDArray[np.float64],
 
 
 @njit
-def decdeg2dms(dd: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+def decdeg2dms(dd: npt.NDArray[np.float64]) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Convert decimal degrees (dd) to sexagesimal degrees (degrees, minutes, seconds)
 
