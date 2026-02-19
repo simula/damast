@@ -343,13 +343,13 @@ class Experiment:
 
         import keras.models
 
-        from damast.ml.models.base import MODEL_TF_HDF5
+        from damast.ml.models.base import MODEL_TF_KERAS
 
         # Load available models
         for dirname in os.listdir(str(experiment_dir)):
-            model_hdf5 = experiment_dir / dirname / MODEL_TF_HDF5
-            if model_hdf5.exists():
-                models[Path(dirname).stem] = keras.models.load_model(model_hdf5)
+            model_keras = experiment_dir / dirname / MODEL_TF_KERAS
+            if model_keras.exists():
+                models[Path(dirname).stem] = keras.models.load_model(model_keras)
 
         return models
 

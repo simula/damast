@@ -23,7 +23,7 @@ __all__ = [
 
 HISTORY_FILENAME = 'training-history.csv'
 CHECKPOINT_BEST = "checkpoint.best.weights.h5"
-MODEL_TF_HDF5 = "model.tf.hdf5"
+MODEL_TF_KERAS = "model.tf.keras"
 
 
 class BaseModel(ABC):
@@ -264,7 +264,7 @@ class BaseModel(ABC):
 
         :return: Path to the saved model.
         """
-        filename = self.model_dir / MODEL_TF_HDF5
+        filename = self.model_dir / MODEL_TF_KERAS
         self.model.save(filepath=filename)
         return filename
 
