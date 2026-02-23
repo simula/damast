@@ -16,9 +16,9 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest] # 'macos-latest' failing on github-ci with memory error
+        os: [ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
         backend: ['torch','jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
-        python-version: ['3.10','3.11','3.12']
+        python-version: ['3.10','3.11','3.12', '3.13', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Remove unnecessary tools (Linux)
