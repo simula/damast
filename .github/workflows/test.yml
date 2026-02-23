@@ -16,11 +16,11 @@ jobs:
   test:
     strategy:
       matrix:
-        #os: [ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
-        backend: ['torch','jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
-        #python-version: ['3.10','3.11','3.12', '3.13', '3.14']
-        os: ['macos-15-intel'] # [macos-latest] 
-        python-version: ['3.14']
+        os: [ubuntu-latest] #, windows-latest, macos-latest] # failing on github-ci with memory error
+        backend: ['torch'] #,'jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
+        # 3.13 misses support for ratarmount > index_zstd
+        #     indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
+        python-version: ['3.10','3.11','3.12', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Remove unnecessary tools (Linux)
@@ -39,15 +39,11 @@ jobs:
       - name: Install pip
         run: python -m pip install -U pip
 
-      - name: Install macOS prequisites
-        if: runner.os == 'macOS'
+      - name: Install dependencies ${{ matrix.os }}
+        if: runner.os == 'Linux'
         run: |
-          if [ -d "/opt/homebrew/bin" ]; then
-            echo "/opt/homebrew/bin" >> $GITHUB_PATH
-          elif [ -d "/usr/local/bin" ]; then
-            echo "/usr/local/bin" >> $GITHUB_PATH
-          fi
-          brew install zstd
+          # ensure zstd.h is available
+          sudo apt update && sudo apt install -y libzstd-dev
 
       - name: Install package
         run: |
