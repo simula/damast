@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import ClassVar, NamedTuple, OrderedDict
 
-import keras
+from damast.ml import keras
 import keras.callbacks
 import keras.utils
 import pandas as pd
