@@ -2,7 +2,6 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 
-import keras
 import pytest
 
 import damast
@@ -13,6 +12,8 @@ from damast.core.metadata import MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
+
+from damast.ml import keras
 from damast.ml.experiments import (
     Experiment,
     ForecastTask,

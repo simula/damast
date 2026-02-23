@@ -12,7 +12,7 @@ from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Union
 
-import keras
+from damast.ml import keras
 import numpy as np
 import polars as pl
 import yaml

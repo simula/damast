@@ -3,8 +3,6 @@ from collections import OrderedDict
 from pathlib import Path
 import numpy as np
 
-import keras
-
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
@@ -13,6 +11,9 @@ from damast.core.metadata import MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
+
+from damast.ml import keras
+import keras
 from damast.ml.experiments import (
     Experiment,
     ForecastTask,
@@ -24,9 +25,6 @@ from damast.ml.models.base import BaseModel
 import tempfile
 
 os.environ["COLUMNS"] = '120'
-
-# Explicitly setting backend to torch
-keras.config.set_backend('torch')
 
 tmp_path = Path(tempfile.gettempdir()) / "damast-example-03"
 tmp_path.mkdir(parents=True, exist_ok=True)
