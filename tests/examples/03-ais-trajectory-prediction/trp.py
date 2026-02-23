@@ -25,14 +25,11 @@ import tempfile
 
 os.environ["COLUMNS"] = '120'
 
+# Explicitly setting backend to torch
+keras.config.set_backend('torch')
 
 tmp_path = Path(tempfile.gettempdir()) / "damast-example-03"
 tmp_path.mkdir(parents=True, exist_ok=True)
-
-
-class ModelA(BaseModel):
-    def __init_model(self):
-        pass
 
 
 class TransformerA(PipelineElement):
@@ -61,36 +58,6 @@ class LatLonTransformer(PipelineElement):
         _df = lon_cyclic_transformer.fit_transform(df=_df)
         return _df
 
-
-class SimpleModel(BaseModel):
-    input_specs = OrderedDict({
-        "a": {"length": 1},
-        "b": {"length": 1},
-        "c": {"length": 1},
-        "d": {"length": 1}
-    })
-
-    output_specs = OrderedDict({
-        "a": {"length": 1},
-        "b": {"length": 1},
-        "c": {"length": 1},
-        "d": {"length": 1}
-    })
-
-    def __init__(self, output_dir: str | Path):
-        super().__init__(features=["a", "b", "c", "d"],
-                         targets=["a", "b", "c", "d"],
-                         output_dir=output_dir)
-
-    def _init_model(self):
-        inputs = keras.Input(shape=(4,),
-                             name="input",
-                             dtype=float)
-        outputs = keras.layers.Dense(4)(inputs)
-
-        self.model = keras.Model(inputs=inputs,
-                                 outputs=outputs,
-                                 name=self.__class__.__name__)
 
 class Baseline(BaseModel):
     input_specs = OrderedDict({
