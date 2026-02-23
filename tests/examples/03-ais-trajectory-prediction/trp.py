@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 
 import keras
-import pytest
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame
