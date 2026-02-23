@@ -59,6 +59,13 @@ jobs:
         run: |
           echo "KERAS_BACKEND=${{ matrix.backend }}"  >> $GITHUB_ENV
           echo "PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0" >> $GITHUB_ENV
+          if [ -d "/opt/homebrew/bin" ]; then
+            echo "/opt/homebrew/bin" >> $GITHUB_PATH
+          elif [ -d "/usr/local/bin" ]; then
+            echo "/usr/local/bin" >> $GITHUB_PATH
+          fi
+          brew install zstd
+
 
       # Run keras backend specific tests (for keras>=3)
       # Due to space issues avoid creating too many venvs (via tox)
