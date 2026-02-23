@@ -41,6 +41,7 @@ classifiers = [
 dependencies = [
     "astropy",
     "cloudpickle",
+    "indexed_zstd>=1.6.1",
     "iso8601;python_version<'3.11'",
     "matplotlib",
     "networkx",
@@ -53,7 +54,7 @@ dependencies = [
     "pyarrow",
     "pydantic>=2.0",
     "pydot",
-    "ratarmount>=1.1",
+    "ratarmount>=1.2.1",
     "scikit-learn",
     "tables",
     "tqdm",
