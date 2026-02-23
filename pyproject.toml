@@ -41,7 +41,7 @@ classifiers = [
 dependencies = [
     "astropy",
     "cloudpickle",
-    "indexed_zstd>=1.6.1",
+#    "indexed_zstd>=1.6.1",
     "iso8601;python_version<'3.11'",
     "matplotlib",
     "networkx",
@@ -54,6 +54,7 @@ dependencies = [
     "pyarrow",
     "pydantic>=2.0",
     "pydot",
+#    "rapidgzip>=0.16.0",
     "ratarmount>=1.2.1",
     "scikit-learn",
     "tables",
@@ -84,7 +85,7 @@ dev = [
 ml = [
     "keras>=3.0",
     # BEGIN keras backends
-    "torch",
+    "torch; python_version <= '3.13'",
     "jax[cpu]",
     "tensorflow; python_version <= '3.13'"
     # END backends
