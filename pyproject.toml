@@ -41,7 +41,7 @@ classifiers = [
 dependencies = [
     "astropy",
     "cloudpickle",
-#    "indexed_zstd>=1.6.1",
+    "indexed_zstd @ git+https://github.com/2maz/indexed_zstd@a0f94c7",
     "iso8601;python_version<'3.11'",
     "matplotlib",
     "networkx",
@@ -54,7 +54,6 @@ dependencies = [
     "pyarrow",
     "pydantic>=2.0",
     "pydot",
-#    "rapidgzip>=0.16.0",
     "ratarmount>=1.2.1",
     "scikit-learn",
     "tables",
@@ -75,7 +74,6 @@ dev = [
     "isort",
     "jupyter-book<2",
     "pre-commit",
-    "pydot",
     # With sphinx-autoapi NamedTuple is not
     # parse correctly
     "sphinx-autoapi<=3.3",
@@ -97,7 +95,6 @@ cuda = [
 ]
 
 test = [
-    "damast[ml]",
     "coverage",
     "pandas>=2",
     "pytest",

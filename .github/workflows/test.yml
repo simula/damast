@@ -16,11 +16,11 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest] #, windows-latest, macos-latest] # failing on github-ci with memory error
+        os: [macos-latest] #ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
         backend: ['torch'] #,'jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
-        # 3.13 misses support for ratarmount > index_zstd
+        # macos-latest 3.13 misses support for ratarmount > index_zstd
         #     indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
-        python-version: ['3.10','3.11','3.12', '3.14']
+        python-version: ['3.13', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Remove unnecessary tools (Linux)
@@ -37,7 +37,25 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install pip
-        run: python -m pip install -U pip
+        run: |
+          python -m pip install -U pip
+          # Still needed for building lzmaffi without build isolation
+          python -m pip install --upgrade wheel
+          python -m pip install --upgrade setuptools
+          python -m pip install --upgrade-strategy eager --upgrade twine build cffi
+
+      - name: Install Dependencies (MacOS)
+        if: startsWith( matrix.os, 'macos' )
+        run: |
+          # coreutils is required for the tests written in shell, e.g., for the 'realpath' command
+          # unar is required for rar tests with passwords. By default, bsdtar is installed but that is the only
+          # one of the three supported tools (the third is unrar) that does not support passwords.
+          # And the error message is atrocious:
+          #   cmdline.extend(args)
+          #   TypeError: 'NoneType' object is not iterable
+          brew install -q macfuse coreutils pixz pbzip2 zstd unar libarchive lrzip lzop lzo
+          # Add brew installation binary folder to PATH so that command line tools like zstd can be found
+          echo PATH="$PATH:/usr/local/bin" >> "$GITHUB_ENV"
 
       - name: Install dependencies ${{ matrix.os }}
         if: runner.os == 'Linux'
@@ -47,8 +65,8 @@ jobs:
 
       - name: Install package
         run: |
-          python -m pip install -e .[dev,test]
-          python -m pip install ${{ matrix.backend }}
+          python -m pip install -e .[dev,test] 
+          python -m pip install keras ${{ matrix.backend }}
 
       # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#runner-context
       - name: Set Env (Windows)
