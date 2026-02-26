@@ -57,6 +57,19 @@ jobs:
           # Add brew installation binary folder to PATH so that command line tools like zstd can be found
           echo PATH="$PATH:/usr/local/bin" >> "$GITHUB_ENV"
 
+       - name: Test Simple Mount
+         if: startsWith( matrix.os, 'macos' )
+         # macOS 11+ is too uptight about "security" and is not able to fully load the macfuse kernel extension.
+         # https://github.com/actions/runner-images/issues/4731
+         if: ${{ startsWith( matrix.os, 'ubuntu' ) }}
+         run: |
+           zip test_ais.csv.zip tests/damast/data/test_ais.csv
+           ratarmount -d 3 test_ais.csv.zip mimi
+           ls -la mimi
+           sleep 1s
+           # MacOS does not have fusermount!
+           ratarmount -u mimi
+
       - name: Install dependencies ${{ matrix.os }}
         if: runner.os == 'Linux'
         run: |
