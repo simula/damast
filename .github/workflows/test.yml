@@ -16,11 +16,11 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [macos-latest] #ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
+        os: [macos-15-intel] #ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
         backend: ['torch'] #,'jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
         # macos-latest 3.13 misses support for ratarmount > index_zstd
         #     indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
-        python-version: ['3.13', '3.14']
+        python-version: ['3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Remove unnecessary tools (Linux)
@@ -57,19 +57,6 @@ jobs:
           # Add brew installation binary folder to PATH so that command line tools like zstd can be found
           echo PATH="$PATH:/usr/local/bin" >> "$GITHUB_ENV"
 
-       - name: Test Simple Mount
-         if: startsWith( matrix.os, 'macos' )
-         # macOS 11+ is too uptight about "security" and is not able to fully load the macfuse kernel extension.
-         # https://github.com/actions/runner-images/issues/4731
-         if: ${{ startsWith( matrix.os, 'ubuntu' ) }}
-         run: |
-           zip test_ais.csv.zip tests/damast/data/test_ais.csv
-           ratarmount -d 3 test_ais.csv.zip mimi
-           ls -la mimi
-           sleep 1s
-           # MacOS does not have fusermount!
-           ratarmount -u mimi
-
       - name: Install dependencies ${{ matrix.os }}
         if: runner.os == 'Linux'
         run: |
@@ -80,6 +67,16 @@ jobs:
         run: |
           python -m pip install -e .[dev,test] 
           python -m pip install keras ${{ matrix.backend }}
+
+      - name: Validate Ratarmount
+        if: startsWith( matrix.os, 'macos' )
+        run: |
+          zip test_ais.csv.zip tests/damast/data/test_ais.csv
+          ratarmount -d 1 test_ais.csv.zip macmount
+          ls -la macmount
+          sleep 1s
+          # MacOS does not have fusermount!
+          ratarmount -u macmount
 
       # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#runner-context
       - name: Set Env (Windows)
@@ -94,7 +91,7 @@ jobs:
           echo "KERAS_BACKEND=${{ matrix.backend }}"  >> $GITHUB_ENV
 
       - name: Set Env (Mac)
-        if: runner.os == 'macOS'
+        if: startsWith( matrix.os, 'macos' )
         run: |
           echo "KERAS_BACKEND=${{ matrix.backend }}"  >> $GITHUB_ENV
           echo "PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0" >> $GITHUB_ENV
