@@ -100,7 +100,7 @@ class Archive:
         for mounted_dir in list(reversed(self._mounted_dirs)):
             for count in range(0,5):
                 time.sleep(0.5)
-                response = subprocess.run(["fusermount", "-u", mounted_dir])
+                response = subprocess.run(["ratarmount", "-u", mounted_dir])
                 if response.returncode == 0:
                     break
                 else:
