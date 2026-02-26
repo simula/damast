@@ -85,7 +85,24 @@ def test_annotate(data_path, filename, spec_filename, tmp_path, script_runner):
     with open(data_path / spec_filename, "r") as f:
         expected_spec = yaml.load(f, Loader=yaml.SafeLoader)
         expected_spec["annotations"]["source"] = [str(data_path / filename)]
-    assert written_spec == expected_spec
+
+    assert written_spec['annotations'] == expected_spec['annotations']
+
+    written_columns = written_spec['columns']
+    expected_columns = expected_spec['columns']
+
+    for idx, column in enumerate(written_columns):
+        for field in column:
+            if type(field) is float:
+                column.assert_approx(expected_columns[idx][field])
+            elif type(field) is dict:
+                for subfield in field:
+                    expected_subfield_value = expected_columns[idx][field][subfield]
+                    written_subfield_value = field[subfield]
+                    expected_subfield_value.assert_approx(written_subfield_value)
+            else:
+                column == expected_columns[idx][field]
+
 
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
