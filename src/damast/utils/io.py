@@ -150,16 +150,17 @@ class Archive:
         """
         Umount the archive
         """
-        for mounted_dir in list(reversed(self._mounted_dirs)):
-            for count in range(0,5):
-                time.sleep(0.5)
+        if self._backend == ArchiveBackend.RATARMOUNT:
+            for mounted_dir in list(reversed(self._mounted_dirs)):
+                for count in range(0,5):
+                    time.sleep(0.5)
 
-                response = subprocess.run(["ratarmount", "-u", mounted_dir])
+                    response = subprocess.run(["ratarmount", "-u", mounted_dir])
 
-                if response.returncode == 0:
-                    break
-                else:
-                    logger.debug(f"Retrying to unmount {mounted_dir}")
+                    if response.returncode == 0:
+                        break
+                    else:
+                        logger.debug(f"Retrying to unmount {mounted_dir}")
 
         for mounted_dir in self._mounted_dirs:
             if Path(mounted_dir).exists():

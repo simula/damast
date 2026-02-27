@@ -10,7 +10,7 @@ from damast.utils.io import ArchiveBackend
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows - zipfile backend should be used")
-@pytest.mark.skipif(sys.platform.startswith("dwarwin"), reason="ratarmount does not run on macos - zipfile backend should be used")
+@pytest.mark.skipif(sys.platform.startswith("darwin"), reason="ratarmount does not run on macos - zipfile backend should be used")
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
