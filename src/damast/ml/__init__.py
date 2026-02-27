@@ -38,5 +38,5 @@ import keras
 
 # Handle Errors on Mac:
 #    Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support float64. Please use float32 instead.
-if plaform.system() == "Darwin":
+if platform.system() == "Darwin":
     keras.config.set_dtype_policy('float32')

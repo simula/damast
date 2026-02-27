@@ -1,4 +1,6 @@
+from enum import Enum
 import logging
+import io
 import shutil
 import subprocess
 import tempfile
@@ -6,17 +8,17 @@ import time
 import warnings
 from pathlib import Path
 from typing import Callable, ClassVar
+import zipfile
 
 from damast.core.constants import DAMAST_MOUNT_PREFIX
 
-DAMAST_ARCHIVE_SUPPORT_AVAILABLE = False
-try:
-    from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS
-    DAMAST_ARCHIVE_SUPPORT_AVAILABLE = True
-except Exception:
-    warnings.warn("ratarmount could not be loaded: archive support is not available")
-
 logger = logging.getLogger(__name__)
+
+
+class ArchiveBackend(str, Enum):
+    ZIPFILE = 'zipfile'
+    RATARMOUNT = 'ratarmount'
+
 
 class Archive:
     """
@@ -28,25 +30,48 @@ class Archive:
     _extracted_files: list[str]
     _mounted_dirs: list[Path]
 
-    _supported_suffixes: ClassVar[list[str]] = None
+    _supported_suffixes: list[str] = None
+    _backend: ArchiveBackend = None
 
-    @classmethod
-    def supported_suffixes(cls):
+    def autoload_backend(self):
+        try:
+            from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS #noqa
+            self._backend = ArchiveBackend.RATARMOUNT
+        except Exception:
+            warnings.warn("ratarmount could not be loaded: falling back to zipfile-based support")
+        self._backend = ArchiveBackend.ZIPFILE
+
+    def supported_suffixes(self):
         """
         Get the list of suffixes for archives and compressed files which are supported
         """
-        if not DAMAST_ARCHIVE_SUPPORT_AVAILABLE:
-            return []
+        if not self._backend:
+            raise RuntimeError("Archive.supported_suffixes: ensure that backend is set, e.g., call 'autoload_backend' first")
+        
+        fn_name = f"supported_suffixes_{self._backend.value}"
+        if not hasattr(self, fn_name):
+            raise RuntimeError(f"Missing implementation for {fn_name}")
 
-        if cls._supported_suffixes is not None:
-            return cls._supported_suffixes
+        return getattr(self, fn_name)()
 
-        cls._supported_suffixes = []
+    def supported_suffixes_zipfile(self):
+        if self._supported_suffixes is not None:
+            return self._supported_suffixes
+
+        self._supported_suffixes = ["zip"]
+        return self._supported_suffixes
+
+    def supported_suffixes_ratarmount(self):
+        if self._supported_suffixes is not None:
+            return self._supported_suffixes
+
+        from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS # noqa
+        self._supported_suffixes = []
         for k, v in COMPRESSION_FORMATS.items():
-            cls._supported_suffixes += v.extensions
+            self._supported_suffixes += v.extensions
         for k, v in ARCHIVE_FORMATS.items():
-            cls._supported_suffixes += v.extensions
-        return cls._supported_suffixes
+            self._supported_suffixes += v.extensions
+        return self._supported_suffixes
 
     def __enter__(self) -> list[str]:
         """
@@ -65,7 +90,14 @@ class Archive:
 
     def __init__(self,
             filenames: list[str],
-            filter_fn: Callable[[str], bool] | None = None):
+            filter_fn: Callable[[str], bool] | None = None,
+            backend: ArchiveBackend = None
+    ):
+        if backend:
+            self._backend = backend
+        elif self._backend is None:
+            self.autoload_backend()
+
         self.filenames = sorted(filenames)
 
         if filter_fn is None:
@@ -76,11 +108,11 @@ class Archive:
         self._mounted_dirs = []
         self._extracted_files = []
 
-    def ratarmount(self, file, target):
+    def mount_ratarmount(self, file, target):
         """
         Call ratarmount to mount and archive
         """
-        if not DAMAST_ARCHIVE_SUPPORT_AVAILABLE:
+        if not self._backend == ArchiveBackend.RATARMOUNT:
             raise RuntimeError("damast.utils.io.Archive: "
                     "cannot load archive."
                     " 'ratarmount' support is not available."
@@ -92,6 +124,27 @@ class Archive:
 
         self._mounted_dirs.append(target)
 
+    def mount_zipfile(self, file, target):
+        """
+        Use zipfile to mount and archive
+        """
+        with zipfile.ZipFile(file, "r") as f:
+            for file_in_zip in f.namelist():
+                if Path(file_in_zip).suffix != ".zip":
+                    f.extract(file_in_zip, target)
+                    continue
+
+                dirname = Path(file_in_zip).parent
+                extract_dir = target / dirname 
+                extract_dir.mkdir(parents=True, exist_ok=True)
+
+                # read inner zip file into bytes buffer
+                zip_content = io.BytesIO(f.read(file_in_zip))
+                inner_zip_file = zipfile.ZipFile(zip_content)
+                for i in inner_zip_file.namelist():
+                    inner_zip_file.extract(i, extract_dir)
+
+        self._mounted_dirs.append(target)
 
     def umount(self):
         """
@@ -100,7 +153,9 @@ class Archive:
         for mounted_dir in list(reversed(self._mounted_dirs)):
             for count in range(0,5):
                 time.sleep(0.5)
+
                 response = subprocess.run(["ratarmount", "-u", mounted_dir])
+
                 if response.returncode == 0:
                     break
                 else:
@@ -121,12 +176,13 @@ class Archive:
         local_mount = tempfile.mkdtemp(prefix=DAMAST_MOUNT_PREFIX)
 
         for file in self.filenames:
-            if Path(file).suffix[1:] in Archive.supported_suffixes():
+            if Path(file).suffix[1:] in self.supported_suffixes():
                 logger.info(f"Archive.mount: found archive: {file}")
                 target_mount = Path(local_mount) / Path(file).name
                 target_mount.mkdir(parents=True, exist_ok=True)
-
-                self.ratarmount(file, target_mount)
+                
+                fn = getattr(self, f"mount_{self._backend.value}")
+                fn(file, target_mount)
 
                 decompressed_files = [x for x in Path(target_mount).glob("**/*") if Path(x).is_file()]
                 for idx, x in enumerate(decompressed_files):
