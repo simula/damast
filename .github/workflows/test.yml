@@ -16,11 +16,12 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [macos-latest] #ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
-        backend: ['torch'] #,'jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
-        # macos-latest 3.13 misses support for ratarmount > index_zstd
-        #     indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
-        python-version: ['3.14']
+        os: [macos-latest, ubuntu-latest, windows-latest] 
+        backend: ['torch','jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
+        # macos-latest:
+        #   - misses support for ratarmount > index_zstd
+        #   - for >=3.13 indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
+        python-version: ['3.10','3.11','3.12','3.13','3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - name: Remove unnecessary tools (Linux)
