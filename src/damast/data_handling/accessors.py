@@ -4,6 +4,7 @@ Module for creating generators for accessing sequences of data from a DataFrame
 
 import logging
 import random
+import sys
 import time
 from typing import Any, List, Optional, Union
 
@@ -21,6 +22,16 @@ __all__ = [
 ]
 logger = logging.getLogger("damast")
 
+
+if sys.platform == "darwin":
+    # Handle "Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support float64. Please use float32 instead"
+    def _mps_precision(data):
+        if data.dtype == np.float64:
+            return data.astype(np.float32)
+        return data
+else:
+    def _mps_precision(data):
+        return data
 
 # https://www.tensorflow.org/tutorials/structured_data/time_series
 class GroupSequenceAccessor:
@@ -289,12 +300,12 @@ class GroupSequenceAccessor:
                         # target it the last step in the timeline, so the last
                         target_chunk.append(target_window.to_numpy())
 
-                X = np.array(chunk)
+                X = _mps_precision(np.array(chunk))
                 if use_target:
                     if np.lib.NumpyVersion(np.__version__) >= '2.0.0':
-                        y = np.array(target_chunk)
+                        y = _mps_precision(np.array(target_chunk))
                     else:
-                        y = np.array(target_chunk, copy=False)
+                        y = _mps_precision(np.array(target_chunk, copy=False))
                     yield (X, y)
                 else:
                     yield (X,)
