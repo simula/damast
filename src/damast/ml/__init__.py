@@ -1,7 +1,6 @@
 import importlib
-import os
-
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +10,7 @@ def backend_available(backend: str) -> bool:
     try:
         importlib.import_module(backend)
         return True
-    except ImportError as e:
+    except ImportError:
         return False
 
 def autodiscover_backend(priority: list[str] = ["torch", "tensorflow", "jax"]):
@@ -33,4 +32,4 @@ if "KERAS_BACKEND" in os.environ:
 else:
     autodiscover_backend()
 
-import keras
+import keras  # noqa

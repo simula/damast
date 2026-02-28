@@ -10,7 +10,7 @@ from .constants import (
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
-    )
+)
 from .metadata import ArtifactSpecification, DataSpecification
 from .transformations import PipelineElement
 

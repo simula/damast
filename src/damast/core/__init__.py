@@ -15,14 +15,14 @@ from .decorators import (
     describe,
     input,
     output,
-    )
+)
 from .metadata import (
     ArtifactSpecification,
     DataSpecification,
     History,
     MetaData,
     ValidationMode,
-    )
+)
 
 __all__ = [
     "AnnotatedDataFrame",

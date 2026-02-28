@@ -13,7 +13,7 @@ import damast.core
 from damast.data_handling.transformers.augmenters import (
     AddLocalIndex,
     AddUndefinedValue,
-    )
+)
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.data_specification import ColumnName
@@ -23,7 +23,7 @@ from damast.domains.maritime.transformers import (
     AddVesselType,
     ComputeClosestAnchorage,
     DeltaDistance,
-    )
+)
 
 
 def test_add_missing_ais_status(tmp_path):
@@ -296,7 +296,6 @@ def test_message_index(tmp_path):
     data = []
     num_messages_A = 90
     num_messages_B = num_messages_A - 2
-    num_messages_C = 1
 
     # Insert last message first to validate time-based sorting
     data.append([mmsi_a, timestamp + dt.timedelta(seconds=num_messages_A), lat, lon, num_messages_A-1, 0])

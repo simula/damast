@@ -363,7 +363,7 @@ class ChangeTypeColumn(PipelineElement):
         """Constructor"""
         if isinstance(new_type, pl.datatypes.classes.DataTypeClass):
             self.new_type = new_type
-        elif type(new_type) == str:
+        elif type(new_type) is str:
             polar_type = new_type.capitalize()
             if not hasattr(pl.datatypes.classes, polar_type):
                 raise TypeError(f"Type {new_type} has not correspondence in 'polars'")

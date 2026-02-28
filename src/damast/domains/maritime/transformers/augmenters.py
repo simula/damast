@@ -73,7 +73,7 @@ class ComputeClosestAnchorage(PipelineElement):
         try:
             return XDataFrame.open(path=filename, sep=sep)
         except FileNotFoundError:
-            raise RuntimeError(f"{cls}: Vessel type information not accessible. File {vessel_type_csv} not found")
+            raise RuntimeError(f"{cls}: Vessel type information not accessible. File {filename} not found")
 
     @damast.core.describe("Compute distance from dataset to closest anchorage")
     @damast.core.input({"x": {"representation_type": float, "unit": damast.core.units.units.deg},

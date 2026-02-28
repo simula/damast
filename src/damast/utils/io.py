@@ -1,14 +1,14 @@
-from enum import Enum
-import logging
 import io
+import logging
 import shutil
 import subprocess
 import tempfile
 import time
 import warnings
-from pathlib import Path
-from typing import Callable, ClassVar
 import zipfile
+from enum import Enum
+from pathlib import Path
+from typing import Callable
 
 from damast.core.constants import DAMAST_MOUNT_PREFIX
 
@@ -35,7 +35,10 @@ class Archive:
 
     def autoload_backend(self):
         try:
-            from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS #noqa
+            from ratarmountcore.compressions import (  # noqa
+                ARCHIVE_FORMATS,
+                COMPRESSION_FORMATS,
+            )
             self._backend = ArchiveBackend.RATARMOUNT
         except Exception:
             warnings.warn("ratarmount could not be loaded: falling back to zipfile-based support")
@@ -47,7 +50,7 @@ class Archive:
         """
         if not self._backend:
             raise RuntimeError("Archive.supported_suffixes: ensure that backend is set, e.g., call 'autoload_backend' first")
-        
+
         fn_name = f"supported_suffixes_{self._backend.value}"
         if not hasattr(self, fn_name):
             raise RuntimeError(f"Missing implementation for {fn_name}")
@@ -65,7 +68,10 @@ class Archive:
         if self._supported_suffixes is not None:
             return self._supported_suffixes
 
-        from ratarmountcore.compressions import ARCHIVE_FORMATS, COMPRESSION_FORMATS # noqa
+        from ratarmountcore.compressions import (  # noqa
+            ARCHIVE_FORMATS,
+            COMPRESSION_FORMATS,
+        )
         self._supported_suffixes = []
         for k, v in COMPRESSION_FORMATS.items():
             self._supported_suffixes += v.extensions
@@ -135,7 +141,7 @@ class Archive:
                     continue
 
                 dirname = Path(file_in_zip).parent
-                extract_dir = target / dirname 
+                extract_dir = target / dirname
                 extract_dir.mkdir(parents=True, exist_ok=True)
 
                 # read inner zip file into bytes buffer
@@ -181,7 +187,7 @@ class Archive:
                 logger.info(f"Archive.mount: found archive: {file}")
                 target_mount = Path(local_mount) / Path(file).name
                 target_mount.mkdir(parents=True, exist_ok=True)
-                
+
                 fn = getattr(self, f"mount_{self._backend.value}")
                 fn(file, target_mount)
 

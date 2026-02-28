@@ -1,6 +1,8 @@
 import os
+import tempfile
 from collections import OrderedDict
 from pathlib import Path
+
 import numpy as np
 
 import damast
@@ -11,18 +13,14 @@ from damast.core.metadata import MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
-
 from damast.ml import keras
-import keras
 from damast.ml.experiments import (
     Experiment,
     ForecastTask,
-    LearningTask,
     ModelInstanceDescription,
     TrainingParameters,
-    )
+)
 from damast.ml.models.base import BaseModel
-import tempfile
 
 os.environ["COLUMNS"] = '120'
 
@@ -144,7 +142,8 @@ processed_data = AnnotatedDataFrame.from_file(dataset_filename)
 input_adf = pipeline.transform(processed_data)
 
 # creating input features
-from damast.data_handling.accessors import SequenceIterator
+from damast.data_handling.accessors import SequenceIterator  # noqa
+
 sta = SequenceIterator(df=input_adf)
 gen_predict = sta.to_keras_generator(features=features, target=features, sequence_length=5)
 

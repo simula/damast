@@ -1,3 +1,4 @@
+
 import re
 import sys
 from argparse import ArgumentParser
@@ -49,7 +50,7 @@ def test_subparser(name, klass, script_runner):
     assert result.returncode == 0
 
     test_parser = ArgumentParser()
-    subparser = klass(parser=test_parser)
+    klass(parser=test_parser)
 
     for a in test_parser._actions:
         if a.help == "==SUPPRESS==":

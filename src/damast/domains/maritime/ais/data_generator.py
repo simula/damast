@@ -17,7 +17,7 @@ from damast.domains.maritime.data_specification import (
     ColumnName,
     CourseOverGround,
     SpeedOverGround,
-    )
+)
 
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)

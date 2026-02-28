@@ -6,15 +6,15 @@ import importlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from tempfile import gettempdir
-from typing import ClassVar, NamedTuple, OrderedDict
+from typing import ClassVar, Generator, NamedTuple, OrderedDict
 
-from damast.ml import keras
 import keras.callbacks
 import keras.utils
 import pandas as pd
 
 from damast.core import DataSpecification
 from damast.core.types import DataFrame, XDataFrame
+from damast.ml import keras
 
 __all__ = [
     "BaseModel",
@@ -190,8 +190,8 @@ class BaseModel(ABC):
         return self.model_dir / f'evaluation-{CHECKPOINT_BEST}.csv'
 
     def train(self,
-              training_data: tf.data.Dataset,
-              validation_data: tf.data.Dataset,
+              training_data: Generator,
+              validation_data: Generator,
               monitor: str = "val_loss",
               mode: str = "min",
               epochs: int = 1,
@@ -270,7 +270,7 @@ class BaseModel(ABC):
 
     def evaluate(self,
                  label: str,
-                 evaluation_data: tf.data.Dataset,
+                 evaluation_data: Generator,
                  **kwargs) -> dict[str, any]:
         """
         Evaluate this model.

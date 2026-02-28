@@ -70,7 +70,7 @@ class Worker:
                     msg = connection.recvmsg(4)
                     # Get the length field
                     data = msg[0].decode()
-                    if type(data) == str and data == ControlCommand.STOP.value:
+                    if type(data) is str and data == ControlCommand.STOP.value:
                         break
 
                 data = next(gen_predict)

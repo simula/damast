@@ -20,7 +20,7 @@ from .constants import (
     DAMAST_CSV_DEFAULT_ARGS,
     DAMAST_SPEC_SUFFIX,
     DAMAST_SUPPORTED_FILE_FORMATS,
-    )
+)
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .types import DataFrame, XDataFrame

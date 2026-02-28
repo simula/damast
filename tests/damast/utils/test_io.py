@@ -5,8 +5,7 @@ from zipfile import ZipFile
 import pytest
 
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
-from damast.utils.io import Archive
-from damast.utils.io import ArchiveBackend
+from damast.utils.io import Archive, ArchiveBackend
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows - zipfile backend should be used")

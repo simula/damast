@@ -289,7 +289,7 @@ class PolarsDataFrame(metaclass=Meta):
         raise ValueError(f"{cls.__name__}.load_data: Unsupported input file format {path.suffix}")
 
     @classmethod
-    def from_vaex_hdf5(cls, path: str | Path) -> tuple[polars.LazyFrame, 'MetaData']:
+    def from_vaex_hdf5(cls, path: str | Path) -> tuple[polars.LazyFrame, 'MetaData']: # noqa
         """
         Load hdf5 file and (damast) metadata if found in the file.
         """
@@ -337,7 +337,7 @@ class PolarsDataFrame(metaclass=Meta):
         return polars.LazyFrame(data), metadata
 
     @classmethod
-    def import_netcdf(cls, path: list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]:
+    def import_netcdf(cls, path: list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]: #noqa
 
         ensure_packages(pkgs=["dask", "xarray", "pandas"],
                         required_for="Loading netcdf files",
@@ -356,7 +356,7 @@ class PolarsDataFrame(metaclass=Meta):
         return df.lazy(), {}
 
     @classmethod
-    def import_hdf5(cls, files: str | Path | list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]:
+    def import_hdf5(cls, files: str | Path | list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]: # noqa
         """
         Import a dataframe stored as HDF5.
 

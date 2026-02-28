@@ -18,7 +18,7 @@ from damast.data_handling.transformers import (
     DropMissingOrNan,
     FilterWithin,
     RemoveValueRows,
-    )
+)
 from damast.data_handling.transformers.augmenters import AddLocalIndex
 from damast.domains.maritime.ais import vessel_types
 from damast.domains.maritime.transformers import AddVesselType, ComputeClosestAnchorage

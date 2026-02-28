@@ -11,7 +11,7 @@ from damast.core.decorators import (
     DAMAST_DEFAULT_DATASOURCE,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
-    )
+)
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.types import XDataFrame
@@ -487,7 +487,7 @@ def test_decorator_renaming(varname, tmp_path):
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
     for node in pipeline.processing_graph.nodes():
-        name = node.name
+        assert node.name
         transformer = node.transformer
 
     assert transformer.input_specs[DAMAST_DEFAULT_DATASOURCE][0].name == "status"
@@ -588,7 +588,7 @@ def test_join_operation(data_path, tmp_path):
     osint_df = AnnotatedDataFrame.from_file(osint_csv, metadata_required=False)
 
     with pytest.raises(TypeError, match="expected an annotated dataframe"):
-        new_adf = pipeline.transform(ais_csv, osint=osint_df)
+        pipeline.transform(ais_csv, osint=osint_df)
 
     joined_df = pipeline.transform(ais_df, osint=osint_df)
 
@@ -626,7 +626,7 @@ def test_join_pipeline(data_path, tmp_path):
     osint_df = AnnotatedDataFrame.from_file(osint_csv, metadata_required=False)
 
     with pytest.raises(TypeError, match="expected an annotated dataframe"):
-        new_adf = pipeline.transform(ais_csv, osint=osint_df)
+        pipeline.transform(ais_csv, osint=osint_df)
 
     joined_df = pipeline.transform(ais_df, osint=osint_df)
 

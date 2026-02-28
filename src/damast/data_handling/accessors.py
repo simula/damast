@@ -8,13 +8,13 @@ import sys
 import time
 from typing import Any, List, Optional, Union
 
-from damast.ml import keras
 import keras.utils
 import numpy as np
 import pandas as pd
 import polars as pl
 
 from damast.core.types import DataFrame, XDataFrame
+from damast.ml import keras
 
 __all__ = [
     "GroupSequenceAccessor",
@@ -72,7 +72,7 @@ class GroupSequenceAccessor:
         self.groups = df.unique(group_column)
 
         if sort_columns is not None:
-            self.sort_columns = sort_columns if type(sort_columns) == list else [sort_columns]
+            self.sort_columns = sort_columns if type(sort_columns) is list else [sort_columns]
         else:
             self.sort_columns = sort_columns
 
@@ -190,7 +190,7 @@ class GroupSequenceAccessor:
                                      f" got {datatypes}")
 
         if use_target:
-            target = target if type(target) == list else [target]
+            target = target if type(target) is list else [target]
 
             if sequence_forecast < 0:
                 raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
@@ -231,7 +231,7 @@ class GroupSequenceAccessor:
                 all_columns += self.sort_columns
             use_target = target is not None
             if use_target:
-                target = target if type(target) == list else target
+                target = target if type(target) is list else target
                 all_columns += target
             else:
                 # If no target, we are not forecasting
@@ -420,7 +420,7 @@ class SequenceIterator:
             raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
 
         if use_target:
-            target = target if type(target) == list else target
+            target = target if type(target) is list else target
             if sequence_forecast == 0:
                 raise ValueError(f"{self.__class__.__name__}: Cannot do extract targets with no sequence forecast")
         else:

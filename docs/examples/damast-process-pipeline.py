@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from damast.core import DataProcessingPipeline
 from damast.data_handling.transformers import AddDeltaTime
 from damast.domains.maritime.transformers.features import DeltaDistance, Speed
