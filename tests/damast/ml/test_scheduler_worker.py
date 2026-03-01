@@ -42,8 +42,11 @@ def job(tmp_path):
 def worker_process():
     # Ensure that no previous worker job is running
     for proc in psutil.process_iter():
-        if "run_test_worker" in proc.name():
-            proc.kill()
+        try:
+            if "run_test_worker" in proc.name():
+                proc.kill()
+        except psutil.NoSuchProcess:
+            pass
 
     run_test_worker = Path(__file__).parent / "run_test_worker.py"
     assert run_test_worker.exists()
