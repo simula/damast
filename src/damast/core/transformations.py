@@ -17,7 +17,7 @@ from .constants import (
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
-    )
+)
 from .formatting import DEFAULT_INDENT
 
 
@@ -43,13 +43,13 @@ class Transformer:
 
 class PipelineElement(Transformer):
     #: Pipeline in which context this processor will be run
-    parent_pipeline: 'DataProcessingPipeline'
+    parent_pipeline: 'DataProcessingPipeline' #noqa
 
     #: Map names of input and outputs for a particular pipeline
     _name_mappings: dict[str, dict[str, str]]
 
     #: Map names of datasource (arguments) to a specific (extra) transformer arguments
-    def set_parent(self, pipeline: 'DataProcessingPipeline'):
+    def set_parent(self, pipeline: 'DataProcessingPipeline'): #noqa
         """
         Sets the parent pipeline for this pipeline element
 

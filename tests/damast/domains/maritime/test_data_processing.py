@@ -192,7 +192,10 @@ def test_aggregate(data_path, tmp_path):
     pipeline = MyPipeline(workdir=tmp_path)
     df = pipeline.transform(adf, verbose=True)
 
-    path = data_path / "test_ais.csv"
+    assert df.metadata['lat'].unit == 'deg'
+    assert df.metadata['lon'].unit == 'deg'
+
+    assert "delta_distance" in df.column_names
 
 def test_aggregate_with_name_mapping(data_path, tmp_path):
     path = data_path / "test_ais.csv"

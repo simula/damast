@@ -5,7 +5,7 @@ from damast.domains.maritime.ais.vessel_types import (
     Fishing,
     PotsAndTraps,
     VesselType,
-    )
+)
 
 
 def test_vessel_types():

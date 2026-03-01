@@ -2,7 +2,6 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 
-import keras
 import pytest
 
 import damast
@@ -13,21 +12,17 @@ from damast.core.metadata import MetaData
 from damast.core.transformations import MultiCycleTransformer
 from damast.core.units import units
 from damast.domains.maritime.ais.data_generator import AISTestData, AISTestDataSpec
+from damast.ml import keras
 from damast.ml.experiments import (
     Experiment,
     ForecastTask,
     LearningTask,
     ModelInstanceDescription,
     TrainingParameters,
-    )
+)
 from damast.ml.models.base import BaseModel
 
 os.environ["COLUMNS"] = '120'
-
-
-class ModelA(BaseModel):
-    def __init_model(self):
-        pass
 
 
 class TransformerA(PipelineElement):
@@ -201,7 +196,7 @@ def test_validate_experiment_dir(tmp_path):
 
     with pytest.raises(NotADirectoryError):
         filename = tmp_path / "dummy-file"
-        with open(filename, "w") as f:
+        with open(filename, "w"):
             pass
 
         Experiment.validate_experiment_dir(dir=filename)
@@ -214,7 +209,7 @@ def test_validate_experiment_dir(tmp_path):
         Experiment.touch_marker(dir=f"{tmp_path}-does-not-exist")
     with pytest.raises(NotADirectoryError):
         file_in_dir = tmp_path / "test_file"
-        with open(file_in_dir, "a") as f:
+        with open(file_in_dir, "a"):
             pass
         Experiment.touch_marker(dir=file_in_dir)
 

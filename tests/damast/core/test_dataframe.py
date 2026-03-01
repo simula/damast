@@ -16,7 +16,7 @@ from damast.core.metadata import (
     DataSpecification,
     MetaData,
     ValidationMode,
-    )
+)
 from damast.core.types import XDataFrame
 
 

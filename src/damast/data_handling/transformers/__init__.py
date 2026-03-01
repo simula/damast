@@ -9,7 +9,7 @@ from .augmenters import (
     ChangeTypeColumn,
     JoinDataFrameByColumn,
     MultiplyValue,
-    )
+)
 from .filters import DropMissingOrNan, FilterWithin, RemoveValueRows
 from .normalizers import normalize
 

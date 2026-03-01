@@ -12,7 +12,6 @@ from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Union
 
-import keras
 import numpy as np
 import polars as pl
 import yaml
@@ -21,6 +20,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.types import DataFrame
 from damast.data_handling.accessors import GroupSequenceAccessor
+from damast.ml import keras
 from damast.ml.models.base import BaseModel, ModelInstanceDescription
 
 basicConfig()
@@ -142,7 +142,7 @@ class LearningTask:
         yield "training_parameters", self.training_parameters._asdict() # type: ignore
 
     def __eq__(self, other) -> bool:
-        if type(self) != type(other):
+        if type(self) is not type(other):
             return False
 
         for attr in ["pipeline", "features", "targets", "models"]:
@@ -179,7 +179,7 @@ class ForecastTask(LearningTask):
         self.forecast_length = forecast_length
 
     def __eq__(self, other):
-        if type(self) != type(other):
+        if type(self) is not type(other):
             return False
 
         for attr in ["pipeline", "features", "targets", "models", "group_column", "sequence_length",
@@ -249,7 +249,7 @@ class Experiment:
             raise ValueError(f"{self.__class__.__name__}.__init__: learning_task must be either"
                              f"dict or LearningTask object")
 
-        if type(input_data) == list:
+        if type(input_data) is list:
             self.input_data = input_data
         else:
             self.input_data = [ Path(input_data) ]

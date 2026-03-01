@@ -15,6 +15,8 @@ def test_processing_graph():
     graph.add(node=n0)
     graph.add(node=n1)
     graph.add(node=n2)
+    graph.add(node=n3)
+    graph.add(node=n4)
 
     for n in graph.nodes():
         node = graph[n.uuid]
