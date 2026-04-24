@@ -182,12 +182,13 @@ class ListOfValues:
                 if sample is not None:
                     break
 
-            actual_dtype = type(sample)
-            if actual_dtype != dtype:
-                raise ValueError(
-                    f"{cls.__name__}.from_data: expected list of {dtype.__name__}, but received"
-                    f" {actual_dtype}, {data=}"
-                )
+            if sample is not None:
+                actual_dtype = type(sample)
+                if actual_dtype != dtype:
+                    raise ValueError(
+                        f"{cls.__name__}.from_data: expected list of {dtype.__name__}, but received"
+                        f" {actual_dtype}, {data=}"
+                    )
         return cls(values=data)
 
     def to_dict(self) -> Dict[str, Any]:
