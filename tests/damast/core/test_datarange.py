@@ -42,6 +42,7 @@ def test_min_max(min, max, value, is_in_range, allow_missing):
 @pytest.mark.parametrize(["data", "expected_instance"],
                          [
                              [{"ListOfValues": [0, 1, 2]}, ListOfValues([0, 1, 2])],
+                             [{"ListOfValues": ["a", "b", "c", None]}, ListOfValues(["a", "b", "c", None])],
                              [{"MinMax": {"min": 0, "max": 1}}, MinMax(0, 1)],
                              [{"CyclicMinMax": {"min": 0, "max": 1}}, CyclicMinMax(0, 1)]
 ])
