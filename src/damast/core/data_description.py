@@ -11,8 +11,6 @@ import numpy as np
 import polars as pl
 from pydantic import BaseModel
 
-from damast.utils import fromisoformat
-
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 
 
@@ -33,8 +31,8 @@ class DataElement:
             dtype = dtype.to_python()
         elif isinstance(dtype, pl.datatypes.Datetime):
             if type(value) is str:
-                value = fromisoformat(value)
-            return dtype.to_python().fromtimestamp(value.timestamp())
+                return pl.Series([value]).str.to_datetime(time_unit=dtype.time_unit, time_zone=dtype.time_zone)[0]
+            return pl.Series([value]).cast(dtype)[0]
 
         return dtype(value)
 
@@ -229,6 +227,9 @@ class MinMax(DataRange):
         Constructor
         """
         super().__init__()
+
+        if min is None or max is None:
+            raise ValueError(f"DataRange.__init__: cannot initialize with 'None' - min: {min} max: {max}")
 
         if not min <= max:
             raise RuntimeError(f"DataRange.__init__: invalid range - min: {min} max: {max}")

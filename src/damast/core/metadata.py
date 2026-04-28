@@ -643,7 +643,8 @@ class DataSpecification:
                 min_value, max_value = xdf.minmax(column_name)
                 if self.value_range:
                     if isinstance(self.value_range, MinMax):
-                        self.value_range = self.value_range.merge(MinMax(min_value, max_value))
+                        if min_value and max_value:
+                            self.value_range = self.value_range.merge(MinMax(min_value, max_value))
                 else:
                      logger.info(
                          f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
@@ -1139,9 +1140,14 @@ class MetaData:
         for column_spec in self.columns:
             columns = df.compat.column_names
             if column_spec.name in columns:
-                df = column_spec.apply(
-                    df=df, column_name=column_spec.name, validation_mode=validation_mode
-                )
+                try:
+                    df = column_spec.apply(
+                        df=df, column_name=column_spec.name, validation_mode=validation_mode
+                    )
+                except Exception:
+                    raise ValueError(
+                        f"{self.__class__.__name__}.apply: error applying spec '{column_spec.name}' in dataframe."
+                    )
             else:
                 raise ValueError(
                     f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."

@@ -1,7 +1,16 @@
+import datetime as dt
+
 import numpy as np
+import polars as pl
 import pytest
 
-from damast.core.data_description import CyclicMinMax, DataRange, ListOfValues, MinMax
+from damast.core.data_description import (
+    CyclicMinMax,
+    DataElement,
+    DataRange,
+    ListOfValues,
+    MinMax,
+)
 
 
 @pytest.mark.parametrize(["min", "max", "value", "is_in_range", "allow_missing"],
@@ -54,3 +63,14 @@ def test_data_range_from_dict(data, expected_instance):
     data_dict = instance.to_dict()
     instance = DataRange.from_dict(data=data_dict)
     assert expected_instance == instance
+
+
+@pytest.mark.parametrize(["input_value", "dtype", "expected_output"],
+                        [
+                            [ "2026-04-05 01:23:45", pl.Datetime(), dt.datetime(year=2026, month=4, day=5, hour=1, minute=23, second=45, tzinfo=None)],
+                            [ "2026-04-05 01:23:45+00:00", pl.Datetime(time_unit="us", time_zone="UTC"), dt.datetime(year=2026, month=4, day=5, hour=1, minute=23, second=45, tzinfo=dt.timezone.utc)],
+                            [ "2026-04-05 01:23:45+00:02", pl.Datetime(time_unit="us", time_zone="UTC"), dt.datetime(year=2026, month=4, day=5, hour=1, minute=21, second=45, tzinfo=dt.timezone.utc)],
+                        ]
+)
+def test_DataElement(input_value, dtype, expected_output):
+    assert DataElement.create(input_value, dtype) == expected_output
