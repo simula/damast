@@ -20,7 +20,7 @@ class CycleTransformer(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         feature = self.get_name('x')
         df._dataframe = df._dataframe.with_columns(
-                (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x"),
+                (np.sin(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x"),
                 (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_y")
         )
         return df
