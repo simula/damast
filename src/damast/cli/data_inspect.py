@@ -30,7 +30,7 @@ class DataInspectParser(BaseParser):
                             )
 
         parser.add_argument("--filter",
-                help="Filter based on column data, e.g., mmsi==120123",
+                help="Filter based on column data, e.g., mmsi==120123, allowed operators !=,<,>,==,<=,>=,<> or =~ for a regex, e.g.,'name =~ '^SAR*'",
                 action="append"
         )
         parser.add_argument("--head", type=int, default=10, help="First this number of rows, default is 10")
@@ -71,7 +71,7 @@ class DataInspectParser(BaseParser):
                 if args.filter:
                     filter_values = ""
                     for filter_expression in args.filter:
-                        m = re.match(r"([^!=<>]+)([!=><]+)([^!=<>]*)", filter_expression)
+                        m = re.match(r"([^!=<>~]+)([!=><][=~]?)([^!=<>~]*)", filter_expression)
                         if m:
                             lhs = m.group(1).strip()
                             op = m.group(2).strip()
@@ -88,6 +88,8 @@ class DataInspectParser(BaseParser):
                                 else:
                                     logger.warning("Filter expression invalid: operator must be either '==' or '!='")
                                     continue
+                            elif op == "=~":
+                                new_filter = f"{lhs}.str.contains(r'{rhs}')"
                             else:
                                 rhs = self.expand_filter_arg(adf, rhs)
                                 new_filter = f"{lhs} {op} {rhs}"

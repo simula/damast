@@ -72,6 +72,13 @@ def test_inspect(data_path, filename, script_runner):
     assert re.search(r"Loading dataframe \(1 files\)", result.stdout) is not None, "Process dataframe"
     assert re.search("shape:", result.stdout) is not None, "Show dataframe"
 
+@pytest.mark.parametrize("filename", [
+    "test_ais.parquet",
+])
+def test_inspect_regex(data_path, filename, script_runner):
+    result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename), "--filter", "date_time_utc =~ 2022-09-01 11:??:??"])
+    assert re.search("shape:\s+\(2,\s+[0-9]+\)", result.stdout) is not None, "Show dataframe with only 2 rows"
+
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
