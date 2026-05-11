@@ -1144,6 +1144,8 @@ class MetaData:
                     df = column_spec.apply(
                         df=df, column_name=column_spec.name, validation_mode=validation_mode
                     )
+                except ValueError:
+                    raise
                 except Exception:
                     raise ValueError(
                         f"{self.__class__.__name__}.apply: error applying spec '{column_spec.name}' in dataframe."
