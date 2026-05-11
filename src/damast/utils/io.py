@@ -35,7 +35,7 @@ class Archive:
 
     def autoload_backend(self):
         try:
-            from ratarmountcore.compressions import (  # noqa
+            from ratarmountcore.formats import (  # noqa
                 ARCHIVE_FORMATS,
                 COMPRESSION_FORMATS,
             )
@@ -68,7 +68,7 @@ class Archive:
         if self._supported_suffixes is not None:
             return self._supported_suffixes
 
-        from ratarmountcore.compressions import (  # noqa
+        from ratarmountcore.formats import (  # noqa
             ARCHIVE_FORMATS,
             COMPRESSION_FORMATS,
         )
