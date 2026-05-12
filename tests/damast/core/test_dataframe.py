@@ -177,6 +177,19 @@ def test_annotated_dataframe_import_csv(data_path):
         name="height", abbreviation="height", category=DataCategory.STATIC,
         unit=units.m, value_range=MinMax(min=0, max=40), representation_type=int)
 
+def test_annotated_dataframe_import_csv_with_quotes(data_path):
+    """
+    Simple test of the annotated dataframe import for csv
+    """
+    csv_path = data_path / "test_dataframe_with_quotes.csv"
+
+    adf = AnnotatedDataFrame.from_file(csv_path)
+    assert adf.column_names == ["id", "name"]
+    assert adf.dtype('id') == polars.Int64
+    assert adf.dtype('name') == polars.String
+
+    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
+
 def test_set_dtype(data_path):
     """
     Test if conversion from int -> str in representation_type is consistent

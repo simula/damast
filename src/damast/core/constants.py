@@ -33,6 +33,5 @@ DAMAST_MOUNT_PREFIX: str = "damast-mount"
 
 DAMAST_CSV_DEFAULT_ARGS: dict[str, any] = {
     'null_values': ["None", "none", "Null", "null"],
-    'quote_char': None,
     'infer_schema_length': None
 }
