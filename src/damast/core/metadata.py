@@ -11,6 +11,7 @@ import os
 import re
 import traceback
 import warnings
+from difflib import SequenceMatcher
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -1207,7 +1208,7 @@ class MetaData:
         return md_fulfillment
 
     @classmethod
-    def search(cls, files: list[str | Path]) -> tuple[MetaData | None, str | None]:
+    def search(cls, files: list[str | Path]) -> tuple[MetaData | None, str | None, dict[str, float]]:
         """
         Search for the metadata specfile for a given list of files
         """
@@ -1216,15 +1217,16 @@ class MetaData:
             commonpath = os.path.commonpath(files)
         except Exception as e:
             logger.debug(e)
-            return None, None, None
+            return None, None, {}
 
         if len(files) == 1:
             commonpath = Path(commonpath).parent
 
         commonprefix = os.path.commonprefix([Path(x).stem for x in files])
-        metadata_file_candidates = [x for x in Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}")]
-        for f in metadata_file_candidates:
+        metadata_file_candidates = { x: SequenceMatcher(None, commonprefix, str(x.stem)).ratio() for x in Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}") }
+        for f in dict(sorted(metadata_file_candidates.items(), key=lambda x: x[1], reverse=True)):
             try:
+                Path(f).stem == commonprefix
                 return MetaData.load_yaml(filename=f), f, metadata_file_candidates
             except Exception as e:
                 logger.warning(f"Loading {f} as metadata file failed -- {e}")

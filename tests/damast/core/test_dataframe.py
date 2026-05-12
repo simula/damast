@@ -190,6 +190,10 @@ def test_annotated_dataframe_import_csv_with_quotes(data_path):
 
     assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
 
+    df = adf.dataframe.collect()
+    assert df[0,1] == "a,b;c"
+    assert df[1,1] == "d;e,f"
+
 def test_set_dtype(data_path):
     """
     Test if conversion from int -> str in representation_type is consistent

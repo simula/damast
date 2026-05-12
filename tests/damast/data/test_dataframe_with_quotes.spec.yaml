@@ -1,0 +1,19 @@
+columns:
+- name: id
+  is_optional: false
+  abbreviation: id
+  category: static
+  value_range:
+    MinMax:
+      min: 0
+      max: 1
+      allow_missing: true
+  representation_type: int
+- name: name
+  is_optional: false
+  abbreviation: name
+  category: static
+  representation_type: str
+annotations:
+  license: MIT License
+  comment: test dataframe
