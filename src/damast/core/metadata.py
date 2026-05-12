@@ -483,9 +483,12 @@ class DataSpecification:
                     data[cls.Key.missing_value.value], spec.representation_type
                 )
             if cls.Key.precision.value in data:
-                spec.precision = DataElement.create(
-                    data[cls.Key.precision.value], spec.representation_type
-                )
+                try:
+                    spec.precision = DataElement.create(
+                        data[cls.Key.precision.value], spec.representation_type
+                    )
+                except Exception as e:
+                    logger.warning(e)
         # else: Missing representation type, missing value and precision will not be loaded
 
         if cls.Key.unit.value in data:
@@ -637,24 +640,23 @@ class DataSpecification:
             return xdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
-            xdf = XDataFrame(df)
-            self.representation_type = xdf.dtype(column_name)
+            return self.update_min_max(df, column_name)
 
-            try:
-                min_value, max_value = xdf.minmax(column_name)
-                if self.value_range:
-                    if isinstance(self.value_range, MinMax):
-                        if min_value and max_value:
-                            self.value_range = self.value_range.merge(MinMax(min_value, max_value))
-                else:
-                     logger.info(
-                         f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
-                     )
-                     self.value_range = MinMax(min_value, max_value)
-            except ValueError:
-                # Type might not be numeric
-                pass
-            return xdf._dataframe
+    def update_min_max(self, df, column_name):
+        xdf = XDataFrame(df)
+        self.representation_type = xdf.dtype(column_name)
+
+        try:
+            min_value, max_value = xdf.minmax(column_name)
+            logger.info(
+                f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
+            )
+            self.value_range = MinMax(min_value, max_value)
+        except ValueError:
+            # Type might not be numeric
+            pass
+        return xdf._dataframe
+
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """

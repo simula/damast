@@ -4,7 +4,7 @@ from pathlib import Path
 from damast.cli.base import BaseParser
 from damast.core.annotations import Annotation
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
-from damast.core.metadata import DataSpecification, MetaData
+from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
 class SetTxtFieldAction(Action):
@@ -15,6 +15,20 @@ class SetTxtFieldAction(Action):
 
         for value in values:
             column, column_value = value.split(":", 1)
+            if name == "category":
+                if column_value not in DataCategory:
+                    raise ValueError(f"Allowed values for category: {','.join([x.value for x in DataCategory])}")
+                column_value = DataCategory[column_value.upper()]
+            elif name == "precision":
+                column_value = float(column_value)
+            elif name == "is_optional":
+                if column_value.lower() in ['true', '1', 'y', 'yes']:
+                    column_value = True
+                elif column_value.lower() in ['false', '0', 'n', 'no']:
+                    column_value = False
+                else:
+                    raise ValueError("Allowed valued for is_optional: 'true' or 'false'")
+
             if column not in namespace.update_metadata:
                 ds = DataSpecification(name=column)
                 namespace.update_metadata.columns.append(ds)
@@ -48,7 +62,15 @@ class DataAnnotateParser(BaseParser):
                             default=None,
                             required=False)
 
-        str_options = ["description", "abbreviation", "unit", "representation_type"]
+        str_options = [
+                    "abbreviation",
+                    "category",
+                    "description",
+                    "is_optional",
+                    "precision",
+                    "representation_type",
+                    "unit",
+        ]
         for field_name in str_options:
             parser.add_argument(f"--set-{field_name}",
                                 nargs="+",
@@ -75,10 +97,18 @@ class DataAnnotateParser(BaseParser):
         files_stats = self.get_files_stats(args.files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
-        adf = AnnotatedDataFrame.from_files(files=args.files, metadata_required=False)
+        if args.inplace:
+            for file in args.files:
+                self.update(args, [file])
+        else:
+            self.update(args, args.files)
+
+
+    def update(self, args, files):
+        adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
         print(adf.head(10).collect())
 
-        metadata_filename = MetaData.specfile(args.files)
+        metadata_filename = MetaData.specfile(files)
         output_dir = Path(metadata_filename).parent
         if args.output_dir is not None:
             output_dir = Path(args.output_dir)
@@ -106,17 +136,18 @@ class DataAnnotateParser(BaseParser):
         metadata.add_annotation(
                 Annotation(
                     name=Annotation.Key.Source,
-                    value=args.files
+                    value=files
                 )
         )
 
         if hasattr(args, "update_metadata") or args.apply:
-            if len(args.files) == 1:
-                output_file = args.files[0]
+            if len(files) == 1:
+                output_file = files[0]
                 for column_spec in args.update_metadata.columns:
                     if column_spec.representation_type:
                         representation_type = adf.set_dtype(column_spec.name, column_spec.representation_type)
                         metadata[column_spec.name].representation_type = representation_type
+                        metadata[column_spec.name].update_min_max(adf._dataframe, column_spec.name)
 
                 adf._metadata = metadata
                 if not args.inplace:
