@@ -32,8 +32,8 @@ jobs:
           # when set to "true" but frees about 6 GB
           tool-cache: true
 
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -84,7 +84,7 @@ jobs:
           pytest -v --timeout=120 --cov=damast --cov-report=term --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.backend }}.xml tests
 
       - name: Upload pytest results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pytest-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.backend }}
           path: junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ matrix.backend }}.xml
