@@ -1227,7 +1227,7 @@ class MetaData:
             try:
                 return MetaData.load_yaml(filename=f), f, metadata_file_candidates
             except Exception as e:
-                logger.debug(f"Loading {f} as metadata file failed -- {e}")
+                logger.warning(f"Loading {f} as metadata file failed -- {e}")
 
         return None, None, metadata_file_candidates
 
