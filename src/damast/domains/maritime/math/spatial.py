@@ -56,7 +56,7 @@ def bearing(lat_1: npt.NDArray[np.float64],
 def reverse_bearing(lat_1: npt.NDArray[np.float64],
                     lon_1: npt.NDArray[np.float64],
                     distance: npt.NDArray[np.float64],
-                    bearing: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+                    bearing: npt.NDArray[np.float64]) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Compute the position of an object, given its initial position, the initial bearing, and the distance
     it will travel.
@@ -79,7 +79,7 @@ def reverse_bearing(lat_1: npt.NDArray[np.float64],
 
 
 @njit
-def decdeg2dms(dd: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+def decdeg2dms(dd: npt.NDArray[np.float64]) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Convert decimal degrees (dd) to sexagesimal degrees (degrees, minutes, seconds)
 
@@ -122,7 +122,7 @@ def dms2decdeg(degrees: npt.NDArray[np.float64],
     sign[np.signbit(degrees)] = -1
     return degrees + sign * (minutes / 60 + seconds / 3600)
 
-
+@njit
 def great_circle_distance(lat_1: npt.NDArray[np.float64],
                           lon_1: npt.NDArray[np.float64],
                           lat_2: npt.NDArray[np.float64],
@@ -134,7 +134,6 @@ def great_circle_distance(lat_1: npt.NDArray[np.float64],
     `Haversine formula <https://en.wikipedia.org/wiki/Haversine_formula>`_.
 
     .. math::
-
         d = 2 R \\arcsin \\left(\\sqrt{\\sin^2\\left(\\frac{\\phi_1 - \\phi_2}{2} \\right)
         + \\cos\\phi_1\\cos\\phi_2\\sin^2\\left(\\frac{\\lambda_1 - \\lambda_2}{2} \\right)
         }\\right)
@@ -145,10 +144,17 @@ def great_circle_distance(lat_1: npt.NDArray[np.float64],
     :param lon_2: A sequence of longitudes (in degrees), :math:`\\lambda_2`
 
     :returns: The great circle distance between sets of points """
-    lon_1, lat_1, lon_2, lat_2 = map(np.radians, [lon_1, lat_1, lon_2, lat_2])
-    return 2 * EARTH_RADIUS * np.arcsin(np.sqrt(np.power(np.sin((lat_1 - lat_2) / 2), 2)
-                                                + np.cos(lat_1) * np.cos(lat_2) * np.power(np.sin((lon_1 - lon_2) / 2),
-                                                                                           2)))
+    # Convert to radians
+    lon_1 = np.radians(lon_1)
+    lat_1 = np.radians(lat_1)
+    lon_2 = np.radians(lon_2)
+    lat_2 = np.radians(lat_2)
+
+    a = np.sin((lat_1 - lat_2) / 2) ** 2
+    b = np.cos(lat_1) * np.cos(lat_2) * np.sin((lon_1 - lon_2) / 2) ** 2
+    c = np.clip(a + b, 0.0, 1.0)
+
+    return 2 * EARTH_RADIUS * np.arcsin(np.sqrt(c))
 
 
 def chord_distance(d: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:

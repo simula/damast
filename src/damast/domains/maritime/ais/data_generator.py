@@ -1,7 +1,7 @@
 import datetime
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from logging import INFO, Logger, getLogger
-from random import choice, randint, random
+from random import choice, randint, random, uniform
 from typing import Any, List
 
 import pandas as pd
@@ -92,7 +92,7 @@ class AISTestData:
         last_day = datetime.datetime(year=2022, month=12, day=31)
         start_time = randint(0, int(last_day.timestamp()))
 
-        sog_start = random() * SpeedOverGround.min_value / SpeedOverGround.max_value
+        sog_start = uniform(0,0.5) * SpeedOverGround.max_value
         cog_start = random() * CourseOverGround.min_value / CourseOverGround.max_value
         heading_start = cog_start
 
@@ -208,4 +208,4 @@ if __name__ == "__main__":
 
     ais_test_data = AISTestData(number_of_trajectories=args.number_of_trajectories)
     ais_test_data.dataframe.export_hdf5(args.output)
-    _log.info("Written: {args.output}")
+    _log.info(f"Written: {args.output}")

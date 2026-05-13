@@ -40,7 +40,7 @@ class VesselType:
         return klasses
 
     @classmethod
-    def get_types_as_str(cls) -> List[VesselType]:
+    def get_types_as_str(cls) -> List[str]:
         return [x.typename() for x in cls.get_types()]
 
     @staticmethod
@@ -80,7 +80,7 @@ class VesselType:
 
     @classmethod
     def to_id(cls, *,
-              klass: Union[str, VesselType] = None) -> int:
+              klass: Optional[Union[str, VesselType]] = None) -> int:
         """
         Get the id for a klass name or class type of VesselType.
 
