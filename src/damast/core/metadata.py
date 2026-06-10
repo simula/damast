@@ -699,7 +699,13 @@ class DataSpecification:
                 if hasattr(spec_value, "to_python"):
                     spec_value = spec_value.to_python()
 
-                if not issubclass(spec_value, expected_value):
+                if not spec_value and expected_value:
+                    fulfillment.status[key] = {
+                        "status": Status.FAIL,
+                        "message": f"Expected '{key.value} == '{expected_value}', but was '{spec_value}' in metadata"
+                    }
+                    continue
+                elif not issubclass(spec_value, expected_value):
                     fulfillment.status[key] = {
                         "status": Status.FAIL,
                         "message": "'representation type is not a subclass of the expected:"
@@ -901,6 +907,16 @@ class MetaData:
             txt = ""
             for column_name, fulfillment in self.column_fulfillments.items():
                 txt += f"[{column_name}: {fulfillment}]"
+            return txt
+
+        def to_str(self, indent = 4) -> str:
+            txt = ""
+            hspace = ' '*indent
+            for column_name, fulfillment in self.column_fulfillments.items():
+                if fulfillment.is_met():
+                    txt += f"\n{hspace}{column_name}: OK"
+                else:
+                    txt += f"\n{hspace}{column_name}: {','.join(['FAIL ' + y['message'] for x,y in fulfillment.status.items() if y['status'] == Status.FAIL])}"
             return txt
 
     #: Specification of columns in the
