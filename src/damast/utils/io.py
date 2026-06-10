@@ -104,6 +104,9 @@ class Archive:
         elif self._backend is None:
             self.autoload_backend()
 
+        if type(filenames) is not list:
+            raise TypeError(f"Archive.__init__: filenames must be 'list', but were '{type(filenames)}'")
+
         self.filenames = sorted(filenames)
 
         if filter_fn is None:
