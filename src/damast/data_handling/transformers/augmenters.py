@@ -259,21 +259,15 @@ class AddDeltaTime(PipelineElement):
         time_column = self.get_name("time_column")
 
         dataframe = dataframe\
-               .sort(group_column, time_column)\
-               .with_columns(
-                    pl.col(time_column).shift(1).alias('previous_timestamp')
-               )
+             .sort(group_column, time_column)\
+             .with_columns(
+                 pl.col(time_column).diff().dt.total_seconds().over(group_column).alias('delta_time')
+             )
 
         dataframe = dataframe\
              .sort(group_column, time_column)\
              .with_columns(
-                 (pl.col(time_column) - pl.col('previous_timestamp')).alias('delta_time')
-             ).drop("previous_timestamp")
-
-        dataframe = dataframe\
-             .sort(group_column, time_column)\
-             .with_columns(
-                pl.col('delta_time').fill_null(pl.duration(seconds=0)).alias('delta_time')
+                pl.col('delta_time').fill_null(0).alias('delta_time')
              )
 
         df._dataframe = dataframe
@@ -313,7 +307,7 @@ class AddTimestamp(PipelineElement):
         to_mapped_name = self.get_name("to")
 
         df._dataframe = df._dataframe.with_columns(
-                pl.col(from_mapped_name).map_elements(convert_to_datetime, return_dtype=float).alias(to_mapped_name)
+                pl.col(from_mapped_name).str.to_datetime().total_seconds(fractional=True).alias(to_mapped_name)
         )
         return df
 
