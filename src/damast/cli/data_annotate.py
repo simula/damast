@@ -4,7 +4,12 @@ from pathlib import Path
 from damast.cli.base import BaseParser
 from damast.core.annotations import Annotation
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
-from damast.core.metadata import DataCategory, DataSpecification, MetaData
+from damast.core.metadata import (
+    DataCategory,
+    DataSpecification,
+    MetaData,
+    ValidationMode,
+)
 
 
 class SetTxtFieldAction(Action):
@@ -83,6 +88,7 @@ class DataAnnotateParser(BaseParser):
                             help="Update the dataset inplace (only possible for a single file)",
                             action="store_true",
                             required=False)
+
         parser.add_argument("--apply",
                 help="Update the annotation inference and rewrite the metadata to the dataset",
                 action="store_true",
@@ -105,7 +111,7 @@ class DataAnnotateParser(BaseParser):
 
 
     def update(self, args, files):
-        adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
+        adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False, validation_mode=ValidationMode.IGNORE)
         print(adf.head(10).collect())
 
         metadata_filename = MetaData.specfile(files)
