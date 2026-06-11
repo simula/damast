@@ -17,7 +17,10 @@ from damast.data_handling.transformers.augmenters import (
 from damast.domains.maritime.ais import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.data_specification import ColumnName
-from damast.domains.maritime.math import great_circle_distance
+from damast.domains.maritime.math import (
+    EARTH_RADIUS_MID_LATITUDE_IN_KM,
+    great_circle_distance,
+)
 from damast.domains.maritime.transformers import (
     AddMissingAISStatus,
     AddVesselType,
@@ -134,7 +137,8 @@ def test_delta_column(tmp_path):
         lon = expected_dataframe.select(pl.col("LON")).to_numpy()
         lon_prev = expected_dataframe.select(pl.col("LON_prev")).to_numpy()
 
-        pandas_distances = great_circle_distance(lat, lon, lat_prev, lon_prev)
+        # polars_h3 - which is used in the pl computation uses EARTH_RADIUS_MID_LATITUDE_IN_KM
+        pandas_distances = great_circle_distance(lat, lon, lat_prev, lon_prev, earth_radius_in_km=EARTH_RADIUS_MID_LATITUDE_IN_KM)
 
         assert np.allclose(pandas_distances, distances)
 

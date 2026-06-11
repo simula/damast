@@ -5,6 +5,7 @@ from pathlib import Path
 
 import polars as pl
 
+import damast  # noqa
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.utils.io import Archive
@@ -48,9 +49,10 @@ class DataInspectParser(BaseParser):
         if arg in adf.column_names:
             return f"pl.col('{arg}')"
 
-        m = re.match(r"datetime\((.*)\)", arg)
+        m = re.match(r"datetime\(([^,]*)(,\s*(.*))?\)", arg)
         if m:
-            return f"damast.utils.fromisoformat({m.group(1)})"
+            time_zone = m.group(3)
+            return f"pl.lit({m.group(1)}).str.to_datetime(time_zone={time_zone})"
 
         return arg
 

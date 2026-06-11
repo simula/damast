@@ -240,7 +240,7 @@ class DataProcessingPipeline(PipelineElement):
                     if not fulfillment.is_met():
                         raise RuntimeError(
                             f"{cls.__name__}.validate: Input requirements are not fulfilled (for datasource '{node.transformer}'). "
-                            f"Current input available (at step '{node.name}'): {fulfillment}"
+                            f"Current input available (at step '{node.name}'): {fulfillment.to_str(indent=4)}"
                         )
                     node.validation_output_spec = DataSpecification.merge_lists(node_input_specs,
                                                                                 current_specs[datasource])
@@ -254,7 +254,7 @@ class DataProcessingPipeline(PipelineElement):
                             if not fulfillment.is_met():
                                 raise RuntimeError(
                                     f"{cls.__name__}.validate: Input requirements are not fulfilled {node} (for {slot=}). "
-                                     f"Current input available (at step '{node.name}'): {fulfillment}"
+                                     f"Current input available (at step '{node.name}'): {fulfillment.to_str(indent=4)}"
                                 )
 
                             if not node.validation_output_spec:
