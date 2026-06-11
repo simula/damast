@@ -15,7 +15,7 @@ from damast.core.types import DataFrame, XDataFrame
 from damast.data_handling.transformers.augmenters import BallTreeAugmenter
 from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
-from damast.domains.maritime.math.spatial import EARTH_RADIUS
+from damast.domains.maritime.math.spatial import EARTH_RADIUS_IN_KM
 
 __all__ = [
     "AddMissingAISStatus",
@@ -36,6 +36,7 @@ class ComputeClosestAnchorage(PipelineElement):
     dataset: str
     columns: list[str]
     sep: str
+    earth_radius_in_km: float
 
     @property
     def deg2rad(self) -> float:
@@ -44,7 +45,8 @@ class ComputeClosestAnchorage(PipelineElement):
     def __init__(self,
                  dataset: str | Path,
                  columns: list[str],
-                 sep: str = ";"):
+                 sep: str = ";",
+                 earth_radius_in_km: float = EARTH_RADIUS_IN_KM):
         self.dataset = dataset
         self.columns = columns
         self.sep = sep
@@ -59,6 +61,8 @@ class ComputeClosestAnchorage(PipelineElement):
         ]
 
         self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
+
+        self.earth_radius_in_km = earth_radius_in_km
 
     @classmethod
     def load_data(cls,
@@ -103,7 +107,7 @@ class ComputeClosestAnchorage(PipelineElement):
 
         # Multiply distance column by earth radius
         dataframe = dataframe.with_columns(
-            (pl.col(distance)*EARTH_RADIUS).alias(distance)
+            (pl.col(distance)*self.earth_radius_in_km).alias(distance)
         )
         #dataframe.units[self.get_name("distance")] = damast.core.units.units.km
 
