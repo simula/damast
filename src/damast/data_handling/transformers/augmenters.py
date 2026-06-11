@@ -258,11 +258,18 @@ class AddDeltaTime(PipelineElement):
         group_column = self.get_name("group")
         time_column = self.get_name("time_column")
 
-        dataframe = dataframe\
-             .sort(group_column, time_column)\
-             .with_columns(
-                 pl.col(time_column).diff().dt.total_seconds().over(group_column).alias('delta_time')
-             )
+        if isinstance(dataframe.compat.dtype(time_column), pl.Float64) or isinstance(dataframe.compat.dtype(time_column), pl.Int64):
+            dataframe = dataframe\
+                 .sort(group_column, time_column)\
+                 .with_columns(
+                     pl.from_epoch(pl.col(time_column), time_unit="s").diff().dt.total_seconds().over(group_column).alias('delta_time')
+                 )
+        else:
+            dataframe = dataframe\
+                 .sort(group_column, time_column)\
+                 .with_columns(
+                     pl.col(time_column).diff().dt.total_seconds().over(group_column).alias('delta_time')
+                 )
 
         dataframe = dataframe\
              .sort(group_column, time_column)\
@@ -291,9 +298,9 @@ def convert_to_datetime(date_string: str) -> float:
 
 class AddTimestamp(PipelineElement):
     """
-    Add Timestamp from date Time UTC.
+    Add the timestamp from date Time UTC in s
 
-    If time-stamp is not supplied for a row add ``NaN``
+    If timestamp is not supplied for a row add ``NaN``
     """
 
     @damast.core.describe("Add Timestamp")
@@ -307,7 +314,7 @@ class AddTimestamp(PipelineElement):
         to_mapped_name = self.get_name("to")
 
         df._dataframe = df._dataframe.with_columns(
-                pl.col(from_mapped_name).str.to_datetime().total_seconds(fractional=True).alias(to_mapped_name)
+                (pl.col(from_mapped_name).str.to_datetime().dt.timestamp("ms")/1000.0).alias(to_mapped_name)
         )
         return df
 
