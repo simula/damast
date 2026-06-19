@@ -23,6 +23,13 @@ VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
 polars.Config.set_engine_affinity("streaming")
 
+POLARS_TYPE_DICT = {
+    key: value
+    for key, value in vars(polars).items()
+    if isinstance(value, type) and issubclass(value, polars.DataType)
+}
+POLARS_TYPE_DICT["DataType"] = polars.DataType
+
 class Meta(type):
     _base_impl: ClassVar["str"] = "polars"
 
@@ -47,6 +54,14 @@ class PolarsDataFrame(metaclass=Meta):
 
         self._dataframe_collected = None
         self._polars_dataframe = None
+
+    @classmethod
+    def types(cls) -> dict[str, any]:
+        return POLARS_TYPE_DICT
+
+    @classmethod
+    def resolve_type(cls, type_txt: str):
+        return eval(type_txt, cls.types())
 
     @property
     def dataframe(self) -> PolarsDataFrame:
