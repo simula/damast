@@ -86,7 +86,7 @@ class PolarsDataFrame(metaclass=Meta):
         return self._dataframe_collected
 
     def is_string(self, column_name: str) -> bool:
-        return str(self.dtype(column_name)).lower().startswith("str")
+        return str(self.dtype(column_name)).lower() in ["str", "string"]
 
     def is_numeric(self, column_name: str) -> bool:
         return self.dtype(column_name).is_numeric()
