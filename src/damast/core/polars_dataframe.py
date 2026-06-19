@@ -63,6 +63,7 @@ class PolarsDataFrame(metaclass=Meta):
     def resolve_type(cls, type_txt: str):
         return eval(type_txt, cls.types())
 
+
     @property
     def dataframe(self) -> PolarsDataFrame:
         """
@@ -168,6 +169,12 @@ class PolarsDataFrame(metaclass=Meta):
         if len(categories) <= max_count:
             timepoint_like = 0
             for c in categories[:10]:
+                if c is None:
+                    continue
+
+                if type(c) is not str:
+                    raise ValueError(f"Column {column_name} with unexpected category: {c}")
+
                 if c and re.search(r"[0-9]{2}:[0-9]{2}", c) is not None:
                     timepoint_like += 1
 
