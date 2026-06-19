@@ -65,6 +65,7 @@ class DataInspectParser(BaseParser):
         try:
             with Archive(filenames=args.files) as input_files:
                 files = [x for x in input_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
+
                 if not files:
                     raise RuntimeError(f"Inspection is not supported for input files: {input_files=}")
 

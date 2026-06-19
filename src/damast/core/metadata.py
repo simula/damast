@@ -8,7 +8,6 @@ import builtins
 import inspect
 import logging
 import os
-import re
 import traceback
 import warnings
 from difflib import SequenceMatcher
@@ -36,6 +35,7 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
 
 class DataCategory(str, Enum):
     """
@@ -371,15 +371,7 @@ class DataSpecification:
             exceptions.append(e)
 
         try:
-            m = re.match(r"(.*)\((.*)\)", type_name)
-            call_args = None
-            if m is not None:
-                type_name = m.group(1)
-                call_args = m.group(2)
-            dtype = getattr(pl.datatypes, type_name)
-            if call_args:
-                dtype = eval(f"pl.datatypes.{dtype}({call_args})")
-            return dtype
+            return XDataFrame.resolve_type(type_txt=type_name)
         except TypeError as e:
             exceptions.append(e)
 
@@ -615,7 +607,7 @@ class DataSpecification:
                     warnings.warn(
                         f"{self.__class__.__name__}.apply: column '{column_name}':"
                         f" expected representation type: {self.representation_type},"
-                        f" but got '{dtype}'"
+                        f" but got '{dtype}' - setting to {self.representation_type}"
                     )
                     xdf.set_dtype(column_name, self.representation_type)
 

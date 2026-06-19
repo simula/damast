@@ -361,9 +361,12 @@ class AnnotatedDataFrame(XDataFrame):
                 continue
 
             if 'value_range' not in data:
-                min_value, max_value = df.compat.minmax(column)
-                if min_value is not None and max_value is not None:
-                    data['value_range'] = MinMax(min_value, max_value)
+                try:
+                    min_value, max_value = df.compat.minmax(column)
+                    if min_value is not None and max_value is not None:
+                        data['value_range'] = MinMax(min_value, max_value)
+                except ValueError as e:
+                    _log.debug(f"AnnotatedDataFrame.infer_annotation: could not compute value range for {column} -- {e}")
 
             ds = DataSpecification(**data)
             column_specs.append(ds)

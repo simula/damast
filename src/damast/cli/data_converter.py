@@ -60,6 +60,7 @@ class DataConvertParser(BaseParser):
 
         if not Path(args.metadata_input).exists():
             raise FileNotFoundError(f"metadata-input: '{args.metadata_input}' does not exist")
+
         metadata = MetaData.load_yaml(filename=args.metadata_input)
 
         try:
@@ -67,8 +68,13 @@ class DataConvertParser(BaseParser):
         except KeyError:
             raise ValueError(f"--validation-mode has invalid argument."
                              f" Select from: {[x.value.lower() for x in ValidationMode]}")
+
         adf._metadata = metadata
         adf.validate_metadata(validation_mode)
+
+        if validation_mode == ValidationMode.UPDATE_DATA:
+            # ensure that metadata like stats are regenerated
+            adf.validate_metadata(ValidationMode.UPDATE_METADATA)
 
     def execute(self, args):
         super().execute(args)
@@ -92,10 +98,11 @@ class DataConvertParser(BaseParser):
                         metadata_required=False,
                     )
 
+                self.validate(adf, args)
+
                 adf.save(filename=output_file)
                 created_files.append(output_file)
 
-                self.validate(adf, args)
 
                 print(f"Filename: {output_file.resolve()}")
                 print(adf.head(10).collect())
@@ -119,10 +126,10 @@ class DataConvertParser(BaseParser):
                         # Use current directory as output dir
                         output_file = Path(Path(file).with_suffix(args.output_type).name)
 
+                    self.validate(adf, args)
+
                     adf.save(filename=output_file)
                     created_files.append(output_file)
-
-                    self.validate(adf, args)
 
                     print(f"Filename: {output_file.resolve()}")
                     print(adf.head(10).collect())
