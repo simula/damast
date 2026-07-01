@@ -612,23 +612,24 @@ class DataSpecification:
                     xdf.set_dtype(column_name, self.representation_type)
 
             if self.value_range:
-                if self.missing_value is None:
-                    logger.info(
-                            f"Filtering out for column '{column_name}' values that are out of range: {self.value_range}."
-                    )
-                    xdf._dataframe = xdf._dataframe.filter(
-                            (pl.col(column_name) >= self.value_range.min) &
-                            (pl.col(column_name) <= self.value_range.max)
+                if isinstance(self.value_range, MinMax):
+                    if self.missing_value is None:
+                        logger.info(
+                                f"Filtering out for column '{column_name}' values that are out of range: {self.value_range}."
                         )
-                else:
-                    xdf._dataframe = xdf._dataframe.with_columns(
-                                pl.when(
-                                    (pl.col(column_name) < self.value_range.min) |
-                                    (pl.col(column_name) > self.value_range.max)
-                                ).then(self.missing_value)
-                                .otherwise(pl.col(column_name))
-                                .alias(column_name)
-                              )
+                        xdf._dataframe = xdf._dataframe.filter(
+                                (pl.col(column_name) >= self.value_range.min) &
+                                (pl.col(column_name) <= self.value_range.max)
+                            )
+                    else:
+                        xdf._dataframe = xdf._dataframe.with_columns(
+                                    pl.when(
+                                        (pl.col(column_name) < self.value_range.min) |
+                                        (pl.col(column_name) > self.value_range.max)
+                                    ).then(self.missing_value)
+                                    .otherwise(pl.col(column_name))
+                                    .alias(column_name)
+                                  )
             return xdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
