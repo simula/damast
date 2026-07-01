@@ -1,0 +1,4 @@
+courseOverGround,latitude,longitude,name,rateOfTurn,shipType,speedOverGround,trueHeading,navigationalStatus,mmsi,msgtime,stream
+None,70.981065,25.970162,SARNES 3,None,60,0,None,0,257027430,2026-06-30T05:49:19+00:00,terra
+None,70.981062,25.970167,SARNES 3,None,60,0,None,0,257027430,2026-06-30T05:50:20+00:00,terra
+None,70.98107,25.970137,SARNES 3,None,60,0,None,0,257027430,2026-06-30T05:53:20+00:00,terra

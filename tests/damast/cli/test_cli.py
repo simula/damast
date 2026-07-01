@@ -112,14 +112,41 @@ def test_annotate(data_path, filename, spec_filename, tmp_path, script_runner):
                 column == expected_columns[idx][field]
 
 
-@pytest.mark.parametrize("filename, spec_filename", [
-    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+@pytest.mark.parametrize("filename", [
+    "test_ais.csv"
 ])
-def test_annotate_non_existing_column(data_path, filename, spec_filename, tmp_path, script_runner):
+def test_annotate_non_existing_column(data_path, filename, tmp_path, script_runner):
     result = script_runner.run(['damast', 'annotate', '-f', str(data_path / filename), '-o', tmp_path, '--set-unit', 'no-column:deg'])
 
     assert result.returncode == 1
     assert re.search(r"'no-column' does not exist", result.stdout) is not None, "Error on missing column presented"
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.barentswatch.csv", f"barentswatch{DAMAST_SPEC_SUFFIX}"]
+])
+def test_annotate_with_metadata_file(data_path, filename, spec_filename, tmp_path, script_runner):
+    output_file = tmp_path / "ais.barentswatch.parquet"
+
+    # First export to parquet
+    result = script_runner.run(['damast', 'convert', '-f', str(data_path / filename), "--output-file", output_file])
+    assert result.returncode == 0
+
+    adf = AnnotatedDataFrame.from_file(filename=output_file)
+    assert adf.dtype('courseOverGround') == polars.String
+    assert adf.metadata['courseOverGround'].unit is None, "courseOverGround should be without unit"
+    assert adf.metadata['latitude'].unit is None, "latitude should be without unit 'deg'"
+
+    # Then check
+    result = script_runner.run(['damast', 'annotate', '-f', output_file, '-m', str(data_path / spec_filename), '--apply', '--inplace', '--set-unit', 'latitude:rad'])
+    adf = AnnotatedDataFrame.from_file(filename=output_file)
+
+    assert adf.dtype('courseOverGround') == polars.Float64
+    assert adf.metadata['courseOverGround'].unit == 'deg', "course over ground has been set with the correct unit"
+    assert adf.metadata['longitude'].unit == 'deg', "longitude should be unit 'deg'"
+
+    assert adf.metadata['latitude'].unit == 'rad', "latitude should be unit 'rad', resulting from override via --set-unit"
+
 
 
 @pytest.mark.parametrize("filename, spec_filename", [

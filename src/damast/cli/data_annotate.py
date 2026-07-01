@@ -57,6 +57,13 @@ class DataAnnotateParser(BaseParser):
                             type=str,
                             required=True
                             )
+
+        parser.add_argument("-m", "--metadata-input",
+                            help="The metadata that is applied to the data",
+                            default=None,
+                            required=False
+                            )
+
         parser.add_argument("-o", "--output-dir",
                             help="Output directory",
                             default=None,
@@ -102,14 +109,18 @@ class DataAnnotateParser(BaseParser):
         files_stats = self.get_files_stats(args.files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
-        if args.inplace:
-            for file in args.files:
-                self.update(args, [file])
+        update_metadata = args.apply or hasattr(args, 'update_metadata')
+        if update_metadata:
+            if args.inplace:
+                for file in args.files:
+                    self.update(args, [file])
+            else:
+                self.update(args, args.files)
         else:
-            self.update(args, args.files)
+            self.extract(args, args.files)
 
 
-    def update(self, args, files):
+    def extract(self, args, files):
         if not files:
             raise ValueError("Missing files for updating metadata")
 
@@ -140,35 +151,71 @@ class DataAnnotateParser(BaseParser):
                 )
         )
 
-        update_metadata = args.apply or hasattr(args, 'update_metadata')
-        if update_metadata:
-            if len(files) > 1:
-                raise ValueError("Cannot update metadata for multiple files")
-            output_file = files[0]
-
-            if hasattr(args, "update_metadata"):
-                metadata = metadata.merge(args.update_metadata,
-                                          strategy=DataSpecification.MergeStrategy.OTHER)
-                for x in metadata.columns:
-                    if x.name not in adf.column_names:
-                        raise ValueError(f"Column '{x.name}' does not exist")
-
-                for column_spec in args.update_metadata.columns:
-                    if column_spec.representation_type:
-                        representation_type = adf.set_dtype(column_spec.name, column_spec.representation_type)
-                        metadata[column_spec.name].representation_type = representation_type
-                        metadata[column_spec.name].update_min_max(adf._dataframe, column_spec.name)
-
-                adf._metadata = metadata
-                if not args.inplace:
-                    output_file = output_dir / (Path(output_file).stem + "-annotated" + Path(output_file).suffix)
-                    print(f"Creating {output_file}")
-                else:
-                    print(f"Updating {output_file}")
-                adf.export(output_file)
-
-            metadata_filename = Path(output_file).parent / (Path(output_file).stem + DAMAST_SPEC_SUFFIX)
-            metadata.save_yaml(metadata_filename)
-        else:
-            metadata.save_yaml(metadata_filename)
+        metadata.save_yaml(metadata_filename)
         print(f"Created {metadata_filename}")
+
+
+    def update(self, args, files):
+        if not files:
+            raise ValueError("Missing files for updating metadata")
+
+        if len(files) > 1:
+            raise ValueError("Cannot update metadata for multiple files")
+
+        output_file = files[0]
+        adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False, validation_mode=ValidationMode.IGNORE)
+        if args.metadata_input:
+            metadata = MetaData.load_yaml(args.metadata_input)
+        else:
+            metadata = AnnotatedDataFrame.infer_annotation(df=adf)
+
+        metadata.add_annotation(
+                Annotation(
+                    name=Annotation.Key.Source,
+                    value=files
+                )
+        )
+
+        print("Loaded dataframe")
+        print(adf.head(10).collect())
+
+        if hasattr(args, "update_metadata"):
+            metadata = metadata.merge(args.update_metadata,
+                                      strategy=DataSpecification.MergeStrategy.OTHER)
+            for x in metadata.columns:
+                if x.name not in adf.column_names:
+                    raise ValueError(f"Column '{x.name}' does not exist")
+
+            for column_spec in args.update_metadata.columns:
+                if column_spec.representation_type:
+                    representation_type = adf.set_dtype(column_spec.name, column_spec.representation_type)
+                    metadata[column_spec.name].representation_type = representation_type
+                    metadata[column_spec.name].update_min_max(adf._dataframe, column_spec.name)
+
+        adf._metadata = metadata
+        adf.validate_metadata(ValidationMode.UPDATE_DATA)
+        adf.validate_metadata(ValidationMode.UPDATE_METADATA)
+
+        if not args.inplace:
+            metadata_filename = MetaData.specfile(files)
+
+            output_dir = Path(metadata_filename).parent
+            if args.output_dir is not None:
+                output_dir = Path(args.output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+            output_file = output_dir / (Path(output_file).stem + "-annotated" + Path(output_file).suffix)
+            print(f"Creating new {output_file}")
+        else:
+            print(f"Updating (inplace) {output_file}")
+
+        adf.export(output_file)
+
+        metadata_filename = Path(output_file).parent / (Path(output_file).stem + DAMAST_SPEC_SUFFIX)
+        metadata.save_yaml(metadata_filename)
+        print(f"Created {metadata_filename}")
+
+        print("Updated dataframe")
+        adf  = AnnotatedDataFrame.from_files(files=[output_file])
+        print(adf.head(10).collect())
+
