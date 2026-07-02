@@ -126,7 +126,7 @@ class ListOfValues:
 
     def __init__(self, values: List[Any]):
         """
-        Initialise ListOfValue
+        Initialise ListOfValues
 
         :param values: values that define this list
         :raise ValueError: Raises if values is not a list.
@@ -197,7 +197,13 @@ class ListOfValues:
         """
         return dict(self)
 
-    def merge(self, other: ListOfValues) -> ListOfValues:
+    def merge(self, other: ListOfValues | MinMax) -> ListOfValues:
+        if type(other) is MinMax:
+            this_min_max = MinMax(min(self.values), max(self.values))
+            return this_min_max.merge(other)
+        elif type(other) is ListOfValues:
+            raise ValueError(f"ListOfValues.merge: cannot merge with other (type: {type(other)})")
+
         self.values = list(set(self.values + other.values))
         self.values.sort(key=lambda e: (e is None, e))
         return self

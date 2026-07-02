@@ -209,7 +209,8 @@ class AnnotatedDataFrame(XDataFrame):
     def from_files(cls,
             files: list[str|Path],
             metadata_required: bool = True,
-            validation_mode: ValidationMode = ValidationMode.READONLY
+            validation_mode: ValidationMode = ValidationMode.READONLY,
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe by loading given files
@@ -282,7 +283,7 @@ class AnnotatedDataFrame(XDataFrame):
                         annotations=list(metadata_list[0].annotations.values())
                     )
             for i in range(0, len(metadata_list)-1):
-                metadata = metadata.merge(metadata_list[i+1])
+                metadata = metadata.merge(metadata_list[i+1], strategy=merge_strategy)
         else:
             for _, m in metadata.items():
                 metadata = m
@@ -293,11 +294,12 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_parquet(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
             _log.info(f"Loading parquet: {files=}")
-            df = polars.scan_parquet(files, missing_columns='insert')
-
             metadata_per_file = {}
+
+            pyarrow_schemas = []
             for file in files:
                 schema = pq.read_schema(file)
+                pyarrow_schemas.append(schema)
                 if schema and hasattr(schema, "metadata"):
                     if schema.metadata is not None:
                         if b"annotated_dataframe" in schema.metadata:
@@ -305,6 +307,13 @@ class AnnotatedDataFrame(XDataFrame):
                             m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
                             m.set_annotation(Annotation(name=Annotation.Key.Source, value=Path(file).name))
                             metadata_per_file[file] = m
+
+            # https://github.com/pola-rs/polars/issues/27280
+            arrow_schema = pyarrow.unify_schemas(pyarrow_schemas)
+            sorted_arrow_schema = pyarrow.schema(sorted(arrow_schema, key=lambda x: x.name))
+            polars_schema = polars.from_arrow(sorted_arrow_schema.empty_table()).schema
+
+            df = polars.scan_parquet(files, missing_columns='insert', schema=polars_schema)
             return df, metadata_per_file
 
     @classmethod
@@ -332,6 +341,7 @@ class AnnotatedDataFrame(XDataFrame):
     def from_file(cls,
             filename: str | Path,
             metadata_required: bool = True,
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe from an hdf5 file.
@@ -339,7 +349,7 @@ class AnnotatedDataFrame(XDataFrame):
         :param filename: Filename to use for importing and creating the annotated dataframe
 
         """
-        return cls.from_files([filename], metadata_required=metadata_required)
+        return cls.from_files([filename], metadata_required=metadata_required, merge_strategy=merge_strategy)
 
     @classmethod
     def infer_annotation(cls, df: DataFrame) -> MetaData:

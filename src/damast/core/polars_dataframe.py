@@ -167,6 +167,7 @@ class PolarsDataFrame(metaclass=Meta):
             raise RuntimeError(f"Failed to extract categories for column '{column_name}' -- {e}") from e
 
         if len(categories) <= max_count:
+            # do not count every timepoint as category
             timepoint_like = 0
             for c in categories[:10]:
                 if c is None:
