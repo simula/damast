@@ -407,7 +407,16 @@ class PolarsDataFrame(metaclass=Meta):
 
             data_frames = []
             for filename in files:
-                data_frames.append( pandas.read_hdf(str(filename)) )
+                pandas_df = pandas.read_hdf(str(filename))
+
+                with tables.open_file(str(filename)) as hdf5file:
+                    for column in pandas_df.columns:
+                        column_attrs = hdf5file.get_node(f"/dataframe/columns/{column}")._v_attrs
+                        if "representation_type" in column_attrs:
+                            if column_attrs["representation_type"] == "int":
+                                pandas_df[column] = pandas_df[column].astype("Int64")
+
+                data_frames.append(pandas_df)
             pandas_df = pandas.concat(data_frames, ignore_index=True)
 
             df = polars.from_pandas(pandas_df)
@@ -440,6 +449,8 @@ class PolarsDataFrame(metaclass=Meta):
         if isinstance(df, polars.dataframe.DataFrame):
             df = df.lazy()
 
+        # An export of an int column with NaNs will automatically convert this to Float64
+        # while Int64 could be used, the underlying exporter pytables does not (yet) support this
         pandas_df = df.collect().to_pandas()
         pandas_df.to_hdf(path, key=DAMAST_HDF5_ROOT)
         return path

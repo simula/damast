@@ -45,6 +45,25 @@ def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
 
     return datasource
 
+def _get_dataframes(*args, **kwargs) -> AnnotatedDataFrame:
+    """
+    Extract all dataframes from positional or keyword arguments
+    :param datasource: the expected name of the datasource
+    :param args: positional arguments
+    :param kwargs: keyword arguments
+    :return: The annotated data frame
+    :raise KeyError: if a positional argument does not exist and keyword :code:`df` is missing
+    :raise TypeError: if the kwargs 'df' is not an AnnotatedDataFrame
+    """
+    arguments = kwargs.copy()
+    arg_index = 0
+    for parameter in inspect.signature(args[0].transform).parameters:
+        if parameter not in kwargs:
+            arg_index += 1
+            arguments[parameter] = args[arg_index]
+
+    return {x: y for x,y in arguments.items() if isinstance(y, AnnotatedDataFrame)}
+
 def describe(description: str):
     """
     Specify the description for the transformation for the decorated function.
@@ -109,7 +128,8 @@ def input(requirements: dict[str, any], label: str | None = None):
                     # if this is the last datasource parameter, this is also the last input decorators
                     # so the transform can start
                     if label == parameters[-1]:
-                        getattr(pipeline_element, "parent_pipeline").on_transform_start(pipeline_element, adf=_df)
+                        dataframes = _get_dataframes(*args, **kwargs)
+                        getattr(pipeline_element, "parent_pipeline").on_transform_start(pipeline_element, dataframes=dataframes)
                 return func(*args, **kwargs)
 
             raise RuntimeError(

@@ -578,9 +578,9 @@ class DataSpecification:
         if validation_mode == ValidationMode.IGNORE:
             return df
 
+        xdf = XDataFrame(df)
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
-            xdf = XDataFrame(df)
             if self.representation_type is not None:
                 dtype = xdf.dtype(column_name)
                 if dtype.from_python(self.representation_type) != self.representation_type and \
@@ -606,7 +606,6 @@ class DataSpecification:
             return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
-            xdf = XDataFrame(df)
             if self.representation_type is not None:
                 dtype = xdf.dtype(column_name)
                 if self.representation_type not in [dtype, dtype.to_python()]:
@@ -639,6 +638,8 @@ class DataSpecification:
             return xdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
+            if self.representation_type is None:
+                self.representation_type = xdf.dtype(column_name)
             return self.update_datarange_and_stats(df, column_name)
 
     def update_datarange_and_stats(self, df, column_name: str):
@@ -778,6 +779,9 @@ class DataSpecification:
         :raises ValueError: If the data-specifications have overlapping attributes, that have distinct non-``None``
             values, the function throws an error.
         """
+        if type(other) is not DataSpecification:
+            raise TypeError(f"{self.__class__.__name__}.merge: cannot merge self of type={type(self)} with other of type={type(other)}")
+
         if self.name != other.name:
             raise ValueError(
                 f"{self.__class__.__name__}.merge: cannot merge specs with different name property"
@@ -810,16 +814,17 @@ class DataSpecification:
                         merged_value = this_value.merge(other_value)
                         setattr(ds, key.value, merged_value)
                         return ds
-                except Exception as e:
-                    if not strategy:
-                        raise ValueError(
-                            f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
+                except Exception:
+                    logger.debug("Merge failed: {e}")
 
-                            f" on self: '{this_value}' vs. other: '{other_value}' -- {e}"
-                        )
+                if not strategy:
+                    raise ValueError(
+                        f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
+
+                        f" on self: '{this_value}' vs. other: '{other_value}'"
+                    )
 
                 logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
-
                 if strategy == DataSpecification.MergeStrategy.OTHER:
                     setattr(ds, key.value, other_value)
                 elif strategy == DataSpecification.MergeStrategy.THIS:
@@ -842,6 +847,13 @@ class DataSpecification:
         :param a_specs: First list of specs
         :param b_specs: Second list of specs
         """
+
+        if type(a_specs) is not list:
+            raise TypeError(f"{cls.__name__}.merge_lists: cannot merge {type(a_specs)} -- needs to be list(DataSpecificiation)")
+
+        if type(b_specs) is not list:
+            raise TypeError(f"{cls.__name__}.merge_lists: cannot merge {type(a_specs)} -- needs to be list(DataSpecificiation)")
+
         result_specs: List[DataSpecification] = []
 
         b_column_dict = {x.name: x for x in b_specs}
@@ -1199,7 +1211,7 @@ class MetaData:
             delta = set(columns).difference([x.name for x in self.columns])
             if delta:
                 raise ValueError(
-                    f"{self.__class__.__name__}.apply: missing column metatadata for columns: {','.join(delta)}. "
+                    f"{self.__class__.__name__}.apply: missing column metadata for columns: {','.join(delta)}. "
                     f"Column data exists in dataframe, but no metadata is available"
                 )
 
@@ -1293,6 +1305,9 @@ class MetaData:
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
     def merge(self, other: MetaData, strategy: DataSpecification.MergeStrategy | None = None) -> MetaData:
+        if type(other) is not MetaData:
+            raise TypeError(f"{self.__class__.__name__}.merge: cannot merge MetaData with other of type={type(other)}")
+
         column_specs = DataSpecification.merge_lists(self.columns, other.columns, strategy)
         annotations = []
         for k,v in self.annotations.items():

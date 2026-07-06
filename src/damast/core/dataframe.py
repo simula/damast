@@ -216,6 +216,9 @@ class AnnotatedDataFrame(XDataFrame):
         Create an annotated dataframe by loading given files
 
         :param files: Files to use for importing and creating the annotated dataframe
+        :param metadata_required metadata needs to be available either as spec.yaml file or embedded into the file
+        :param validation_mode metadata will be validated, updated or ignored according to this mode
+        :param merge_strategy for combining the metadata of multiple files, select the merge strategy
 
         """
         metadata = None
@@ -341,6 +344,7 @@ class AnnotatedDataFrame(XDataFrame):
     def from_file(cls,
             filename: str | Path,
             metadata_required: bool = True,
+            validation_mode: ValidationMode = ValidationMode.READONLY,
             merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
         ) -> AnnotatedDataFrame:
         """
@@ -349,7 +353,10 @@ class AnnotatedDataFrame(XDataFrame):
         :param filename: Filename to use for importing and creating the annotated dataframe
 
         """
-        return cls.from_files([filename], metadata_required=metadata_required, merge_strategy=merge_strategy)
+        return cls.from_files([filename],
+                              metadata_required=metadata_required,
+                              validation_mode=validation_mode,
+                              merge_strategy=merge_strategy)
 
     @classmethod
     def infer_annotation(cls, df: DataFrame) -> MetaData:
@@ -447,4 +454,5 @@ class AnnotatedDataFrame(XDataFrame):
         return self._dataframe.compat.collected().shape
 
     def __deepcopy__(self, memo=None):
-        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata))
+        # ignore validation, also erroneous frames should be copyable
+        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE)

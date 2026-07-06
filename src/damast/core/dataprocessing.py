@@ -477,7 +477,6 @@ class DataProcessingPipeline(PipelineElement):
 
         adf = pipeline._run(in_dataframes, verbose=verbose)
         assert isinstance(adf, AnnotatedDataFrame)
-
         adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
         return adf
 
@@ -521,7 +520,7 @@ class DataProcessingPipeline(PipelineElement):
 
     def on_transform_start(self,
                            step: PipelineElement,
-                           adf: AnnotatedDataFrame):
+                           dataframes: dict[str, AnnotatedDataFrame]):
         """
         Default implementation of the on_transform_start callback.
 
@@ -536,7 +535,7 @@ class DataProcessingPipeline(PipelineElement):
 
         step_name = self.processing_graph[step.uuid].name
         self._processing_stats[step_name] = {
-            "input_dataframe_length": adf.shape[0],
+            "input_dataframe_length": {x: y.shape[0] for x,y in dataframes.items()},
             "start_time": start_time
         }
 

@@ -136,6 +136,20 @@ class PipelineElement(Transformer):
                     resolved_name = name_mappings[resolved_name]
 
                 name = name.replace(match.group(), resolved_name)
+
+        # If multiple sources are involved, allow to use the pattern {{<datasource_label>:<field_name>}}
+        m = re.match("{{(\\w+):(\\w+)}}", name)
+        if m:
+            source_label = m.groups()[0]
+            field_name = m.groups()[1]
+            if source_label not in self.name_mappings:
+                raise RuntimeError(f"{self.__class__.__name__}.get_name: unknown source '{source_label}' defined in {name}")
+
+            resolved_name = field_name
+            if field_name in self.name_mappings[source_label]:
+                resolved_name = self.name_mappings[source_label][field_name]
+            name = name.replace(m.group(), resolved_name)
+
         return name
 
     @abstractmethod

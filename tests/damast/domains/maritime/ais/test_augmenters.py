@@ -60,7 +60,11 @@ def test_add_missing_ais_status(tmp_path):
     # Create annotated dataframe
     adf = damast.core.AnnotatedDataFrame(
             df,
-            damast.core.MetaData(columns=[damast.core.DataSpecification("Status", representation_type=int)])
+            damast.core.MetaData(columns=[
+                damast.core.DataSpecification("Status", representation_type=int),
+                damast.core.DataSpecification("MMSI", representation_type=int),
+                damast.core.DataSpecification("timestamp", representation_type=pl.Datetime)
+            ])
           )
 
     # Create pipeline
@@ -324,7 +328,11 @@ def test_message_index(tmp_path):
         columns=[damast.core.DataSpecification(ColumnName.MMSI, representation_type=int),
                  damast.core.DataSpecification(ColumnName.TIMESTAMP, representation_type=pl.datatypes.Datetime("ns")),
                  damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg, representation_type=pl.Float64),
-                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg, representation_type=pl.Float64)])
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg, representation_type=pl.Float64),
+                 damast.core.DataSpecification("REF INDEX", representation_type=pl.Int64),
+                 damast.core.DataSpecification("INVERSE REF", representation_type=pl.Int64),
+                ]
+    )
     adf = damast.core.AnnotatedDataFrame(df, metadata)
 
     # Create pipeline
