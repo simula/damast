@@ -262,13 +262,13 @@ class AddDeltaTime(PipelineElement):
             dataframe = dataframe\
                  .sort(group_column, time_column)\
                  .with_columns(
-                     pl.from_epoch(pl.col(time_column), time_unit="s").diff().dt.total_seconds().over(group_column).alias('delta_time')
+                     pl.from_epoch(pl.col(time_column), time_unit="s").diff().dt.total_seconds(fractional=True).over(group_column).alias('delta_time')
                  )
         else:
             dataframe = dataframe\
                  .sort(group_column, time_column)\
                  .with_columns(
-                     pl.col(time_column).diff().dt.total_seconds().over(group_column).alias('delta_time')
+                     pl.col(time_column).diff().dt.total_seconds(fractional=True).over(group_column).alias('delta_time')
                  )
 
         dataframe = dataframe\

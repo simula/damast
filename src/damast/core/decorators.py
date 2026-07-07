@@ -200,6 +200,7 @@ def output(requirements: dict[str, any]):
             try:
                 # Ensure that metadata is up to date with the dataframe
                 adf.update(expectations=pipeline_element.output_specs)
+                adf.validate_metadata()
             except RuntimeError as e:
                 txt = f"Failed to update metadata in pipeline element: {pipeline_element}"
                 if parent_pipeline:
