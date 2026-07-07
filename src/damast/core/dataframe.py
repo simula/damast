@@ -443,7 +443,7 @@ class AnnotatedDataFrame(XDataFrame):
 
     def drop(self, columns, strict: bool = True) -> AnnotatedDataFrame:
         self._dataframe = self._dataframe.drop(columns, strict=strict)
-        self._metadata.drop(columns)
+        self._metadata = self._metadata.drop(columns)
         return self
 
     def copy(self):

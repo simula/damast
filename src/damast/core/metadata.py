@@ -1221,12 +1221,14 @@ class MetaData:
         """"""
         return any(colum_spec.name == column_name for colum_spec in self.columns)
 
-    def drop(self, columns: str | list[str]):
+    def drop(self, columns: str | list[str]) -> MetaData:
         """
         Drop specification by column name
         """
         columns = [columns] if type(columns) is str else columns
-        self.columns = [x for x in self.columns if x.name not in columns]
+        updated_columns = [x for x in self.columns if x.name not in columns]
+
+        return MetaData(updated_columns, [y for _,y in self.annotations.items()])
 
     def __getitem__(self, column_name: str) -> DataSpecification:
         """

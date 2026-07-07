@@ -160,9 +160,7 @@ class JoinByTimestamp(PipelineElement):
 
         df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
 
-        updated_metadata = df._metadata.merge(other._metadata)
-        updated_metadata.drop(other_timestamp)
-        df._metadata = updated_metadata
+        df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
 
 class JoinSpatioTemporal(PipelineElement):
@@ -231,9 +229,7 @@ class JoinSpatioTemporal(PipelineElement):
                   event_delta_time = pl.col(other_timestamp) - pl.col(df_timestamp)
                   )
 
-        updated_metadata = df._metadata.merge(other._metadata)
-        updated_metadata.drop(other_timestamp)
-        df._metadata = updated_metadata
+        df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
 
 
