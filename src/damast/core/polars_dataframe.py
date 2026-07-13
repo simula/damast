@@ -61,6 +61,15 @@ class PolarsDataFrame(metaclass=Meta):
 
     @classmethod
     def resolve_type(cls, type_txt: str):
+        if type_txt == "datetime":
+            type_txt = "Datetime"
+        elif type_txt == "str":
+            type_txt = "String"
+        elif type_txt == "int":
+            type_txt = "Int64"
+        elif type_txt == "float":
+            type_txt = "Float64"
+
         return eval(type_txt, cls.types())
 
 
@@ -91,6 +100,12 @@ class PolarsDataFrame(metaclass=Meta):
 
     def is_numeric(self, column_name: str) -> bool:
         return self.dtype(column_name).is_numeric()
+
+    def is_datetime(self, column_name: str) -> bool:
+        return type(self.dtype(column_name)) is polars.Datetime
+
+    def is_date(self, column_name: str) -> bool:
+        return type(self.dtype(column_name)) is polars.Date
 
     def __getitem__(self, column_name: str):
         """
@@ -194,11 +209,20 @@ class PolarsDataFrame(metaclass=Meta):
             fields.extend([
                 polars.col(column).min().alias(f"{column}_min_value"),
                 polars.col(column).max().alias(f"{column}_max_value"),
-                polars.col(column).mean().alias(f"{column}_mean"),
-                polars.col(column).std().alias(f"{column}_stddev"),
                 polars.col(column).count().alias(f"{column}_total_count"),
                 polars.col(column).null_count().alias(f"{column}_null_count")
             ])
+
+            if self.is_datetime(column):
+                fields.extend([
+                    (polars.col(column).dt.timestamp("us").mean() / 1_000_000).alias(f"{column}_mean"),
+                    (polars.col(column).dt.timestamp("us").std() / 1_000_000).alias(f"{column}_stddev")
+                ])
+            else:
+                fields.extend([
+                    polars.col(column).mean().alias(f"{column}_mean"),
+                    polars.col(column).std().alias(f"{column}_stddev"),
+                ])
 
         result = self._dataframe.select(
                 fields

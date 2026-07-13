@@ -654,13 +654,12 @@ class DataSpecification:
                 min_value, max_value = df.compat.minmax(column_name)
                 if min_value is not None and max_value is not None:
                     self.value_range = MinMax(min_value, max_value)
-        elif df.compat.is_numeric(column_name):
+        elif df.compat.is_numeric(column_name) or df.compat.is_datetime(column_name):
             try:
                 min_value, max_value = df.compat.minmax(column_name)
                 if min_value is not None and max_value is not None:
                     logger.debug(f"Setting value range: MinMax for {column_name}")
                     self.value_range = MinMax(min_value, max_value)
-
                     results = df.compat.minmax_stats([column_name])
 
                     logger.debug(f"Setting value stats for {column_name}")
@@ -796,26 +795,26 @@ class DataSpecification:
             this_value = getattr(self, key.value)
             other_value = getattr(other, key.value)
 
-            if key == self.Key.representation_type:
-                if hasattr(this_value, "to_python"):
-                    this_value = this_value.to_python()
-                if hasattr(other_value, "to_python"):
-                    other_value = other_value.to_python()
-
-            if this_value is None:
+            if this_value == other_value:
+                setattr(ds, key.value, this_value)
+            elif this_value is None:
                 setattr(ds, key.value, other_value)
             elif other_value is None:
                 setattr(ds, key.value, this_value)
-            elif this_value == other_value:
-                setattr(ds, key.value, this_value)
             else:
+                if key == self.Key.representation_type:
+                    if hasattr(this_value, "to_python"):
+                        this_value = this_value.to_python()
+                    if hasattr(other_value, "to_python"):
+                        other_value = other_value.to_python()
+
                 try:
                     if hasattr(this_value, "merge"):
                         merged_value = this_value.merge(other_value)
                         setattr(ds, key.value, merged_value)
                         return ds
-                except Exception:
-                    logger.debug("Merge failed: {e}")
+                except Exception as e:
+                    logger.warning(f"Merge failed: {e}")
 
                 if not strategy:
                     raise ValueError(
