@@ -150,12 +150,17 @@ class JoinByTimestamp(PipelineElement):
                             "lon": {}
                         }, label='other'
     )
-    @damast.core.output({})
+    @damast.core.output({"{{other:event_type}}": { 'description': 'hozint event type', 'representation_type': str},
+                         "{{other:lat}}": {},
+                         "{{other:lon}}": {},
+                         })
     def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
         df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+
+        df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
 
 class JoinSpatioTemporal(PipelineElement):
@@ -190,6 +195,8 @@ class JoinSpatioTemporal(PipelineElement):
         'event_type': {},
         'event_delta_distance': { 'description': "Distance between vessel and event", 'unit': 'km'},
         'event_delta_time': { 'description': "Timedelta between event and vessel message", 'unit': 's'},
+        'latitude': {'description': 'event latitude', 'unit': 'deg' },
+        'longitude': {'description': 'event longitude', 'unit': 'deg' },
     })
     def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
         import polars as pl
@@ -221,6 +228,8 @@ class JoinSpatioTemporal(PipelineElement):
                   ),
                   event_delta_time = pl.col(other_timestamp) - pl.col(df_timestamp)
                   )
+
+        df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
 
 
@@ -233,9 +242,20 @@ def height_metadata():
     metadata = MetaData(columns=[column_spec])
     return metadata
 
-
 @pytest.fixture()
 def height_dataframe():
+    data = [
+        [0],
+        [1],
+        [2]
+    ]
+    columns = [
+        "height"
+    ]
+    return polars.LazyFrame(data, columns, orient="row")
+
+@pytest.fixture()
+def height_letter_dataframe():
     data = [
         [0, "a"],
         [1, "b"],
@@ -442,7 +462,7 @@ def test_single_element_pipeline(tmp_path):
     assert "status_suffix" in adf.column_names, "Expect 'status_suffix' to be a new column"
 
     assert adf.metadata['status_suffix'], "Expect metadata to be available for 'status_suffix'"
-    assert adf.metadata['status_suffix'].representation_type == polars.Int64, "Expect representation_type Int64 for 'status_suffix'"
+    assert adf.metadata['status_suffix'].representation_type == polars.Int64, f"Expect representation_type Int64 for 'status_suffix', but got {adf.metadata['status_suffix']}"
 
 @pytest.mark.parametrize("varname",["x","xyz"])
 def test_decorator_renaming(varname, tmp_path):

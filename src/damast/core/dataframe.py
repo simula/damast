@@ -209,12 +209,16 @@ class AnnotatedDataFrame(XDataFrame):
     def from_files(cls,
             files: list[str|Path],
             metadata_required: bool = True,
-            validation_mode: ValidationMode = ValidationMode.READONLY
+            validation_mode: ValidationMode = ValidationMode.READONLY,
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe by loading given files
 
         :param files: Files to use for importing and creating the annotated dataframe
+        :param metadata_required metadata needs to be available either as spec.yaml file or embedded into the file
+        :param validation_mode metadata will be validated, updated or ignored according to this mode
+        :param merge_strategy for combining the metadata of multiple files, select the merge strategy
 
         """
         metadata = None
@@ -282,7 +286,7 @@ class AnnotatedDataFrame(XDataFrame):
                         annotations=list(metadata_list[0].annotations.values())
                     )
             for i in range(0, len(metadata_list)-1):
-                metadata = metadata.merge(metadata_list[i+1])
+                metadata = metadata.merge(metadata_list[i+1], strategy=merge_strategy)
         else:
             for _, m in metadata.items():
                 metadata = m
@@ -293,11 +297,12 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_parquet(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
             _log.info(f"Loading parquet: {files=}")
-            df = polars.scan_parquet(files, missing_columns='insert')
-
             metadata_per_file = {}
+
+            pyarrow_schemas = []
             for file in files:
                 schema = pq.read_schema(file)
+                pyarrow_schemas.append(schema)
                 if schema and hasattr(schema, "metadata"):
                     if schema.metadata is not None:
                         if b"annotated_dataframe" in schema.metadata:
@@ -305,6 +310,13 @@ class AnnotatedDataFrame(XDataFrame):
                             m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
                             m.set_annotation(Annotation(name=Annotation.Key.Source, value=Path(file).name))
                             metadata_per_file[file] = m
+
+            # https://github.com/pola-rs/polars/issues/27280
+            arrow_schema = pyarrow.unify_schemas(pyarrow_schemas)
+            sorted_arrow_schema = pyarrow.schema(sorted(arrow_schema, key=lambda x: x.name))
+            polars_schema = polars.from_arrow(sorted_arrow_schema.empty_table()).schema
+
+            df = polars.scan_parquet(files, missing_columns='insert', schema=polars_schema)
             return df, metadata_per_file
 
     @classmethod
@@ -332,6 +344,8 @@ class AnnotatedDataFrame(XDataFrame):
     def from_file(cls,
             filename: str | Path,
             metadata_required: bool = True,
+            validation_mode: ValidationMode = ValidationMode.READONLY,
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe from an hdf5 file.
@@ -339,7 +353,10 @@ class AnnotatedDataFrame(XDataFrame):
         :param filename: Filename to use for importing and creating the annotated dataframe
 
         """
-        return cls.from_files([filename], metadata_required=metadata_required)
+        return cls.from_files([filename],
+                              metadata_required=metadata_required,
+                              validation_mode=validation_mode,
+                              merge_strategy=merge_strategy)
 
     @classmethod
     def infer_annotation(cls, df: DataFrame) -> MetaData:
@@ -426,7 +443,7 @@ class AnnotatedDataFrame(XDataFrame):
 
     def drop(self, columns, strict: bool = True) -> AnnotatedDataFrame:
         self._dataframe = self._dataframe.drop(columns, strict=strict)
-        self._metadata.drop(columns)
+        self._metadata = self._metadata.drop(columns)
         return self
 
     def copy(self):
@@ -437,4 +454,5 @@ class AnnotatedDataFrame(XDataFrame):
         return self._dataframe.compat.collected().shape
 
     def __deepcopy__(self, memo=None):
-        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata))
+        # ignore validation, also erroneous frames should be copyable
+        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE)

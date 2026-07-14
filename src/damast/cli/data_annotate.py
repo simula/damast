@@ -190,7 +190,7 @@ class DataAnnotateParser(BaseParser):
                 if column_spec.representation_type:
                     representation_type = adf.set_dtype(column_spec.name, column_spec.representation_type)
                     metadata[column_spec.name].representation_type = representation_type
-                    metadata[column_spec.name].update_min_max(adf._dataframe, column_spec.name)
+                    metadata[column_spec.name].update_datarange_and_stats(adf._dataframe, column_spec.name)
 
         adf._metadata = metadata
         adf.validate_metadata(ValidationMode.UPDATE_DATA)

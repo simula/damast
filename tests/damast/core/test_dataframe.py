@@ -22,7 +22,7 @@ from damast.core.types import XDataFrame
 
 @pytest.fixture()
 def metadata():
-    column_spec = DataSpecification(name="height",
+    column_spec_height = DataSpecification(name="height",
                                     category=DataCategory.STATIC,
                                     unit=units.m,
                                     abbreviation="height",
@@ -32,7 +32,12 @@ def metadata():
     comment = Annotation(name=Annotation.Key.Comment, value="test dataframe")
     annotations = [license, comment]
 
-    return MetaData(columns=[column_spec], annotations=annotations)
+    column_spec_letter = DataSpecification(name="letter",
+                                    category=DataCategory.STATIC,
+                                    abbreviation="letter")
+
+    annotations = [license, comment]
+    return MetaData(columns=[column_spec_height, column_spec_letter], annotations=annotations)
 
 
 @pytest.fixture()
@@ -77,6 +82,18 @@ def test_annotated_dataframe_deep_copy(metadata, polars_dataframe):
     assert adf.dataframe.column_names == column_names
     assert adf_copy.dataframe.column_names != column_names
 
+def test_incomplete_metadata(metadata, polars_dataframe, tmp_path):
+    """
+    Simple test of the annotated dataframe export to HDF5
+
+    :param metadata: metadata to use
+    :param polars_dataframe: polars dataframe to use
+    :param tmp_path: where to temporarily save the data to HDF5
+    """
+    incomplete_metadata = MetaData(columns=metadata.columns[:-1])
+    with pytest.raises(ValueError, match=f"missing column metadata for columns: {metadata.columns[-1].name}"):
+         AnnotatedDataFrame(dataframe=polars_dataframe,
+                            metadata=incomplete_metadata)
 
 def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
     """
@@ -147,7 +164,10 @@ def test_annotated_dataframe_import_vaex_hdf5(data_path):
     """
     hdf5_path = data_path / "data.hdf5"
 
-    adf = AnnotatedDataFrame.from_file(hdf5_path)
+    with pytest.raises(ValueError, match="missing column metadata"):
+        AnnotatedDataFrame.from_file(hdf5_path)
+
+    adf = AnnotatedDataFrame.from_file(hdf5_path, metadata_required=False, validation_mode=ValidationMode.IGNORE)
     assert adf.column_names == ["height", "letter"]
 
     pandas_df = pd.DataFrame(data = {'height': [0,1,2], 'letter': ['a','b','c']})

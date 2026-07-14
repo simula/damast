@@ -177,7 +177,7 @@ class Heading(PipelineElement):
 
         dataframe = dataframe.sort(group, sort_column).with_columns(
                     pl.col(heading).diff().alias(delta_heading),
-                    pl.col(sort_column).diff().dt.total_seconds().alias("_delta_time")
+                    pl.col(sort_column).diff().dt.total_seconds(fractional=True).alias("_delta_time")
                 )
 
         dataframe = dataframe.with_columns(

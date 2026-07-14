@@ -20,7 +20,13 @@ import yaml
 
 from .annotations import Annotation, History
 from .constants import DAMAST_HDF5_COLUMNS, DAMAST_HDF5_ROOT, DAMAST_SPEC_SUFFIX
-from .data_description import DataElement, DataRange, MinMax, NumericValueStats
+from .data_description import (
+    DataElement,
+    DataRange,
+    ListOfValues,
+    MinMax,
+    NumericValueStats,
+)
 from .formatting import DEFAULT_INDENT
 from .types import DataFrame, XDataFrame
 from .units import Unit, units
@@ -572,9 +578,9 @@ class DataSpecification:
         if validation_mode == ValidationMode.IGNORE:
             return df
 
+        xdf = XDataFrame(df)
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
-            xdf = XDataFrame(df)
             if self.representation_type is not None:
                 dtype = xdf.dtype(column_name)
                 if dtype.from_python(self.representation_type) != self.representation_type and \
@@ -600,10 +606,9 @@ class DataSpecification:
             return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
-            xdf = XDataFrame(df)
             if self.representation_type is not None:
                 dtype = xdf.dtype(column_name)
-                if dtype != self.representation_type:
+                if self.representation_type not in [dtype, dtype.to_python()]:
                     warnings.warn(
                         f"{self.__class__.__name__}.apply: column '{column_name}':"
                         f" expected representation type: {self.representation_type},"
@@ -633,23 +638,36 @@ class DataSpecification:
             return xdf._dataframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
-            return self.update_min_max(df, column_name)
+            if self.representation_type is None:
+                self.representation_type = xdf.dtype(column_name)
+            return self.update_datarange_and_stats(df, column_name)
 
-    def update_min_max(self, df, column_name):
+    def update_datarange_and_stats(self, df, column_name: str):
         xdf = XDataFrame(df)
-        self.representation_type = xdf.dtype(column_name)
+        if df.compat.is_string(column_name):
+            categories = df.compat.categories(column_name)
+            if categories:
+                logger.debug(f"Setting value range: ListOfValues for {column_name}")
+                self.value_range = ListOfValues(categories)
+            else:
+                logger.debug(f"Setting value range: MinMax for {column_name}")
+                min_value, max_value = df.compat.minmax(column_name)
+                if min_value is not None and max_value is not None:
+                    self.value_range = MinMax(min_value, max_value)
+        elif df.compat.is_numeric(column_name) or df.compat.is_datetime(column_name):
+            try:
+                min_value, max_value = df.compat.minmax(column_name)
+                if min_value is not None and max_value is not None:
+                    logger.debug(f"Setting value range: MinMax for {column_name}")
+                    self.value_range = MinMax(min_value, max_value)
+                    results = df.compat.minmax_stats([column_name])
 
-        try:
-            min_value, max_value = xdf.minmax(column_name)
-            logger.info(
-                f"Setting MinMax range ({min_value}, {max_value}) for {column_name}"
-            )
-            self.value_range = MinMax(min_value, max_value)
-        except ValueError:
-            # Type might not be numeric
-            pass
+                    logger.debug(f"Setting value stats for {column_name}")
+                    self.value_stats = results[column_name]["stats"]
+            except ValueError as e:
+                logger.debug(f"Metadata.update_datarange_and_stats: could not update datarange and stats '{column_name}' -- {e}")
+
         return xdf._dataframe
-
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """
@@ -760,12 +778,16 @@ class DataSpecification:
         :raises ValueError: If the data-specifications have overlapping attributes, that have distinct non-``None``
             values, the function throws an error.
         """
+        if type(other) is not DataSpecification:
+            raise TypeError(f"{self.__class__.__name__}.merge: cannot merge self of type={type(self)} with other of type={type(other)}")
+
         if self.name != other.name:
             raise ValueError(
                 f"{self.__class__.__name__}.merge: cannot merge specs with different name property"
             )
 
         ds = DataSpecification(name=self.name)
+
         for key in self.Key:
             if key == self.Key.name:
                 continue
@@ -773,35 +795,41 @@ class DataSpecification:
             this_value = getattr(self, key.value)
             other_value = getattr(other, key.value)
 
-            if key == self.Key.representation_type:
-                if hasattr(this_value, "to_python"):
-                    this_value = this_value.to_python()
-                if hasattr(other_value, "to_python"):
-                    other_value = other_value.to_python()
-
-            if this_value is None:
+            if this_value == other_value:
+                setattr(ds, key.value, this_value)
+            elif this_value is None:
                 setattr(ds, key.value, other_value)
             elif other_value is None:
                 setattr(ds, key.value, this_value)
-            elif this_value == other_value:
-                setattr(ds, key.value, this_value)
             else:
-                if hasattr(this_value, "merge"):
-                    merged_value = this_value.merge(other_value)
-                    setattr(ds, key.value, merged_value)
-                elif strategy:
-                    if strategy == DataSpecification.MergeStrategy.OTHER:
-                        setattr(ds, key.value, other_value)
-                    elif strategy == DataSpecification.MergeStrategy.THIS:
-                        setattr(ds, key.value, this_value)
-                    else:
-                        raise RuntimeError(f"DataSpecification.merge: Invalid merge strategy {strategy} provided")
-                else:
+                if key == self.Key.representation_type:
+                    if hasattr(this_value, "to_python"):
+                        this_value = this_value.to_python()
+                    if hasattr(other_value, "to_python"):
+                        other_value = other_value.to_python()
+
+                try:
+                    if hasattr(this_value, "merge"):
+                        merged_value = this_value.merge(other_value)
+                        setattr(ds, key.value, merged_value)
+                        return ds
+                except Exception as e:
+                    logger.warning(f"Merge failed: {e}")
+
+                if not strategy:
                     raise ValueError(
                         f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
 
                         f" on self: '{this_value}' vs. other: '{other_value}'"
                     )
+
+                logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
+                if strategy == DataSpecification.MergeStrategy.OTHER:
+                    setattr(ds, key.value, other_value)
+                elif strategy == DataSpecification.MergeStrategy.THIS:
+                    setattr(ds, key.value, this_value)
+                else:
+                    raise RuntimeError(f"{self.__class__.__name__}.merge: Invalid merge strategy {strategy} provided")
         return ds
 
     @classmethod
@@ -818,6 +846,13 @@ class DataSpecification:
         :param a_specs: First list of specs
         :param b_specs: Second list of specs
         """
+
+        if type(a_specs) is not list:
+            raise TypeError(f"{cls.__name__}.merge_lists: cannot merge {type(a_specs)} -- needs to be list(DataSpecificiation)")
+
+        if type(b_specs) is not list:
+            raise TypeError(f"{cls.__name__}.merge_lists: cannot merge {type(a_specs)} -- needs to be list(DataSpecificiation)")
+
         result_specs: List[DataSpecification] = []
 
         b_column_dict = {x.name: x for x in b_specs}
@@ -828,8 +863,11 @@ class DataSpecification:
             if column_name in b_column_dict:
                 # Need to check merge
                 b_column_spec = b_column_dict[column_name]
-
-                merged_spec = a_spec.merge(other=b_column_spec, strategy=strategy)
+                try:
+                    merged_spec = a_spec.merge(other=b_column_spec, strategy=strategy)
+                except Exception as e:
+                    raise RuntimeError(f"{cls.__name__}.merge_lists: cannot merge spec for column: '{column_name}'.\n"
+                        f"a={a_spec} to be merged with b={b_column_spec} -- {e}")
                 result_specs.append(merged_spec)
             else:
                 result_specs.append(a_spec)
@@ -1149,8 +1187,8 @@ class MetaData:
         """
         assert isinstance(df, pl.LazyFrame), f"Expected polars.LazyFrame, got {type(df)}"
 
+        columns = df.compat.column_names
         for column_spec in self.columns:
-            columns = df.compat.column_names
             if column_spec.name in columns:
                 try:
                     df = column_spec.apply(
@@ -1167,18 +1205,29 @@ class MetaData:
                     f"{self.__class__.__name__}.apply: missing column '{column_spec.name}' in dataframe."
                     f" Found {len(columns)} column(s): {','.join(columns)}"
                 )
+
+        if validation_mode != ValidationMode.IGNORE:
+            delta = set(columns).difference([x.name for x in self.columns])
+            if delta:
+                raise ValueError(
+                    f"{self.__class__.__name__}.apply: missing column metadata for columns: {','.join(delta)}. "
+                    f"Column data exists in dataframe, but no metadata is available"
+                )
+
         return df
 
     def __contains__(self, column_name: str):
         """"""
         return any(colum_spec.name == column_name for colum_spec in self.columns)
 
-    def drop(self, columns: str | list[str]):
+    def drop(self, columns: str | list[str]) -> MetaData:
         """
         Drop specification by column name
         """
         columns = [columns] if type(columns) is str else columns
-        self.columns = [x for x in self.columns if x.name not in columns]
+        updated_columns = [x for x in self.columns if x.name not in columns]
+
+        return MetaData(updated_columns, [y for _,y in self.annotations.items()])
 
     def __getitem__(self, column_name: str) -> DataSpecification:
         """
@@ -1257,6 +1306,9 @@ class MetaData:
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
     def merge(self, other: MetaData, strategy: DataSpecification.MergeStrategy | None = None) -> MetaData:
+        if type(other) is not MetaData:
+            raise TypeError(f"{self.__class__.__name__}.merge: cannot merge MetaData with other of type={type(other)}")
+
         column_specs = DataSpecification.merge_lists(self.columns, other.columns, strategy)
         annotations = []
         for k,v in self.annotations.items():

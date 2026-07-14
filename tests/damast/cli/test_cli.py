@@ -59,15 +59,19 @@ def test_subparser(name, klass, script_runner):
         for option in a.option_strings:
             assert re.search(option, result.stdout) is not None, f"Should have {option=}"
 
-@pytest.mark.parametrize("filename", [
-    "data.hdf5",
-    "test_ais.parquet",
-    "test_ais.csv",
-    "test_dataframe.csv",
-    "test_dataframe.hdf5",
+@pytest.mark.parametrize("filename, incomplete_metadata", [
+    ["data.hdf5", True],
+    ["test_ais.parquet", False],
+    ["test_ais.csv", False],
+    ["test_dataframe.csv", False],
+    ["test_dataframe.hdf5", True],
 ])
-def test_inspect(data_path, filename, script_runner):
+def test_inspect(data_path, filename, incomplete_metadata, script_runner):
     result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename)])
+
+    if incomplete_metadata:
+        assert result.returncode != 0
+        result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename), '--validation-mode', 'ignore'])
 
     assert re.search(r"Loading dataframe \(1 files\)", result.stdout) is not None, "Process dataframe"
     assert re.search("shape:", result.stdout) is not None, "Show dataframe"

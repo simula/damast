@@ -154,6 +154,13 @@ def test_data_specification_read_write(name, category, is_optional,
                                                 category=DataCategory.DYNAMIC,
                                                 representation_type=int),
                               DataSpecification.MergeStrategy.THIS, None
+                             ],
+                             [DataSpecification(name="a",
+                                                representation_type=float,
+                                                unit='deg'),
+                              DataSpecification(name="a",
+                                                unit='rad'),
+                              DataSpecification.MergeStrategy.OTHER, None
                              ]
 ])
 def test_data_specification_merge(dataspec, other_dataspec, merge_strategy, error_msg):

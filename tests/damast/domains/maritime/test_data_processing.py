@@ -195,6 +195,9 @@ def test_aggregate(data_path, tmp_path):
     assert df.metadata['lat'].unit == 'deg'
     assert df.metadata['lon'].unit == 'deg'
 
+    assert df.metadata['delta_distance'].representation_type == polars.Float64
+    assert df.compat.dtype('delta_distance') == polars.Float64
+
     assert "delta_distance" in df.column_names
 
 def test_aggregate_with_name_mapping(data_path, tmp_path):

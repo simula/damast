@@ -3,6 +3,8 @@ This module contains data range definitions.
 """
 from __future__ import annotations
 
+import datetime as dt
+import logging
 import math
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
@@ -13,6 +15,7 @@ from pydantic import BaseModel
 
 __all__ = ["CyclicMinMax", "DataElement", "DataRange", "ListOfValues", "MinMax"]
 
+logger = logging.getLogger(__name__)
 
 class DataElement:
     """
@@ -27,14 +30,17 @@ class DataElement:
         :param value: value of the DataElement
         :param dtype: datatype of the value
         """
-        if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
-            dtype = dtype.to_python()
-        elif isinstance(dtype, pl.datatypes.Datetime):
-            if type(value) is str:
-                return pl.Series([value]).str.to_datetime(time_unit=dtype.time_unit, time_zone=dtype.time_zone)[0]
-            return pl.Series([value]).cast(dtype)[0]
-
-        return dtype(value)
+        try:
+            if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
+                dtype = dtype.to_python()
+            elif isinstance(dtype, pl.datatypes.Datetime) or (dtype is dt.datetime):
+                if type(value) is str:
+                    return pl.Series([value]).str.to_datetime(time_unit=dtype.time_unit, time_zone=dtype.time_zone)[0]
+                return pl.Series([value]).cast(dtype)[0]
+            return dtype(value)
+        except Exception as e:
+            logger.warning(f"DataElement.create: {value=} {dtype=} failed -- {e}")
+            raise
 
 
 class DataRange(ABC):
@@ -126,7 +132,7 @@ class ListOfValues:
 
     def __init__(self, values: List[Any]):
         """
-        Initialise ListOfValue
+        Initialise ListOfValues
 
         :param values: values that define this list
         :raise ValueError: Raises if values is not a list.
@@ -197,7 +203,13 @@ class ListOfValues:
         """
         return dict(self)
 
-    def merge(self, other: ListOfValues) -> ListOfValues:
+    def merge(self, other: ListOfValues | MinMax) -> ListOfValues:
+        if type(other) is MinMax:
+            this_min_max = MinMax(min(self.values), max(self.values))
+            return this_min_max.merge(other)
+        elif type(other) is not ListOfValues:
+            raise ValueError(f"ListOfValues.merge: cannot merge with other (type: {type(other)})")
+
         self.values = list(set(self.values + other.values))
         self.values.sort(key=lambda e: (e is None, e))
         return self
@@ -256,6 +268,10 @@ class MinMax(DataRange):
                 return self.allow_missing
         except Exception:
             pass
+
+        if type(value) is float:
+            epsilon = 1.0E-07
+            return self.min - epsilon <= value <= self.max + epsilon
 
         return self.min <= value <= self.max
 

@@ -8,6 +8,7 @@ import polars as pl
 import damast  # noqa
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.metadata import ValidationMode
 from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,11 @@ class DataInspectParser(BaseParser):
                 required=False
         )
 
+        parser.add_argument("--validation-mode",
+                            default="readonly",
+                            choices=[x.value.lower() for x in ValidationMode],
+                            help="Define the validation mode")
+
     def expand_filter_arg(self, adf: AnnotatedDataFrame, arg: str):
         if arg in adf.column_names:
             return f"pl.col('{arg}')"
@@ -69,7 +75,13 @@ class DataInspectParser(BaseParser):
                 if not files:
                     raise RuntimeError(f"Inspection is not supported for input files: {input_files=}")
 
-                adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
+                try:
+                    validation_mode = ValidationMode[args.validation_mode.upper()]
+                except KeyError:
+                    raise ValueError(f"--validation-mode has invalid argument."
+                                     f" Select from: {[x.value.lower() for x in ValidationMode]}")
+
+                adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False, validation_mode=validation_mode)
 
                 if args.filter:
                     filter_values = ""

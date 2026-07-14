@@ -1,6 +1,7 @@
 """
 Main argument parser and CLI entry point.
 """
+import logging
 import sys
 import traceback as tb
 from argparse import ArgumentParser
@@ -13,7 +14,20 @@ from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
+from damast.config import DAMAST_LOG_DATE_FORMAT, DAMAST_LOG_FORMAT, DAMAST_LOG_STYLE
 
+logging.basicConfig(
+    format=DAMAST_LOG_FORMAT,
+    style=DAMAST_LOG_STYLE,
+    datefmt=DAMAST_LOG_DATE_FORMAT
+)
+
+# Safely get the mapping dictionary regardless of Python version
+if hasattr(logging, "getLevelNamesMapping"):
+    level_mapping = logging.getLevelNamesMapping()
+else:
+    # Fallback for Python 3.10 and older
+    level_mapping = getattr(logging, "_nameToLevel", {})
 
 class MainParser(ArgumentParser):
 
@@ -23,8 +37,11 @@ class MainParser(ArgumentParser):
 
         self.add_argument("-w", "--workdir", default=str(Path(".").resolve()))
         self.add_argument("-v", "--verbose", action="store_true")
-        self.add_argument("--loglevel", dest="loglevel", type=int, default=10, help="Set loglevel to display")
-        self.add_argument("--logfile", dest="logfile", type=str, default=None,
+        self.add_argument("--log-level", type=str,
+                          default="INFO",
+                          choices=[x for x in level_mapping],
+                          help="Set loglevel to display")
+        self.add_argument("--log-file", type=str, default=None,
                           help="Set file for saving log (default prints to terminal)")
 
         self.add_argument("--version", action="store_true", default=False,
@@ -75,6 +92,10 @@ def run():
     if args.version:
         print(f"damast {damast_version}")
         sys.exit(0)
+
+    for current_logger in [logging.getLogger(x) for x in logging.root.manager.loggerDict]:
+        if current_logger.name.startswith("damast"):
+            current_logger.setLevel(logging.getLevelName(args.log_level))
 
     if hasattr(args, "active_subparser"):
         try:

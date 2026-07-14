@@ -61,6 +61,15 @@ class PolarsDataFrame(metaclass=Meta):
 
     @classmethod
     def resolve_type(cls, type_txt: str):
+        if type_txt == "datetime":
+            type_txt = "Datetime"
+        elif type_txt == "str":
+            type_txt = "String"
+        elif type_txt == "int":
+            type_txt = "Int64"
+        elif type_txt == "float":
+            type_txt = "Float64"
+
         return eval(type_txt, cls.types())
 
 
@@ -91,6 +100,12 @@ class PolarsDataFrame(metaclass=Meta):
 
     def is_numeric(self, column_name: str) -> bool:
         return self.dtype(column_name).is_numeric()
+
+    def is_datetime(self, column_name: str) -> bool:
+        return type(self.dtype(column_name)) is polars.Datetime
+
+    def is_date(self, column_name: str) -> bool:
+        return type(self.dtype(column_name)) is polars.Date
 
     def __getitem__(self, column_name: str):
         """
@@ -167,6 +182,7 @@ class PolarsDataFrame(metaclass=Meta):
             raise RuntimeError(f"Failed to extract categories for column '{column_name}' -- {e}") from e
 
         if len(categories) <= max_count:
+            # do not count every timepoint as category
             timepoint_like = 0
             for c in categories[:10]:
                 if c is None:
@@ -193,11 +209,20 @@ class PolarsDataFrame(metaclass=Meta):
             fields.extend([
                 polars.col(column).min().alias(f"{column}_min_value"),
                 polars.col(column).max().alias(f"{column}_max_value"),
-                polars.col(column).mean().alias(f"{column}_mean"),
-                polars.col(column).std().alias(f"{column}_stddev"),
                 polars.col(column).count().alias(f"{column}_total_count"),
                 polars.col(column).null_count().alias(f"{column}_null_count")
             ])
+
+            if self.is_datetime(column):
+                fields.extend([
+                    (polars.col(column).dt.timestamp("us").mean() / 1_000_000).alias(f"{column}_mean"),
+                    (polars.col(column).dt.timestamp("us").std() / 1_000_000).alias(f"{column}_stddev")
+                ])
+            else:
+                fields.extend([
+                    polars.col(column).mean().alias(f"{column}_mean"),
+                    polars.col(column).std().alias(f"{column}_stddev"),
+                ])
 
         result = self._dataframe.select(
                 fields
@@ -406,7 +431,16 @@ class PolarsDataFrame(metaclass=Meta):
 
             data_frames = []
             for filename in files:
-                data_frames.append( pandas.read_hdf(str(filename)) )
+                pandas_df = pandas.read_hdf(str(filename))
+
+                with tables.open_file(str(filename)) as hdf5file:
+                    for column in pandas_df.columns:
+                        column_attrs = hdf5file.get_node(f"/dataframe/columns/{column}")._v_attrs
+                        if "representation_type" in column_attrs:
+                            if column_attrs["representation_type"] == "int":
+                                pandas_df[column] = pandas_df[column].astype("Int64")
+
+                data_frames.append(pandas_df)
             pandas_df = pandas.concat(data_frames, ignore_index=True)
 
             df = polars.from_pandas(pandas_df)
@@ -439,6 +473,8 @@ class PolarsDataFrame(metaclass=Meta):
         if isinstance(df, polars.dataframe.DataFrame):
             df = df.lazy()
 
+        # An export of an int column with NaNs will automatically convert this to Float64
+        # while Int64 could be used, the underlying exporter pytables does not (yet) support this
         pandas_df = df.collect().to_pandas()
         pandas_df.to_hdf(path, key=DAMAST_HDF5_ROOT)
         return path
