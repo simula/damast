@@ -65,7 +65,11 @@ homepage = "https://simula.github.io/damast"
 documentation = "https://simula.github.io/damast"
 repository = "https://github.com/simula/damast"
 
-#[project.entry-points]
+# Third-party packages can register PipelineElement subclasses as damast plugins via
+# their own pyproject.toml, e.g.:
+#   [project.entry-points."damast.transformers"]
+#   MyTransformer = "acme_pkg.transformers:MyTransformer"
+# Discoverable via `damast plugins` or PipelineElement.list_plugins().
 
 [project.optional-dependencies]
 dev = [

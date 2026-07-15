@@ -14,6 +14,7 @@ from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
+from damast.cli.plugins import PluginsParser
 from damast.config import DAMAST_LOG_DATE_FORMAT, DAMAST_LOG_FORMAT, DAMAST_LOG_STYLE
 
 logging.basicConfig(
@@ -86,6 +87,10 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data by running a predefined pipeline",
                                          parser_klass=DataProcessingParser)
+
+    main_parser.attach_subcommand_parser(subcommand="plugins",
+                                         help="List transformer plugins registered by installed packages",
+                                         parser_klass=PluginsParser)
 
 
     args = main_parser.parse_args()
