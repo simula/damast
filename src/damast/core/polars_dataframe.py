@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import ClassVar
@@ -21,7 +22,16 @@ logger = logging.getLogger(__name__)
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
-polars.Config.set_engine_affinity("streaming")
+# Prefer an engine affinity the embedding application/environment has already configured
+# (via POLARS_ENGINE_AFFINITY or a prior polars.Config.set_engine_affinity call) over
+# unconditionally overriding it - only apply damast's own default when nothing is set yet.
+if "POLARS_ENGINE_AFFINITY" in os.environ:
+    logger.warning(
+        "damast.core.polars_dataframe: POLARS_ENGINE_AFFINITY is already set to"
+        f" '{os.environ['POLARS_ENGINE_AFFINITY']}' - keeping it instead of damast's default 'streaming'"
+    )
+else:
+    polars.Config.set_engine_affinity("streaming")
 
 POLARS_TYPE_DICT = {
     key: value
