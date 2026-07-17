@@ -42,16 +42,30 @@ class Meta(type):
 @polars.api.register_dataframe_namespace("compat")
 @polars.api.register_lazyframe_namespace("compat")
 class PolarsDataFrame(metaclass=Meta):
-    _dataframe: LazyFrame
     _polars_dataframe: PolarsDataFrame
     _dataframe_collected: polars.DataFrame
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
-        if type(df) is polars.DataFrame:
-            self._dataframe = df.lazy()
-        else:
-            self._dataframe = df
+        self._dataframe = df
 
+    @property
+    def _dataframe(self) -> LazyFrame:
+        return self.__dataframe
+
+    @_dataframe.setter
+    def _dataframe(self, df: LazyFrame | polars.DataFrame):
+        """
+        Set the underlying dataframe.
+
+        This is the sole point of mutation for the wrapped dataframe - going through it (rather
+        than e.g. assigning to a plain instance attribute) is what lets us keep the ``collected()``
+        cache and the ``dataframe`` accessor consistent with the data that is actually stored,
+        instead of silently returning a stale snapshot after an update.
+        """
+        if type(df) is polars.DataFrame:
+            df = df.lazy()
+
+        self.__dataframe = df
         self._dataframe_collected = None
         self._polars_dataframe = None
 
