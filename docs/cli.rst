@@ -16,6 +16,9 @@ in sub-commands:
 **process**
     apply a data pipeline to a dataset
 
+**plugins**
+    list transformer plugins registered by installed packages or via ``DAMAST_PLUGIN_PATH``
+
 
 Inspect
 --------
@@ -236,4 +239,45 @@ Examples
     damast process --input-data input.parquet --pipeline pipelines/my-pipeline.damast.ppl
 
 .. highlight:: none
+
+
+
+Plugins
+---------
+
+.. literalinclude:: ./examples/damast-plugins-help.txt
+  :language: none
+
+A pipeline can use transformers that are not part of the ``damast`` package itself. Two ways of
+registering such plugin transformers are supported - see :class:`damast.core.transformations.PluginManager`
+for the full API:
+
+- installable packages that declare their :class:`damast.core.transformations.PipelineElement` subclasses via the
+  ``damast.transformers`` entry-point group in their own ``pyproject.toml``::
+
+      [project.entry-points."damast.transformers"]
+      MyTransformer = "acme_pkg.transformers:MyTransformer"
+
+- local, ad-hoc ``*.py`` files that are not part of any installed package, made discoverable by
+  pointing the ``DAMAST_PLUGIN_PATH`` environment variable at the directory (or directories,
+  separated with ``os.pathsep``) that contains them
+
+``damast plugins`` lists everything that is currently discoverable from either source, without
+requiring any Python code:
+
+.. highlight:: python
+
+::
+
+    export DAMAST_PLUGIN_PATH=/path/to/my/transformers
+    damast plugins
+
+    MyTripler: my_transformers:MyTripler
+
+.. highlight:: none
+
+Pipelines saved with a plugin transformer record where it came from under ``requires`` (the
+installed distribution and version, or the original local file path), so that loading the pipeline
+elsewhere fails with an actionable message - naming the missing package to ``pip install``, or the
+``DAMAST_PLUGIN_PATH`` directory to add - instead of a bare import error.
 
