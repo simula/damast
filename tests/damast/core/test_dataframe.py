@@ -111,7 +111,7 @@ def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
     assert test_file.exists()
 
     with pytest.raises(ValueError, match="no dataframe to save"):
-        adf._dataframe = None
+        adf.lazyframe = None
         adf.save(filename=test_file)
 
     loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
@@ -124,7 +124,7 @@ def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
     extra_column = "extra_column"
     loaded_adf.metadata.columns.append(DataSpecification(name=extra_column))
     from_column = loaded_adf.column_names[0]
-    loaded_adf._dataframe = loaded_adf._dataframe.with_columns(
+    loaded_adf.lazyframe = loaded_adf.lazyframe.with_columns(
         polars.col(from_column).alias(extra_column)
     )
     loaded_adf.save(filename=test_file)
@@ -190,7 +190,7 @@ def test_annotated_dataframe_import_csv(data_path):
     assert adf.column_names == ["height", "letter"]
     assert adf.dtype('height') == polars.Int64, "None types should be properly handled"
 
-    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
+    assert XDataFrame(adf.lazyframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
@@ -208,7 +208,7 @@ def test_annotated_dataframe_import_csv_with_quotes(data_path):
     assert adf.dtype('id') == polars.Int64
     assert adf.dtype('name') == polars.String
 
-    assert XDataFrame(adf._dataframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
+    assert XDataFrame(adf.lazyframe).equals(XDataFrame(polars.scan_csv(csv_path, null_values=["None", "none"])))
 
     df = adf.dataframe.collect()
     assert df[0,1] == "a,b;c"
@@ -249,7 +249,7 @@ def test_01_dataframe_composition(data_path):
                              metadata=md)
 
     assert adf._metadata == md
-    assert XDataFrame(adf._dataframe).equals(XDataFrame(df))
+    assert XDataFrame(adf.lazyframe).equals(XDataFrame(df))
 
     assert adf.column_names == df.compat.column_names
 
@@ -281,7 +281,7 @@ def test_force_range():
             validation_mode=ValidationMode.UPDATE_DATA
           )
 
-    assert XDataFrame(adf._dataframe).equals(XDataFrame(df_filtered))
+    assert XDataFrame(adf.lazyframe).equals(XDataFrame(df_filtered))
 
 def test_convert_csv_to_adf(tmp_path):
     output_filename =  tmp_path / "test-convert-csv.pq"

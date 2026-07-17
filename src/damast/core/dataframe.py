@@ -49,9 +49,6 @@ class AnnotatedDataFrame(XDataFrame):
     #: Metadata associated with the dataframe
     _metadata: MetaData
 
-    #: The actual dataframe
-    _dataframe: DataFrame
-
     def __init__(
         self,
         dataframe: polars.DataFrame | polars.LazyFrame | XDataFrame,
@@ -59,7 +56,7 @@ class AnnotatedDataFrame(XDataFrame):
         validation_mode: ValidationMode = ValidationMode.READONLY,
     ):
         if isinstance(dataframe, XDataFrame):
-            dataframe = dataframe._dataframe
+            dataframe = dataframe.lazyframe
 
         if isinstance(dataframe, polars.DataFrame):
             dataframe = dataframe.lazy()
@@ -93,8 +90,8 @@ class AnnotatedDataFrame(XDataFrame):
         if not isinstance(obj, cls):
             raise ValueError("Object {obj} is not an AnnotatedDataFrame")
 
-        if not isinstance(obj._dataframe, DataFrame):
-            raise ValueError(f"AnnotatedDataFrame._dataframe is not of type {DataFrame}")
+        if not isinstance(obj.lazyframe, DataFrame):
+            raise ValueError(f"AnnotatedDataFrame.lazyframe is not of type {DataFrame}")
 
     def validate_metadata(
         self, validation_mode: ValidationMode = ValidationMode.READONLY
@@ -106,15 +103,15 @@ class AnnotatedDataFrame(XDataFrame):
         :raise RuntimeError: Dependending on the validation mode an exception will be raise to ensure the data spec
                conformance
         """
-        self._dataframe = self._metadata.apply(df=self._dataframe, validation_mode=validation_mode)
+        self.lazyframe = self._metadata.apply(df=self.lazyframe, validation_mode=validation_mode)
 
     def is_empty(self) -> bool:
         """
         Check if annotated dataframe has associated data.
 
-        :return: False if there is an internal :code:`_dataframe` set, True otherwise
+        :return: False if there is an internal :code:`lazyframe` set, True otherwise
         """
-        return self._dataframe is None
+        return self.lazyframe is None
 
     def get_fulfillment(
         self, expected_specs: list[DataSpecification]
@@ -169,7 +166,7 @@ class AnnotatedDataFrame(XDataFrame):
         :param filename: Filename to use for saving
 
         """
-        if self._dataframe is None:
+        if self.lazyframe is None:
             raise ValueError(f"{self.__class__.__name__}.save: no dataframe to save")
 
         metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)
@@ -180,7 +177,7 @@ class AnnotatedDataFrame(XDataFrame):
             return self
 
         # First save the hdf5 file in order to add then the metadata to it
-        XDataFrame.export_hdf5(self._dataframe, filename)
+        XDataFrame.export_hdf5(self.lazyframe, filename)
         self._metadata.append_to_hdf(filename)
 
         return self
@@ -189,7 +186,7 @@ class AnnotatedDataFrame(XDataFrame):
         """
         Export the annotated dataframe to a file. By default the format is parquet.
         """
-        arrow_table = self._dataframe.compat.collected().to_arrow()
+        arrow_table = self.lazyframe.compat.collected().to_arrow()
         new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
         arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
         pq.write_table(arrow_table, filename)
@@ -442,7 +439,7 @@ class AnnotatedDataFrame(XDataFrame):
         adf.save(filename=output_filename)
 
     def drop(self, columns, strict: bool = True) -> AnnotatedDataFrame:
-        self._dataframe = self._dataframe.drop(columns, strict=strict)
+        self.lazyframe = self.lazyframe.drop(columns, strict=strict)
         self._metadata = self._metadata.drop(columns)
         return self
 
@@ -451,8 +448,8 @@ class AnnotatedDataFrame(XDataFrame):
 
     @property
     def shape(self):
-        return self._dataframe.compat.collected().shape
+        return self.lazyframe.compat.collected().shape
 
     def __deepcopy__(self, memo=None):
         # ignore validation, also erroneous frames should be copyable
-        return AnnotatedDataFrame(self._dataframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE)
+        return AnnotatedDataFrame(self.lazyframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE)

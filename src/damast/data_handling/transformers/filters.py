@@ -42,7 +42,7 @@ class RemoveValueRows(PipelineElement):
         """
         mapped_name = self.get_name("x")
 
-        df._dataframe = df._dataframe.filter(
+        df.lazyframe = df.lazyframe.filter(
             pl.col(mapped_name) != self._remove_value
         )
         return df
@@ -61,14 +61,14 @@ class DropMissingOrNan(PipelineElement):
         Drop rows with missing value
         """
         mapped_name = self.get_name("x")
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         new_dataframe = dataframe.drop_nulls(subset=mapped_name)
         dtype = XDataFrame(new_dataframe).dtype(mapped_name)
         if dtype not in [str, pl.String]:
             new_dataframe = new_dataframe.drop_nans(subset=mapped_name)
 
-        df._dataframe = new_dataframe
+        df.lazyframe = new_dataframe
         return df
 
 
@@ -96,9 +96,9 @@ class FilterWithin(PipelineElement):
         Filter rows and keep those within given values
         """
         mapped_name = self.get_name("x")
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
         new_dataframe = dataframe.filter(
             pl.col(mapped_name).is_in(self._within_values)
         )
-        df._dataframe = new_dataframe
+        df.lazyframe = new_dataframe
         return df

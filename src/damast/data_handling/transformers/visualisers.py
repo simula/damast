@@ -45,7 +45,7 @@ class PlotHistograms(BaseVisualiser):
     @damast.core.output({})
     @damast.core.describe("Plot histograms of all columns in dataframe")
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        plot_histograms(df=df._dataframe,
+        plot_histograms(df=df.lazyframe,
                         output_dir=self.output_dir,
                         filename_prefix=self.filename_prefix)
         return df
@@ -63,7 +63,7 @@ class PlotLatLon(BaseVisualiser):
     @damast.core.describe("Plot Latitude and longitude ")
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
 
-        plot_lat_lon(df=df._dataframe,
+        plot_lat_lon(df=df.lazyframe,
                      output_dir=self.output_dir,
                      filename_prefix=self.filename_prefix)
         return df

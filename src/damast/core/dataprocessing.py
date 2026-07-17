@@ -299,8 +299,8 @@ class DataProcessingPipeline(PipelineElement):
         :param dir: directory where to save this pipeline
         """
         filename = Path(dir) / f"{self.name}{VAEX_STATE_SUFFIX}"
-        #df._dataframe.state_write(file=filename)
-        df._dataframe.serialize(filename)
+        #df.lazyframe.state_write(file=filename)
+        df.lazyframe.serialize(filename)
         return filename
 
     @classmethod
@@ -369,7 +369,7 @@ class DataProcessingPipeline(PipelineElement):
             )
 
         #df.dataframe.state_load(file=filename)
-        df._dataframe = df.dataframe.deserialize(filename)
+        df.lazyframe = df.dataframe.deserialize(filename)
         return df
 
     def prepare(self,
