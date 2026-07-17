@@ -70,7 +70,10 @@ class PolarsDataFrame(metaclass=Meta):
         elif type_txt == "float":
             type_txt = "Float64"
 
-        return eval(type_txt, cls.types())
+        try:
+            return cls.types()[type_txt]
+        except KeyError:
+            raise TypeError(f"{cls.__name__}.resolve_type: unknown polars type '{type_txt}'")
 
 
     @property
