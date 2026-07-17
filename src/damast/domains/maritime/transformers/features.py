@@ -51,7 +51,7 @@ class DeltaDistance(PipelineElement):
         """
         Compute distance between adjacent messages
         """
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         group = self.get_name("group")
         in_x = self.get_name("x")
@@ -92,7 +92,7 @@ class DeltaDistance(PipelineElement):
                       )
 
         # Drop/Hide unused columns
-        df._dataframe = dataframe.drop([shift_x, shift_y])
+        df.lazyframe = dataframe.drop([shift_x, shift_y])
         return df
 
 
@@ -111,12 +111,12 @@ class Speed(PipelineElement):
         """
         Compute distance between adjacent messages
         """
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         delta_distance = self.get_name("delta_distance")
         delta_time = self.get_name("delta_time")
 
-        df._dataframe = dataframe.filter(pl.col(delta_time) != 0).with_columns(
+        df.lazyframe = dataframe.filter(pl.col(delta_time) != 0).with_columns(
                 (pl.col(delta_distance) / (pl.col(delta_time)/3600.0)).alias("speed")
         )
         return df
@@ -141,7 +141,7 @@ class Heading(PipelineElement):
         """
         Compute distance between adjacent messages
         """
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         group = self.get_name("group")
         sort_column = self.get_name("sort")
@@ -184,7 +184,7 @@ class Heading(PipelineElement):
                         (pl.col(delta_heading) / pl.col("_delta_time")).alias("angular_velocity")
                     ).drop("_delta_time")
 
-        df._dataframe = dataframe.filter(
+        df.lazyframe = dataframe.filter(
                     pl.col(delta_heading).is_not_null()
                 )
 
@@ -215,7 +215,7 @@ class AngularVelocity(PipelineElement):
             pl.col(time).diff().dt.total_seconds().over(group).alias("_delta_time")
         )
 
-        df._dataframe = dataframe.with_columns(
+        df.lazyframe = dataframe.with_columns(
             (pl.col("_delta_heading") / pl.col("_delta_time")).alias("angular_velocity")
         ).drop("_delta_heading").drop("_delta_time")
 

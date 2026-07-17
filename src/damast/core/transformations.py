@@ -590,10 +590,10 @@ class MultiCycleTransformer(Transformer):
         clone = df.copy()
 
         for feature in self.features:
-            clone._dataframe = clone._dataframe.with_columns(
+            clone.lazyframe = clone.lazyframe.with_columns(
                     (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x")
                 )
-            clone._dataframe = clone._dataframe.with_columns(
+            clone.lazyframe = clone.lazyframe.with_columns(
                     (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_y")
                 )
         return clone

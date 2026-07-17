@@ -108,10 +108,10 @@ class TransformerB(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         # This operation is does not really make sense, but acts as a placeholder to generate
         # the desired output columns
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                 (polars.col("longitude_x") - polars.col("longitude_y")).alias("delta_longitude")
             )
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                 (polars.col("latitude_x") - polars.col("latitude_y")).alias("delta_latitude")
             )
         return df
@@ -129,7 +129,7 @@ class TransformerC(PipelineElement):
         "label": {}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 polars.lit("data-label").alias("label")
         )
         return df
@@ -158,7 +158,7 @@ class JoinByTimestamp(PipelineElement):
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
-        df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+        df.lazyframe = df.join(other.lazyframe, left_on=df_timestamp, right_on=other_timestamp)
 
         df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
@@ -205,7 +205,7 @@ class JoinSpatioTemporal(PipelineElement):
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
-        filtered_df = df.join_where(other._dataframe, \
+        filtered_df = df.join_where(other.lazyframe, \
                                       (pl.col(df_timestamp) - self.before_time_in_s) <= pl.col(other_timestamp), \
                                       (pl.col(df_timestamp) + self.after_time_in_s) >= pl.col(other_timestamp), \
                                       great_circle_distance(pl.col(self.get_name('lat')),
@@ -213,14 +213,14 @@ class JoinSpatioTemporal(PipelineElement):
                                                             pl.col(self.get_name('lat', datasource='other')),
                                                             pl.col(self.get_name('lon', datasource='other'))) <= self.distance_in_km
                     )
-        df._dataframe = df.join(filtered_df,
+        df.lazyframe = df.join(filtered_df,
                     how="left",
                     left_on=[self.get_name('mmsi'), df_timestamp],
                     right_on=[self.get_name('mmsi'), df_timestamp],
                     suffix="_redundant",
                     ).drop(cs.ends_with("_redundant"))
 
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                   event_delta_distance = great_circle_distance(pl.col(self.get_name('lat')),
                                         pl.col(self.get_name('lon')),
                                         pl.col(self.get_name('lat', datasource='other')),
@@ -448,7 +448,7 @@ def test_single_element_pipeline(tmp_path):
         @damast.core.input({"x": {"unit": units.deg}})
         @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
         def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            df._dataframe = df._dataframe.with_columns(polars.col(self.get_name('x')).alias(f"{self.get_name('x')}_suffix"))
+            df.lazyframe = df.lazyframe.with_columns(polars.col(self.get_name('x')).alias(f"{self.get_name('x')}_suffix"))
             return df
 
     pipeline = DataProcessingPipeline(name="TransformStatus",

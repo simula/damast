@@ -117,12 +117,12 @@ class DataInspectParser(BaseParser):
                         else:
                             logger.warning(f"Filter expression invalid: {filter_expression}")
 
-                    adf._dataframe = eval(f"adf._dataframe{filter_values}")
-                    adf._metadata = AnnotatedDataFrame.infer_annotation(adf._dataframe)
+                    adf.lazyframe = eval(f"adf.lazyframe{filter_values}")
+                    adf._metadata = AnnotatedDataFrame.infer_annotation(adf.lazyframe)
 
                 print(adf.metadata.to_str(columns=args.columns))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
-                df = adf._dataframe
+                df = adf.lazyframe
                 if args.columns:
                     df = df.select(args.columns)
 
