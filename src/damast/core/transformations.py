@@ -186,14 +186,25 @@ class PluginManager:
 
         This is purely a discovery/documentation aid - :func:`PipelineElement.create_new`
         resolves classes by ``module_name``/``class_name`` regardless of whether they are
-        registered here.
+        registered here. If the same class name is registered by more than one source (two
+        local plugin files, two entry-points, or a local plugin and an entry-point), a warning
+        is logged and the first source encountered wins - local plugin files are checked before
+        entry-points, matching the precedence used when resolving a single name (e.g. via
+        :mod:`damast.plugins`).
 
         :return: Mapping of class name to its 'module_name:class_name' target
         """
-        plugins = {
-            ep.name: ep.value
-            for ep in importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP)
-        }
+        plugins: dict[str, str] = {}
+
+        def register(attr_name: str, target: str, source: str) -> None:
+            if attr_name in plugins:
+                logger.warning(
+                    f"PluginManager: plugin name '{attr_name}' is registered by more than one"
+                    f" source ('{plugins[attr_name]}' and '{target}' from {source}) - keeping"
+                    " the first one"
+                )
+                return
+            plugins[attr_name] = target
 
         for module_name, module in self.load_local_plugins().items():
             for attr_name, obj in vars(module).items():
@@ -201,7 +212,10 @@ class PluginManager:
                         and issubclass(obj, PipelineElement)
                         and obj is not PipelineElement
                         and obj.__module__ == module_name):
-                    plugins[attr_name] = f"{module_name}:{attr_name}"
+                    register(attr_name, f"{module_name}:{attr_name}", "a local plugin file")
+
+        for ep in importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP):
+            register(ep.name, ep.value, "an entry-point")
 
         return plugins
 

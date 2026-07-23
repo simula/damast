@@ -262,6 +262,14 @@ for the full API:
   pointing the ``DAMAST_PLUGIN_PATH`` environment variable at the directory (or directories,
   separated with ``os.pathsep``) that contains them
 
+Regardless of which of the two a transformer comes from, it is resolvable in code the same way,
+via the ``damast.plugins`` namespace::
+
+    from damast.plugins import MyTransformer
+
+``damast.plugins`` resolves names lazily on first access, so nothing beyond the requested class
+is ever imported - see :mod:`damast.plugins` for details.
+
 ``damast plugins`` lists everything that is currently discoverable from either source, without
 requiring any Python code:
 

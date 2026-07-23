@@ -179,6 +179,37 @@ def test_local_plugin_path_name_collision_warns_and_keeps_first(tmp_path, monkey
     _reset_plugin_manager()
 
 
+def test_list_plugins_class_name_collision_across_local_files_warns_and_keeps_first(
+        local_plugin_path, caplog):
+    (local_plugin_path / "acme_transformer_a.py").write_text(LOCAL_TRANSFORMER_SOURCE)
+    (local_plugin_path / "acme_transformer_b.py").write_text(LOCAL_TRANSFORMER_SOURCE)
+    PipelineElement.reload_plugins()
+
+    with caplog.at_level("WARNING"):
+        plugins = PipelineElement.list_plugins()
+
+    assert plugins["LocalDoubler"] == "acme_transformer_a:LocalDoubler"
+    assert any("is registered by more than one source" in record.message for record in caplog.records)
+
+
+def test_list_plugins_local_and_entry_point_collision_warns_and_local_wins(
+        local_plugin_path, monkeypatch, caplog):
+    (local_plugin_path / "acme_local_transformer.py").write_text(LOCAL_TRANSFORMER_SOURCE)
+    PipelineElement.reload_plugins()
+
+    class FakeEntryPoint:
+        name = "LocalDoubler"
+        value = "acme_pkg.transformers:LocalDoubler"
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: [FakeEntryPoint()])
+
+    with caplog.at_level("WARNING"):
+        plugins = PipelineElement.list_plugins()
+
+    assert plugins["LocalDoubler"] == "acme_local_transformer:LocalDoubler"
+    assert any("is registered by more than one source" in record.message for record in caplog.records)
+
+
 def test_create_new_missing_local_module_error_mentions_plugin_path(monkeypatch):
     monkeypatch.setenv(PluginManager.PLUGIN_PATH_ENV, "/some/configured/path")
 
