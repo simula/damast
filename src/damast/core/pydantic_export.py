@@ -8,9 +8,10 @@ useful for validating an individual incoming record (e.g. a single message befor
 into a dataframe), or for interop with tools that expect a pydantic model (FastAPI, JSON schema
 export, IDE type-checking).
 
-All entry points are methods of `PydanticExporter`. Both `PydanticExporter.to_pydantic_model`
-(dynamic) and `PydanticExporter.generate_pydantic_source` (static) are built from the same
-per-column mapping, so the two cannot drift apart from each other.
+All entry points are methods of `PydanticExporter`. `PydanticExporter.to_pydantic_model`
+(dynamic), `PydanticExporter.generate_pydantic_source` (static) and
+`PydanticExporter.to_json_schema` (JSON Schema) are all built from the same per-column mapping,
+so they cannot drift apart from each other.
 
 .. note::
     Only column-level constraints that make sense for a single record are carried over:
@@ -29,6 +30,7 @@ from __future__ import annotations
 import ast
 import datetime
 import decimal
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -445,3 +447,76 @@ class PydanticExporter:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source)
         return path
+
+    def to_json_schema(self, metadata: MetaData, class_name: str = "Record") -> dict[str, Any]:
+        """
+        Build the JSON Schema for the pydantic model derived from ``metadata``, via
+        `pydantic.BaseModel.model_json_schema`.
+
+        Example:
+
+        ```python
+        exporter = PydanticExporter()
+        schema = exporter.to_json_schema(adf.metadata, class_name="AISMessage")
+        ```
+
+        Args:
+            metadata: The dataframe metadata to derive fields from
+            class_name: Class name for the generated model (used as the schema's ``title``)
+
+        Returns:
+            The model's JSON Schema
+
+        Raises:
+            TypeError: If a column's representation_type has no known Python type mapping
+            ValueError: If a column's representation_type is not set
+        """
+        model = self.to_pydantic_model(metadata, name=class_name)
+        return model.model_json_schema()
+
+    def export_json_schema(self, metadata: MetaData, class_name: str, path: str | Path) -> Path:
+        """
+        Generate the JSON Schema for the pydantic model derived from ``metadata`` and write it
+        to a `.json` file.
+
+        Example:
+
+        ```python
+        exporter = PydanticExporter()
+        exporter.export_json_schema(adf.metadata, class_name="AISMessage", path="ais_message.json")
+        ```
+
+        Args:
+            metadata: The dataframe metadata to derive fields from
+            class_name: Class name for the generated model (used as the schema's ``title``)
+            path: Destination `.json` file - parent directories are created as needed
+
+        Returns:
+            The path that was written
+        """
+        schema = self.to_json_schema(metadata, class_name=class_name)
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(schema, indent=2) + "\n")
+        return path
+
+    @staticmethod
+    def import_json_schema(path: str | Path) -> dict[str, Any]:
+        """
+        Read a JSON Schema file previously written by `export_json_schema` back into a dict.
+
+        Example:
+
+        ```python
+        exporter = PydanticExporter()
+        schema = exporter.import_json_schema("ais_message.json")
+        ```
+
+        Args:
+            path: The `.json` file to read
+
+        Returns:
+            The parsed JSON Schema
+        """
+        return json.loads(Path(path).read_text())

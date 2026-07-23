@@ -1,6 +1,7 @@
 import datetime
 import decimal
 import importlib.util
+import json
 import sys
 
 import polars
@@ -222,6 +223,32 @@ def test_generate_pydantic_source_struct_column_defines_nested_class(exporter, s
     assert source.index("class Position(pydantic.BaseModel):") < source.index("class Vessel(pydantic.BaseModel):")
 
     compile(source, "<generated>", "exec")
+
+
+def test_to_json_schema_reflects_constraints_and_struct(exporter, struct_metadata):
+    schema = exporter.to_json_schema(struct_metadata, class_name="Vessel")
+
+    assert schema["title"] == "Vessel"
+    assert schema["properties"]["position"] == {"$ref": "#/$defs/Position"}
+    assert schema["$defs"]["Position"]["properties"]["lat"]["type"] == "number"
+
+
+def test_export_json_schema_writes_file_matching_to_json_schema(exporter, tmp_path, ais_like_metadata):
+    path = exporter.export_json_schema(ais_like_metadata, class_name="AISMessage",
+                                       path=tmp_path / "generated" / "ais_message.json")
+
+    assert path.exists()
+
+    on_disk = json.loads(path.read_text())
+    assert on_disk == exporter.to_json_schema(ais_like_metadata, class_name="AISMessage")
+
+
+def test_import_json_schema_roundtrips(exporter, tmp_path, struct_metadata):
+    path = exporter.export_json_schema(struct_metadata, class_name="Vessel", path=tmp_path / "vessel.json")
+
+    loaded = PydanticExporter.import_json_schema(path)
+
+    assert loaded == exporter.to_json_schema(struct_metadata, class_name="Vessel")
 
 
 def test_export_pydantic_module_writes_importable_file(exporter, tmp_path, ais_like_metadata):
