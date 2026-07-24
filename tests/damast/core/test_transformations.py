@@ -2,10 +2,14 @@ import importlib.metadata
 import os
 import sys
 
+import numpy as np
+import polars
 import pytest
 
 import damast
+from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.transformations import (
+    MultiCycleTransformer,
     PipelineElement,
     PluginManager,
     plugin_manager,
@@ -45,6 +49,19 @@ def local_plugin_path(tmp_path, monkeypatch):
     yield plugin_dir
 
     _reset_plugin_manager()
+
+def test_multi_cycle_transformer_uses_sin_for_x_and_cos_for_y():
+    df = polars.DataFrame({"lat": [0.0, 45.0, 90.0]})
+    adf = AnnotatedDataFrame(df, AnnotatedDataFrame.infer_annotation(df))
+
+    result = MultiCycleTransformer(features=["lat"], n=180.0).transform(adf).collect()
+
+    values = result["lat"].to_numpy()
+    assert np.allclose(result["lat_x"].to_numpy(), np.sin(values * 2 * np.pi) / 180.0)
+    assert np.allclose(result["lat_y"].to_numpy(), np.cos(values * 2 * np.pi) / 180.0)
+    # a real (non-constant) input must not produce identical x/y columns
+    assert not np.allclose(result["lat_x"].to_numpy(), result["lat_y"].to_numpy())
+
 
 # CycleTransformer is a built-in PipelineElement whose module lives inside the
 # installed 'damast' distribution - used here as a stand-in for a transformer

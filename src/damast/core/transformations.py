@@ -605,7 +605,7 @@ class MultiCycleTransformer(Transformer):
 
         for feature in self.features:
             clone.lazyframe = clone.lazyframe.with_columns(
-                    (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x")
+                    (np.sin(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x")
                 )
             clone.lazyframe = clone.lazyframe.with_columns(
                     (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_y")
