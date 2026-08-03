@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import ClassVar
@@ -21,7 +22,16 @@ logger = logging.getLogger(__name__)
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
-polars.Config.set_engine_affinity("streaming")
+# Prefer an engine affinity the embedding application/environment has already configured
+# (via POLARS_ENGINE_AFFINITY or a prior polars.Config.set_engine_affinity call) over
+# unconditionally overriding it - only apply damast's own default when nothing is set yet.
+if "POLARS_ENGINE_AFFINITY" in os.environ:
+    logger.warning(
+        "damast.core.polars_dataframe: POLARS_ENGINE_AFFINITY is already set to"
+        f" '{os.environ['POLARS_ENGINE_AFFINITY']}' - keeping it instead of damast's default 'streaming'"
+    )
+else:
+    polars.Config.set_engine_affinity("streaming")
 
 POLARS_TYPE_DICT = {
     key: value
@@ -42,16 +52,30 @@ class Meta(type):
 @polars.api.register_dataframe_namespace("compat")
 @polars.api.register_lazyframe_namespace("compat")
 class PolarsDataFrame(metaclass=Meta):
-    _dataframe: LazyFrame
     _polars_dataframe: PolarsDataFrame
     _dataframe_collected: polars.DataFrame
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
-        if type(df) is polars.DataFrame:
-            self._dataframe = df.lazy()
-        else:
-            self._dataframe = df
+        self.lazyframe = df
 
+    @property
+    def lazyframe(self) -> LazyFrame:
+        """
+        The underlying ``polars.LazyFrame``.
+
+        This is the sole point of mutation for the wrapped dataframe - assigning to it (rather
+        than e.g. a plain, private instance attribute) is what lets us keep the ``collected()``
+        cache and the ``dataframe`` accessor consistent with the data that is actually stored,
+        instead of silently returning a stale snapshot after an update.
+        """
+        return self.__lazyframe
+
+    @lazyframe.setter
+    def lazyframe(self, df: LazyFrame | polars.DataFrame):
+        if type(df) is polars.DataFrame:
+            df = df.lazy()
+
+        self.__lazyframe = df
         self._dataframe_collected = None
         self._polars_dataframe = None
 
@@ -70,7 +94,10 @@ class PolarsDataFrame(metaclass=Meta):
         elif type_txt == "float":
             type_txt = "Float64"
 
-        return eval(type_txt, cls.types())
+        try:
+            return cls.types()[type_txt]
+        except KeyError:
+            raise TypeError(f"{cls.__name__}.resolve_type: unknown polars type '{type_txt}'")
 
 
     @property
@@ -84,14 +111,14 @@ class PolarsDataFrame(metaclass=Meta):
 
         :return: The underlying dataframe
         """
-        if self._polars_dataframe is None or self._dataframe is not self._polars_dataframe._dataframe:
-            self._polars_dataframe = PolarsDataFrame(self._dataframe)
+        if self._polars_dataframe is None or self.lazyframe is not self._polars_dataframe.lazyframe:
+            self._polars_dataframe = PolarsDataFrame(self.lazyframe)
 
         return self._polars_dataframe
 
     def collected(self):
         if self._dataframe_collected is None:
-            self._dataframe_collected = self._dataframe.collect()
+            self._dataframe_collected = self.lazyframe.collect()
 
         return self._dataframe_collected
 
@@ -114,7 +141,7 @@ class PolarsDataFrame(metaclass=Meta):
         :param item: Name of the key when using [] operators
         :return: item/column from the underlying vaex.dataframe
         """
-        return self._dataframe.select(column_name)
+        return self.lazyframe.select(column_name)
 
     def ensure_column(self, column_name: str):
         """
@@ -128,14 +155,14 @@ class PolarsDataFrame(metaclass=Meta):
         """
         Get all column names (without collecting the full dataframe)
         """
-        return self._dataframe.collect_schema().names()
+        return self.lazyframe.collect_schema().names()
 
     def dtype(self, column_name: str) -> polars.datatypes.DataType:
         """
         Get column dtype (without collecting the full dataframe)
         """
         idx = self.column_names.index(column_name)
-        return self._dataframe.collect_schema().dtypes()[idx]
+        return self.lazyframe.collect_schema().dtypes()[idx]
 
     def set_dtype(self, column_name, representation_type) -> polars.datatype.DataType:
         """
@@ -151,7 +178,7 @@ class PolarsDataFrame(metaclass=Meta):
             if hasattr(polars, representation_type):
                 representation_type = getattr(polars, representation_type)
 
-        self._dataframe = self._dataframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
+        self.lazyframe = self.lazyframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
         return representation_type
 
     def minmax(self, column_name: str) -> tuple[any, any]:
@@ -161,7 +188,7 @@ class PolarsDataFrame(metaclass=Meta):
         self.ensure_column(column_name)
 
         try:
-            result = self._dataframe.select([
+            result = self.lazyframe.select([
                     polars.col(column_name).min().alias("min_value"),
                     polars.col(column_name).max().alias("max_value")
                 ]).collect()
@@ -177,7 +204,7 @@ class PolarsDataFrame(metaclass=Meta):
         self.ensure_column(column_name)
 
         try:
-            categories = self._dataframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
+            categories = self.lazyframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
         except Exception as e:
             raise RuntimeError(f"Failed to extract categories for column '{column_name}' -- {e}") from e
 
@@ -224,7 +251,7 @@ class PolarsDataFrame(metaclass=Meta):
                     polars.col(column).std().alias(f"{column}_stddev"),
                 ])
 
-        result = self._dataframe.select(
+        result = self.lazyframe.select(
                 fields
         ).collect()
 
@@ -256,7 +283,7 @@ class PolarsDataFrame(metaclass=Meta):
     def stats(self, column_name: str) -> NumericValueStats:
         self.ensure_column(column_name)
 
-        result = self._dataframe.select([
+        result = self.lazyframe.select([
             polars.col(column_name).mean().alias("mean"),
             polars.col(column_name).std().alias("stddev"),
             polars.col(column_name).count().alias("total_count"),
@@ -279,13 +306,13 @@ class PolarsDataFrame(metaclass=Meta):
         """
         # allow dataframe.col_one
         if attr_name in self.column_names:
-            return self._dataframe.select(attr_name)
+            return self.lazyframe.select(attr_name)
 
         if attr_name in ["__setstate__", "__getstate__"]:
             raise AttributeError(f"{self.__class__.__name__}.__getattr__: {attr_name} does not exist")
 
         """ Called for failed attribute accesses so forwarding to underlying polars frame """
-        return getattr(self._dataframe, attr_name)
+        return getattr(self.lazyframe, attr_name)
 
     def __setitem__(self, key, values):
         """
@@ -297,7 +324,7 @@ class PolarsDataFrame(metaclass=Meta):
         if type(values) is polars.LazyFrame:
             values = values.collect().to_numpy()
 
-        self._dataframe = self._dataframe.with_columns(
+        self.lazyframe = self.lazyframe.with_columns(
                     polars.Series(
                         name=key,
                         values=values

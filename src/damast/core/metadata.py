@@ -567,7 +567,7 @@ class DataSpecification:
         elif df_type == pl.DataFrame:
             df = df.lazy()
         elif df_type == XDataFrame:
-            df = df._dataframe
+            df = df.lazyframe
         else:
             raise TypeError("MetaData.apply: dataframe must be either "
                 " polars.LazyFrame,"
@@ -622,12 +622,12 @@ class DataSpecification:
                         logger.info(
                                 f"Filtering out for column '{column_name}' values that are out of range: {self.value_range}."
                         )
-                        xdf._dataframe = xdf._dataframe.filter(
+                        xdf.lazyframe = xdf.lazyframe.filter(
                                 (pl.col(column_name) >= self.value_range.min) &
                                 (pl.col(column_name) <= self.value_range.max)
                             )
                     else:
-                        xdf._dataframe = xdf._dataframe.with_columns(
+                        xdf.lazyframe = xdf.lazyframe.with_columns(
                                     pl.when(
                                         (pl.col(column_name) < self.value_range.min) |
                                         (pl.col(column_name) > self.value_range.max)
@@ -635,7 +635,7 @@ class DataSpecification:
                                     .otherwise(pl.col(column_name))
                                     .alias(column_name)
                                   )
-            return xdf._dataframe
+            return xdf.lazyframe
 
         if validation_mode == ValidationMode.UPDATE_METADATA:
             if self.representation_type is None:
@@ -667,7 +667,7 @@ class DataSpecification:
             except ValueError as e:
                 logger.debug(f"Metadata.update_datarange_and_stats: could not update datarange and stats '{column_name}' -- {e}")
 
-        return xdf._dataframe
+        return xdf.lazyframe
 
     def get_fulfillment(self, data_spec: DataSpecification) -> Fulfillment:
         """

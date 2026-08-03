@@ -57,7 +57,7 @@ class LatLonTransformer(PipelineElement):
 
         _df = lat_cyclic_transformer.fit_transform(df=df)
         _df = lon_cyclic_transformer.fit_transform(df=_df)
-        df._dataframe = _df
+        df.lazyframe = _df
         return df
 
 
@@ -71,7 +71,7 @@ pipeline = DataProcessingPipeline(name="ais_preparation",
 
 new_df = pipeline.transform(adf)
 print(pipeline.to_str(indent_level=2))
-print(new_df._dataframe.collect())
+print(new_df.lazyframe.collect())
 
 # Start ML
 # ml = MLPipeline(name="train")

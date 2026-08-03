@@ -61,7 +61,7 @@ class JoinByTimestamp(PipelineElement):
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
-        df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+        df.lazyframe = df.join(other.lazyframe, left_on=df_timestamp, right_on=other_timestamp)
         return df
 ```
 

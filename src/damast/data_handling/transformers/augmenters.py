@@ -118,7 +118,7 @@ class JoinDataFrameByColumn(PipelineElement):
                 pl.col(self.dataset_column)
         ).lazy()
 
-        dataframe = df._dataframe.join(
+        dataframe = df.lazyframe.join(
                 other=other_df,
                 left_on=self.get_name("x"),
                 right_on=self.right_on,
@@ -127,7 +127,7 @@ class JoinDataFrameByColumn(PipelineElement):
                 how=self.join_how.value
             )
 
-        df._dataframe = dataframe.rename({self.dataset_column: self.get_name("out")})
+        df.lazyframe = dataframe.rename({self.dataset_column: self.get_name("out")})
         return df
 
 
@@ -207,7 +207,7 @@ class AddUndefinedValue(PipelineElement):
         Fill in values for NA and missing entries
         """
         mapped_name = self.get_name("x")
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 pl.col(mapped_name).fill_null(self.fill_value).alias(mapped_name),
             ).with_columns(
                 pl.col(mapped_name).fill_nan(self.fill_value).alias(mapped_name)
@@ -228,12 +228,12 @@ class AddLocalIndex(PipelineElement):
     @damast.core.output({"local_index": {"representation_type": int},
                          "reverse_{{local_index}}": {"representation_type": int}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         group_column = self.get_name("group")
         sort_column = self.get_name("sort")
 
-        df._dataframe = dataframe\
+        df.lazyframe = dataframe\
                 .sort(group_column, sort_column)\
                 .with_columns(
                     pl.int_range(pl.len()).over(group_column).alias(self.get_name("local_index")),
@@ -253,7 +253,7 @@ class AddDeltaTime(PipelineElement):
                         "time_column": {}})
     @damast.core.output({"delta_time": {"representation_type": float, "unit": "s"}})
     def transform(self, df: damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         group_column = self.get_name("group")
         time_column = self.get_name("time_column")
@@ -277,7 +277,7 @@ class AddDeltaTime(PipelineElement):
                 pl.col('delta_time').fill_null(0).alias('delta_time')
              )
 
-        df._dataframe = dataframe
+        df.lazyframe = dataframe
         return df
 
 
@@ -313,7 +313,7 @@ class AddTimestamp(PipelineElement):
         from_mapped_name = self.get_name("from")
         to_mapped_name = self.get_name("to")
 
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 (pl.col(from_mapped_name).str.to_datetime().dt.timestamp("ms")/1000.0).alias(to_mapped_name)
         )
         return df
@@ -343,7 +343,7 @@ class MultiplyValue(PipelineElement):
         Multiply a column by a given value
         """
         mapped_name = self.get_name("x")
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
             (pl.col(mapped_name)*self.mul_value).alias(mapped_name)
         )
         return df
@@ -381,7 +381,7 @@ class ChangeTypeColumn(PipelineElement):
         input_mapped_name = self.get_name("x")
         output_mapped_name = self.get_name("y")
 
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
             pl.col(input_mapped_name).cast(self.new_type).alias(output_mapped_name)
         )
         return df

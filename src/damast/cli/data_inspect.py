@@ -33,11 +33,14 @@ class DataInspectParser(BaseParser):
 
         parser.add_argument("--filter",
                 help="Filter based on column data, e.g., mmsi==120123, allowed operators !=,<,>,==,<=,>=,<> or =~ for a regex, e.g.,'name =~ '^SAR*'",
-                action="append"
+                nargs="+",
+                type=str,
+                required=False
         )
         parser.add_argument("--head", type=int, default=10, help="First this number of rows, default is 10")
         parser.add_argument("--tail", type=int, default=10, help="Print number of rows from the end, default is 10")
         parser.add_argument("--column-count", type=int, default=10, help="Number of columns to show")
+        parser.add_argument("--column-width", type=int, default=None, help="Column width to show")
 
         parser.add_argument("--columns",
                 help="Show/Select these columns",
@@ -114,18 +117,18 @@ class DataInspectParser(BaseParser):
                         else:
                             logger.warning(f"Filter expression invalid: {filter_expression}")
 
-                    adf._dataframe = eval(f"adf._dataframe{filter_values}")
-                    adf._metadata = AnnotatedDataFrame.infer_annotation(adf._dataframe)
+                    adf.lazyframe = eval(f"adf.lazyframe{filter_values}")
+                    adf._metadata = AnnotatedDataFrame.infer_annotation(adf.lazyframe)
 
                 print(adf.metadata.to_str(columns=args.columns))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
-                df = adf._dataframe
+                df = adf.lazyframe
                 if args.columns:
                     df = df.select(args.columns)
 
-                with pl.Config(tbl_rows=args.head, tbl_cols=args.column_count):
+                with pl.Config(tbl_rows=args.head, tbl_cols=args.column_count, fmt_str_lengths=args.column_width):
                     print(df.head(n=args.head).collect())
-                with pl.Config(tbl_rows=args.tail, tbl_cols=args.column_count):
+                with pl.Config(tbl_rows=args.tail, tbl_cols=args.column_count, fmt_str_lengths=args.column_width):
                     print(df.tail(n=args.tail).collect())
 
         except RuntimeError as e:

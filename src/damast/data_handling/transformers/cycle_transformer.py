@@ -19,7 +19,7 @@ class CycleTransformer(PipelineElement):
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         feature = self.get_name('x')
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 (np.sin(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_x"),
                 (np.cos(polars.col(feature)*2*np.pi) / self.n).alias(f"{feature}_y")
         )
@@ -41,7 +41,7 @@ class TimestampCycleTransformer(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         feature = self.get_name('x')
 
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 (np.sin(polars.col(feature).dt.quarter()*2*np.pi) / 4).alias(f"{feature}_quarter_x"),
                 (np.cos(polars.col(feature).dt.quarter()*2*np.pi) / 4).alias(f"{feature}_quarter_y"),
                 (np.sin(polars.col(feature).dt.week()*2*np.pi) / 53).alias(f"{feature}_week_x"),

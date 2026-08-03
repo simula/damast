@@ -15,6 +15,7 @@ from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.experiment import ExperimentParser
+from damast.cli.plugins import PluginsParser
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.domains.maritime.ais.data_generator import AISTestData
 
@@ -27,6 +28,7 @@ def subparsers():
         "experiment",
         "inspect",
         "process",
+        "plugins",
     ]
 
 def test_help(subparsers, capsys, monkeypatch):
@@ -44,6 +46,7 @@ def test_help(subparsers, capsys, monkeypatch):
     [ "inspect", DataInspectParser ],
     [ "experiment", ExperimentParser ],
     [ "process", DataProcessingParser ],
+    [ "plugins", PluginsParser ],
 ])
 def test_subparser(name, klass, script_runner):
     result = script_runner.run(['damast', name, "--help"])
@@ -314,5 +317,34 @@ def test_annotate_representation_type(tmp_path, script_runner):
     # The new representation type should now be str
     assert re.search(r"a:\n\s+is_optional: False\n\s+representation_type: str",result.stdout)
     assert result.returncode == 0
+
+
+def test_plugins_none_registered(script_runner):
+    result = script_runner.run(['damast', 'plugins'])
+    assert result.returncode == 0
+    assert re.search("No transformer plugins registered", result.stdout) is not None
+
+
+def test_plugins_lists_registered_entry_point(capsys, monkeypatch):
+    import importlib.metadata as importlib_metadata
+
+    from damast.core.transformations import PluginManager
+
+    class FakeEntryPoint:
+        name = "AcmeTransformer"
+        value = "acme_pkg.transformers:AcmeTransformer"
+
+    def fake_entry_points(*, group):
+        assert group == PluginManager.ENTRY_POINT_GROUP
+        return [FakeEntryPoint()]
+
+    monkeypatch.setattr(importlib_metadata, "entry_points", fake_entry_points)
+
+    from damast.cli.plugins import PluginsParser
+    parser = PluginsParser(parser=ArgumentParser())
+    parser.execute(args=None)
+
+    captured = capsys.readouterr()
+    assert "AcmeTransformer: acme_pkg.transformers:AcmeTransformer" in captured.out
 
 

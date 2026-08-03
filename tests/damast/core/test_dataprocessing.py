@@ -11,6 +11,7 @@ from damast.core.decorators import (
     DAMAST_DEFAULT_DATASOURCE,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
+    artifacts,
 )
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer
@@ -108,10 +109,10 @@ class TransformerB(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         # This operation is does not really make sense, but acts as a placeholder to generate
         # the desired output columns
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                 (polars.col("longitude_x") - polars.col("longitude_y")).alias("delta_longitude")
             )
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                 (polars.col("latitude_x") - polars.col("latitude_y")).alias("delta_latitude")
             )
         return df
@@ -129,7 +130,7 @@ class TransformerC(PipelineElement):
         "label": {}
     })
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-        df._dataframe = df._dataframe.with_columns(
+        df.lazyframe = df.lazyframe.with_columns(
                 polars.lit("data-label").alias("label")
         )
         return df
@@ -158,7 +159,7 @@ class JoinByTimestamp(PipelineElement):
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
-        df._dataframe = df.join(other._dataframe, left_on=df_timestamp, right_on=other_timestamp)
+        df.lazyframe = df.join(other.lazyframe, left_on=df_timestamp, right_on=other_timestamp)
 
         df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
@@ -205,7 +206,7 @@ class JoinSpatioTemporal(PipelineElement):
         other_timestamp = self.get_name('timestamp', datasource='other')
         df_timestamp = self.get_name('timestamp')
 
-        filtered_df = df.join_where(other._dataframe, \
+        filtered_df = df.join_where(other.lazyframe, \
                                       (pl.col(df_timestamp) - self.before_time_in_s) <= pl.col(other_timestamp), \
                                       (pl.col(df_timestamp) + self.after_time_in_s) >= pl.col(other_timestamp), \
                                       great_circle_distance(pl.col(self.get_name('lat')),
@@ -213,14 +214,14 @@ class JoinSpatioTemporal(PipelineElement):
                                                             pl.col(self.get_name('lat', datasource='other')),
                                                             pl.col(self.get_name('lon', datasource='other'))) <= self.distance_in_km
                     )
-        df._dataframe = df.join(filtered_df,
+        df.lazyframe = df.join(filtered_df,
                     how="left",
                     left_on=[self.get_name('mmsi'), df_timestamp],
                     right_on=[self.get_name('mmsi'), df_timestamp],
                     suffix="_redundant",
                     ).drop(cs.ends_with("_redundant"))
 
-        df._dataframe = df.with_columns(
+        df.lazyframe = df.with_columns(
                   event_delta_distance = great_circle_distance(pl.col(self.get_name('lat')),
                                         pl.col(self.get_name('lon')),
                                         pl.col(self.get_name('lat', datasource='other')),
@@ -231,6 +232,49 @@ class JoinSpatioTemporal(PipelineElement):
 
         df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
+
+
+class ArtifactAwareDoubler(PipelineElement):
+    """
+    A minimal transformer using @artifacts (with no required artifacts), defined at module
+    level so it can be reconstructed by 'module_name:class_name' via a save/load roundtrip -
+    see test_loaded_pipeline_sets_parent_pipeline_on_transformers below.
+    """
+    @damast.core.describe("doubles x")
+    @damast.core.input({"x": {}})
+    @artifacts({})
+    @damast.core.output({"x_doubled": {}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        feature = self.get_name("x")
+        df.lazyframe = df.lazyframe.with_columns(
+            (polars.col(feature) * 2).alias(f"{feature}_doubled")
+        )
+        return df
+
+
+def test_loaded_pipeline_sets_parent_pipeline_on_transformers(tmp_path):
+    """
+    A transformer's 'parent_pipeline' must be set regardless of how the pipeline was built -
+    including after a save/load roundtrip (the path 'damast process' uses), not just via the
+    fluent .add()/.join() builder methods. @artifacts reads 'parent_pipeline.base_dir' directly
+    (no hasattr guard), so a missing parent_pipeline used to crash with an AttributeError as
+    soon as a loaded pipeline with an @artifacts step was run.
+    """
+    df = polars.DataFrame({"x": [1.0, 2.0, 3.0]})
+    adf = AnnotatedDataFrame(df, AnnotatedDataFrame.infer_annotation(df))
+
+    pipeline = DataProcessingPipeline(name="artifact-aware", base_dir=tmp_path) \
+        .add("double", ArtifactAwareDoubler(), name_mappings={"x": "x"})
+    saved_path = pipeline.save(tmp_path)
+
+    loaded = DataProcessingPipeline.load(saved_path)
+    for node in loaded.processing_graph.nodes():
+        assert hasattr(node.transformer, "parent_pipeline")
+        assert node.transformer.parent_pipeline is loaded
+
+    prepared = loaded.prepare(df=adf)
+    result = prepared.transform(df=adf).collect()
+    assert result["x_doubled"].to_list() == [2.0, 4.0, 6.0]
 
 
 @pytest.fixture()
@@ -448,7 +492,7 @@ def test_single_element_pipeline(tmp_path):
         @damast.core.input({"x": {"unit": units.deg}})
         @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
         def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
-            df._dataframe = df._dataframe.with_columns(polars.col(self.get_name('x')).alias(f"{self.get_name('x')}_suffix"))
+            df.lazyframe = df.lazyframe.with_columns(polars.col(self.get_name('x')).alias(f"{self.get_name('x')}_suffix"))
             return df
 
     pipeline = DataProcessingPipeline(name="TransformStatus",

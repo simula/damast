@@ -126,7 +126,7 @@ def test_delta_column(tmp_path):
 
     for mmsi, data in df_grouped:
         # group specific distances in the result
-        distances = new_adf._dataframe.filter(pl.col(ColumnName.MMSI) == mmsi[0]).select(ColumnName.DELTA_DISTANCE).collect().to_numpy()
+        distances = new_adf.lazyframe.filter(pl.col(ColumnName.MMSI) == mmsi[0]).select(ColumnName.DELTA_DISTANCE).collect().to_numpy()
 
         # original data in df, so check against
         expected_dataframe = data.select(

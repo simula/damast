@@ -26,4 +26,10 @@ The following pages contains the API of Damast
    :toctree: _autosummary
    :recursive:
 
+   damast.plugins
+
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
+
    damast.domains

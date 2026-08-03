@@ -84,7 +84,7 @@ class ComputeClosestAnchorage(PipelineElement):
                         "y": {"representation_type": float, "unit": damast.core.units.units.deg}})
     @damast.core.output({"distance": {"representation_type": float, "unit": damast.core.units.units.km}})
     def transform(self, df:  damast.core.AnnotatedDataFrame) -> damast.core.AnnotatedDataFrame:
-        dataframe = df._dataframe
+        dataframe = df.lazyframe
 
         x_name = self.get_name('x')
         y_name = self.get_name('y')
@@ -112,7 +112,7 @@ class ComputeClosestAnchorage(PipelineElement):
         #dataframe.units[self.get_name("distance")] = damast.core.units.units.km
 
         # Drop/hide conversion columns
-        df._dataframe = dataframe.drop([f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"])
+        df.lazyframe = dataframe.drop([f"{self.get_name('x')}_rad", f"{self.get_name('y')}_rad"])
         return df
 
 
