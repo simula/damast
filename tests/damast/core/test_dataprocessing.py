@@ -11,6 +11,7 @@ from damast.core.decorators import (
     DAMAST_DEFAULT_DATASOURCE,
     DECORATED_INPUT_SPECS,
     DECORATED_OUTPUT_SPECS,
+    artifacts,
 )
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 from damast.core.transformations import MultiCycleTransformer
@@ -231,6 +232,49 @@ class JoinSpatioTemporal(PipelineElement):
 
         df._metadata = df._metadata.merge(other._metadata).drop(other_timestamp)
         return df
+
+
+class ArtifactAwareDoubler(PipelineElement):
+    """
+    A minimal transformer using @artifacts (with no required artifacts), defined at module
+    level so it can be reconstructed by 'module_name:class_name' via a save/load roundtrip -
+    see test_loaded_pipeline_sets_parent_pipeline_on_transformers below.
+    """
+    @damast.core.describe("doubles x")
+    @damast.core.input({"x": {}})
+    @artifacts({})
+    @damast.core.output({"x_doubled": {}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        feature = self.get_name("x")
+        df.lazyframe = df.lazyframe.with_columns(
+            (polars.col(feature) * 2).alias(f"{feature}_doubled")
+        )
+        return df
+
+
+def test_loaded_pipeline_sets_parent_pipeline_on_transformers(tmp_path):
+    """
+    A transformer's 'parent_pipeline' must be set regardless of how the pipeline was built -
+    including after a save/load roundtrip (the path 'damast process' uses), not just via the
+    fluent .add()/.join() builder methods. @artifacts reads 'parent_pipeline.base_dir' directly
+    (no hasattr guard), so a missing parent_pipeline used to crash with an AttributeError as
+    soon as a loaded pipeline with an @artifacts step was run.
+    """
+    df = polars.DataFrame({"x": [1.0, 2.0, 3.0]})
+    adf = AnnotatedDataFrame(df, AnnotatedDataFrame.infer_annotation(df))
+
+    pipeline = DataProcessingPipeline(name="artifact-aware", base_dir=tmp_path) \
+        .add("double", ArtifactAwareDoubler(), name_mappings={"x": "x"})
+    saved_path = pipeline.save(tmp_path)
+
+    loaded = DataProcessingPipeline.load(saved_path)
+    for node in loaded.processing_graph.nodes():
+        assert hasattr(node.transformer, "parent_pipeline")
+        assert node.transformer.parent_pipeline is loaded
+
+    prepared = loaded.prepare(df=adf)
+    result = prepared.transform(df=adf).collect()
+    assert result["x_doubled"].to_list() == [2.0, 4.0, 6.0]
 
 
 @pytest.fixture()

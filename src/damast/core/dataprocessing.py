@@ -125,6 +125,15 @@ class DataProcessingPipeline(PipelineElement):
                     else:
                         raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate PipelineElement"
                                      f" from {type(step)}")
+
+        # Regardless of how the processing graph was constructed above (an existing
+        # ProcessingGraph, a dict as produced when loading a saved pipeline, or a list of
+        # steps), every transformer needs to point back to this pipeline - e.g. for the
+        # on_transform_start/on_transform_end hooks and for @artifacts validation, which
+        # reads 'parent_pipeline.base_dir' directly.
+        for node in self.processing_graph.nodes():
+            node.transformer.set_parent(pipeline=self)
+
         self.is_ready = False
 
         if meta is not None:

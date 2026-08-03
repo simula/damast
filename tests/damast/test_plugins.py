@@ -80,6 +80,7 @@ def test_local_plugin_takes_precedence_over_same_named_entry_point(local_plugin_
 
     class FakeEntryPoint:
         name = "LocalDoubler"
+        value = "acme_pkg.transformers:LocalDoubler"
 
         @staticmethod
         def load():

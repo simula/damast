@@ -40,8 +40,8 @@ def __getattr__(name: str) -> type[PipelineElement]:
         if ep.name == name
     ]
 
-    sources = [module_name for module_name, _ in local_matches] + [ep.value for ep in entry_point_matches]
-    if len(sources) > 1:
+    if len(local_matches) + len(entry_point_matches) > 1:
+        sources = [module_name for module_name, _ in local_matches] + [ep.value for ep in entry_point_matches]
         logger.warning(
             f"damast.plugins: plugin name '{name}' is ambiguous - registered by more than one"
             f" source ({', '.join(sources)}) - using '{sources[0]}'"
