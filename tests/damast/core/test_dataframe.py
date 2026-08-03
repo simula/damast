@@ -299,3 +299,65 @@ def test_convert_csv_to_adf(tmp_path):
 
     assert "height" in columns_in_metadata
     assert "letter" in columns_in_metadata
+
+
+def test_update_refreshes_existing_column_without_declared_range():
+    """
+    Regression test: AnnotatedDataFrame.update() used to only add a DataSpecification for a
+    column that was not yet part of the metadata - if the column already existed (e.g. because
+    it was loaded from a previously exported file, and a pipeline step recomputes/overwrites it),
+    the pre-existing spec - including a stale value_range - was left untouched. A pipeline step
+    that legitimately produces values outside that stale range (e.g. AddDeltaTime producing 0.0
+    for the first ping of a group, when the loaded file's inferred range started at 1.0) would
+    then fail the READONLY validate_metadata() check run right after update(), even though the
+    step's own declared output spec makes no claim about the value range at all.
+    """
+    height = np.array([-5, 0, 10, 100], dtype=np.int64)
+    df = polars.LazyFrame({"height": height})
+
+    # Simulate a column that already has a (now stale) value_range attached, e.g. inherited from
+    # a previously exported file.
+    stale_spec = DataSpecification(
+        name="height",
+        representation_type=int,
+        value_range=MinMax(min=0, max=40),
+    )
+    adf = AnnotatedDataFrame(df, metadata=MetaData([stale_spec]), validation_mode=ValidationMode.IGNORE)
+
+    # The step producing 'height' does not itself declare any value_range constraint - matching
+    # how PipelineElement subclasses declare their outputs in practice, e.g.
+    # @damast.core.output({"height": {"representation_type": int}})
+    step_output_spec = DataSpecification(name="height", representation_type=int)
+    adf.update(expectations=[step_output_spec])
+
+    assert adf.metadata["height"].value_range is None
+    # Must not raise, even though actual data (-5, 100) lies outside the old MinMax(0, 40).
+    adf.validate_metadata()
+
+
+def test_update_replaces_existing_column_with_newly_declared_range():
+    """
+    Companion to test_update_refreshes_existing_column_without_declared_range: when the current
+    pipeline step *does* declare its own value_range for a column that already existed in the
+    metadata, update() must use the step's newly declared range (its own guarantee about what it
+    produces) rather than keep the old spec's range or silently drop the check entirely.
+    """
+    x = np.array([-0.5, 0.0, 0.5, 1.0], dtype=np.float64)
+    df = polars.LazyFrame({"x": x})
+
+    old_spec = DataSpecification(
+        name="x",
+        representation_type=float,
+        value_range=MinMax(min=0, max=40),
+    )
+    adf = AnnotatedDataFrame(df, metadata=MetaData([old_spec]), validation_mode=ValidationMode.IGNORE)
+
+    new_spec = DataSpecification(
+        name="x",
+        representation_type=float,
+        value_range=MinMax(min=-1.0, max=1.0),
+    )
+    adf.update(expectations=[new_spec])
+
+    assert adf.metadata["x"].value_range == MinMax(min=-1.0, max=1.0)
+    adf.validate_metadata()

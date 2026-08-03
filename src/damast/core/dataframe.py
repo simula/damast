@@ -132,20 +132,29 @@ class AnnotatedDataFrame(XDataFrame):
         """
         for expected_data_spec in expectations:
             column_name = expected_data_spec.name
+            if column_name not in self.dataframe.column_names:
+                raise RuntimeError(
+                    f"{self.__class__.__name__}.update:"
+                    f" required output '{column_name}' is not"
+                    f" present in the result dataframe - available columns are:"
+                    f" {','.join(self.dataframe.column_names)}"
+                )
+
+            new_spec = DataSpecification.from_dict(data=dict(expected_data_spec))
             if column_name not in self.metadata:
-                # Column name description is not yet part of the metadata
-                # Verify that is it part of the data frame
-                if column_name in self.dataframe.column_names:
-                    self._metadata.columns.append(
-                        DataSpecification.from_dict(data=dict(expected_data_spec))
-                    )
-                else:
-                    raise RuntimeError(
-                        f"{self.__class__.__name__}.update:"
-                        f" required output '{column_name}' is not"
-                        f" present in the result dataframe - available columns are:"
-                        f" {','.join(self.dataframe.column_names)}"
-                    )
+                # Column description is not yet part of the metadata - add it
+                self._metadata.columns.append(new_spec)
+            else:
+                # Column is a declared output of this pipeline step, i.e. it was just
+                # (re)computed - replace its spec with the step's own declared output spec
+                # (same as for a brand-new column above) instead of leaving the previous spec's
+                # value_range/value_stats in place. Those may be stale (e.g. inherited from a
+                # previously exported file) and would otherwise fail the READONLY
+                # validate_metadata() check right after this call, even though the step does not
+                # itself assert any particular range for this column.
+                self._metadata.columns = [
+                    new_spec if c.name == column_name else c for c in self._metadata.columns
+                ]
 
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
