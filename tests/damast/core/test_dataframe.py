@@ -361,3 +361,35 @@ def test_update_replaces_existing_column_with_newly_declared_range():
 
     assert adf.metadata["x"].value_range == MinMax(min=-1.0, max=1.0)
     adf.validate_metadata()
+
+
+def test_update_preserves_representation_type_when_step_output_declares_none():
+    """
+    Regression test: fixing the stale value_range/value_stats issue above (by replacing the
+    existing spec with the step's own declared output spec) went too far and also reset
+    representation_type/description/unit/etc. to None whenever a step's declared output for an
+    already-existing column was empty or partial - e.g. a pass-through filter like
+    @damast.core.output({"x": {}}) on a column that already had representation_type=str set.
+    That silently wiped type information a later pipeline step's @input check could depend on.
+    Structural fields must carry over from the existing spec when the step doesn't declare them,
+    while value_range/value_stats still reset (see test above).
+    """
+    df = polars.LazyFrame({"date_time_utc": ["2020-01-01", "2020-01-02"]})
+
+    existing_spec = DataSpecification(
+        name="date_time_utc",
+        representation_type=str,
+        description="original description",
+        unit=units.deg,
+    )
+    adf = AnnotatedDataFrame(df, metadata=MetaData([existing_spec]), validation_mode=ValidationMode.IGNORE)
+
+    # A pass-through step (e.g. DropMissingOrNan/FilterWithin) declares no constraints at all -
+    # @damast.core.output({"x": {}}) - for a column that already exists in the metadata.
+    step_output_spec = DataSpecification(name="date_time_utc")
+    adf.update(expectations=[step_output_spec])
+
+    assert adf.metadata["date_time_utc"].representation_type is str
+    assert adf.metadata["date_time_utc"].description == "original description"
+    assert adf.metadata["date_time_utc"].unit == units.deg
+    adf.validate_metadata()

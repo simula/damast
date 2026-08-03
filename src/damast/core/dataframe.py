@@ -146,12 +146,24 @@ class AnnotatedDataFrame(XDataFrame):
                 self._metadata.columns.append(new_spec)
             else:
                 # Column is a declared output of this pipeline step, i.e. it was just
-                # (re)computed - replace its spec with the step's own declared output spec
-                # (same as for a brand-new column above) instead of leaving the previous spec's
-                # value_range/value_stats in place. Those may be stale (e.g. inherited from a
-                # previously exported file) and would otherwise fail the READONLY
-                # validate_metadata() check right after this call, even though the step does not
-                # itself assert any particular range for this column.
+                # (re)computed. value_range/value_stats always come from the step's own
+                # declared output (falling back to None if it doesn't declare any) - carrying
+                # over a stale range/stats from before this step ran (e.g. inherited from a
+                # previously exported file) would otherwise fail the READONLY
+                # validate_metadata() check right after this call, even though the step does
+                # not itself assert any particular range for this column.
+                # Other fields (representation_type, description, unit, ...) describe the
+                # column's structure rather than its current values, so - unless this step's
+                # output declares them itself - they carry over unchanged from the existing
+                # spec instead of being reset to None.
+                existing_spec = self.metadata[column_name]
+                for key in DataSpecification.Key:
+                    if key in (DataSpecification.Key.name, DataSpecification.Key.value_range,
+                               DataSpecification.Key.value_stats):
+                        continue
+                    if getattr(new_spec, key.value) is None:
+                        setattr(new_spec, key.value, getattr(existing_spec, key.value))
+
                 self._metadata.columns = [
                     new_spec if c.name == column_name else c for c in self._metadata.columns
                 ]
