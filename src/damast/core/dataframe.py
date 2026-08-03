@@ -132,20 +132,41 @@ class AnnotatedDataFrame(XDataFrame):
         """
         for expected_data_spec in expectations:
             column_name = expected_data_spec.name
+            if column_name not in self.dataframe.column_names:
+                raise RuntimeError(
+                    f"{self.__class__.__name__}.update:"
+                    f" required output '{column_name}' is not"
+                    f" present in the result dataframe - available columns are:"
+                    f" {','.join(self.dataframe.column_names)}"
+                )
+
+            new_spec = DataSpecification.from_dict(data=dict(expected_data_spec))
             if column_name not in self.metadata:
-                # Column name description is not yet part of the metadata
-                # Verify that is it part of the data frame
-                if column_name in self.dataframe.column_names:
-                    self._metadata.columns.append(
-                        DataSpecification.from_dict(data=dict(expected_data_spec))
-                    )
-                else:
-                    raise RuntimeError(
-                        f"{self.__class__.__name__}.update:"
-                        f" required output '{column_name}' is not"
-                        f" present in the result dataframe - available columns are:"
-                        f" {','.join(self.dataframe.column_names)}"
-                    )
+                # Column description is not yet part of the metadata - add it
+                self._metadata.columns.append(new_spec)
+            else:
+                # Column is a declared output of this pipeline step, i.e. it was just
+                # (re)computed. value_range/value_stats always come from the step's own
+                # declared output (falling back to None if it doesn't declare any) - carrying
+                # over a stale range/stats from before this step ran (e.g. inherited from a
+                # previously exported file) would otherwise fail the READONLY
+                # validate_metadata() check right after this call, even though the step does
+                # not itself assert any particular range for this column.
+                # Other fields (representation_type, description, unit, ...) describe the
+                # column's structure rather than its current values, so - unless this step's
+                # output declares them itself - they carry over unchanged from the existing
+                # spec instead of being reset to None.
+                existing_spec = self.metadata[column_name]
+                for key in DataSpecification.Key:
+                    if key in (DataSpecification.Key.name, DataSpecification.Key.value_range,
+                               DataSpecification.Key.value_stats):
+                        continue
+                    if getattr(new_spec, key.value) is None:
+                        setattr(new_spec, key.value, getattr(existing_spec, key.value))
+
+                self._metadata.columns = [
+                    new_spec if c.name == column_name else c for c in self._metadata.columns
+                ]
 
 
     def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:

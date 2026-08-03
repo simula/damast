@@ -46,6 +46,7 @@ dependencies = [
     "networkx",
     "numba",
     "numpy>=2",
+    "packaging",
     "pandas",
     "polars>=1.36.1",
     "polars_h3",

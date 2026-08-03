@@ -70,6 +70,15 @@ def test_data_range_from_dict(data, expected_instance):
                             [ "2026-04-05 01:23:45", pl.Datetime(), dt.datetime(year=2026, month=4, day=5, hour=1, minute=23, second=45, tzinfo=None)],
                             [ "2026-04-05 01:23:45+00:00", pl.Datetime(time_unit="us", time_zone="UTC"), dt.datetime(year=2026, month=4, day=5, hour=1, minute=23, second=45, tzinfo=dt.timezone.utc)],
                             [ "2026-04-05 01:23:45+00:02", pl.Datetime(time_unit="us", time_zone="UTC"), dt.datetime(year=2026, month=4, day=5, hour=1, minute=21, second=45, tzinfo=dt.timezone.utc)],
+                            # Regression: a *bare* polars datatype class (not a parametrised instance) is what
+                            # DataSpecification.resolve_representation_type("Datetime") actually returns, e.g. when
+                            # reloading a previously exported file's metadata for a Datetime column. This used to
+                            # fall through to 'dt.datetime(value)' called positionally with a single string, raising
+                            # "TypeError: 'str' object cannot be interpreted as an integer".
+                            [ "2026-06-01 00:01:44+00:00", pl.Datetime, dt.datetime(year=2026, month=6, day=1, hour=0, minute=1, second=44, tzinfo=dt.timezone.utc)],
+                            # Regression: the bare 'dt.datetime' class also used to be broken - the branch handling
+                            # it referenced '.time_unit'/'.time_zone', which only exist on 'pl.Datetime' instances.
+                            [ "2026-06-01 00:01:44+00:00", dt.datetime, dt.datetime(year=2026, month=6, day=1, hour=0, minute=1, second=44, tzinfo=dt.timezone.utc)],
                         ]
 )
 def test_DataElement(input_value, dtype, expected_output):

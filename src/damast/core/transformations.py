@@ -15,6 +15,8 @@ from types import ModuleType
 
 import numpy as np
 import polars
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion
 
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import DataSpecification
@@ -28,6 +30,36 @@ from .constants import (
 from .formatting import DEFAULT_INDENT
 
 logger = getLogger(__name__)
+
+
+def _check_version_requirement(installed_version: str, expected_version: str) -> tuple[bool, str]:
+    """
+    Check whether ``installed_version`` satisfies ``expected_version``.
+
+    ``expected_version`` may be a full PEP 440 specifier (``'>=1.2.0'``, ``'==1.2.3'``,
+    ``'~=1.4'``) which is honored as-is, or a bare version (``'1.2.0'``, as recorded by
+    :func:`PluginManager.resolve_requirement`) which has no operator and is therefore treated as
+    a minimum requirement, like a normal Python ``'>='`` dependency specifier.
+
+    :param installed_version: The currently installed version
+    :param expected_version: A PEP 440 specifier, or a bare version treated as a minimum
+    :return: Tuple of (whether the requirement is satisfied, the specifier text used - for
+        display in a warning message)
+    """
+    try:
+        specifier = SpecifierSet(expected_version)
+    except InvalidSpecifier:
+        try:
+            specifier = SpecifierSet(f">={expected_version}")
+        except InvalidSpecifier:
+            # Not a PEP 440 version/specifier at all (e.g. a VCS/date-based build) - fall back
+            # to exact match, since ordering can't be meaningfully compared.
+            return installed_version == expected_version, f"=={expected_version}"
+
+    try:
+        return installed_version in specifier, str(specifier)
+    except InvalidVersion:
+        return installed_version == expected_version, f"=={expected_version}"
 
 
 class PluginManager:
@@ -432,10 +464,14 @@ class PipelineElement(Transformer):
             raise ImportError(cls._missing_plugin_message(module_name, class_name, requires))
 
         expected_version = requires.get("version")
-        if expected_version and installed_version != expected_version:
+        if not expected_version:
+            return
+
+        satisfied, specifier_text = _check_version_requirement(installed_version, expected_version)
+        if not satisfied:
             logger.warning(
                 f"{cls.__name__}.create_new: '{class_name}' was saved with plugin package"
-                f" '{distribution}=={expected_version}', but '{installed_version}' is installed."
+                f" '{distribution}{specifier_text}', but '{installed_version}' is installed."
                 " Results may differ from when the pipeline was created."
             )
 

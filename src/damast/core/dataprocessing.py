@@ -240,7 +240,7 @@ class DataProcessingPipeline(PipelineElement):
                 )
 
             try:
-                logger.info("#{idx} validate {node}")
+                logger.info(f"#{idx} validate {node}")
                 if node.name in current_specs and node.is_datasource():
                     datasource = node.name
                     md = MetaData(columns=current_specs[datasource], annotations=[])
@@ -502,7 +502,7 @@ class DataProcessingPipeline(PipelineElement):
                 self.processing_graph.clear_state()
 
             try:
-                logger.info("#{idx} run {node}")
+                logger.info(f"#{idx} run {node}")
                 if node.name in dataframes and node.is_datasource():
                     node.result = node.transformer.fit_transform(dataframes[node.name])
                     AnnotatedDataFrame.ensure_type(node.result)
