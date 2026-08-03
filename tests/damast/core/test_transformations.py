@@ -12,6 +12,7 @@ from damast.core.transformations import (
     MultiCycleTransformer,
     PipelineElement,
     PluginManager,
+    _check_version_requirement,
     plugin_manager,
 )
 from damast.data_handling.transformers.cycle_transformer import CycleTransformer
@@ -96,7 +97,59 @@ def test_create_new_missing_plugin_package_raises_actionable_error():
         PipelineElement.create_new(**step)
 
 
-def test_create_new_version_mismatch_warns_but_loads(caplog):
+@pytest.mark.parametrize(["installed", "expected", "satisfied"], [
+    ["1.2.0", "1.2.0", True],    # bare version -> minimum requirement, exact match satisfies
+    ["1.3.0", "1.2.0", True],    # bare version -> newer installed satisfies the minimum
+    ["1.1.0", "1.2.0", False],   # bare version -> older installed does not satisfy the minimum
+    ["1.2.0", ">=1.0.0", True],
+    ["1.0.0", ">=1.2.0", False],
+    ["1.2.0", "==1.2.0", True],
+    ["1.2.0", "==1.3.0", False],
+    ["1.2.0", "~=1.2.0", True],
+    ["1.2.5", "~=1.2.0", True],
+    ["1.3.0", "~=1.2.0", False],
+    ["1.2.0", ">=1.0,<2.0", True],
+    ["2.5.0", ">=1.0,<2.0", False],
+])
+def test_check_version_requirement(installed, expected, satisfied):
+    result, _ = _check_version_requirement(installed, expected)
+    assert result is satisfied
+
+
+def test_check_version_requirement_non_pep440_falls_back_to_exact_match():
+    assert _check_version_requirement("1.2.0", "1.2.0-not-a-real-version") == (
+        False, "==1.2.0-not-a-real-version"
+    )
+    assert _check_version_requirement("1.2.0-not-a-real-version", "1.2.0-not-a-real-version") == (
+        True, "==1.2.0-not-a-real-version"
+    )
+
+
+def test_create_new_specifier_version_requirement_satisfied(caplog):
+    step = dict(CycleTransformer(n=1))
+    step["requires"] = {"distribution": "damast", "version": ">=0.0.1"}
+
+    with caplog.at_level("WARNING"):
+        instance = PipelineElement.create_new(**step)
+
+    assert isinstance(instance, CycleTransformer)
+    assert not any("was saved with plugin package" in record.message for record in caplog.records)
+
+
+def test_create_new_specifier_version_requirement_not_satisfied_warns(caplog):
+    step = dict(CycleTransformer(n=1))
+    step["requires"] = {"distribution": "damast", "version": "==9999.0.0"}
+
+    with caplog.at_level("WARNING"):
+        instance = PipelineElement.create_new(**step)
+
+    assert isinstance(instance, CycleTransformer)
+    assert any("damast==9999.0.0" in record.message for record in caplog.records)
+
+
+def test_create_new_non_pep440_version_mismatch_warns_but_loads(caplog):
+    # "0.0.0-does-not-match" is not a valid PEP 440 version, so it can't be ordered against the
+    # installed version - _check_requirement falls back to an exact-match comparison for it.
     step = dict(CycleTransformer(n=1))
     step["requires"] = {"distribution": "damast", "version": "0.0.0-does-not-match"}
 
@@ -105,6 +158,32 @@ def test_create_new_version_mismatch_warns_but_loads(caplog):
 
     assert isinstance(instance, CycleTransformer)
     assert any("0.0.0-does-not-match" in record.message for record in caplog.records)
+
+
+def test_create_new_downgrade_warns(caplog):
+    # the recorded version is treated as a minimum requirement (like a '>=' specifier) - an
+    # installed version *older* than what the pipeline was saved with is worth warning about.
+    step = dict(CycleTransformer(n=1))
+    step["requires"] = {"distribution": "damast", "version": "9999.0.0"}
+
+    with caplog.at_level("WARNING"):
+        instance = PipelineElement.create_new(**step)
+
+    assert isinstance(instance, CycleTransformer)
+    assert any("damast>=9999.0.0" in record.message for record in caplog.records)
+
+
+def test_create_new_newer_installed_version_does_not_warn(caplog):
+    # an installed version *newer* than what was recorded is fine under min-version semantics
+    # and must not trigger a warning.
+    step = dict(CycleTransformer(n=1))
+    step["requires"] = {"distribution": "damast", "version": "0.0.1"}
+
+    with caplog.at_level("WARNING"):
+        instance = PipelineElement.create_new(**step)
+
+    assert isinstance(instance, CycleTransformer)
+    assert not any("was saved with plugin package" in record.message for record in caplog.records)
 
 
 def test_list_plugins_discovers_entry_points(monkeypatch):
