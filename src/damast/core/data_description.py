@@ -32,10 +32,20 @@ class DataElement:
         """
         try:
             if isinstance(dtype, pl.datatypes.classes.DataTypeClass):
-                dtype = dtype.to_python()
-            elif isinstance(dtype, pl.datatypes.Datetime) or (dtype is dt.datetime):
+                # A bare polars datatype class (e.g. 'pl.Datetime', not a parametrised instance
+                # like 'pl.Datetime(time_unit=...)') - resolve it to a concrete instance when it
+                # is a Datetime, so the branch below (which needs .time_unit/.time_zone) applies;
+                # otherwise fall back to its plain Python equivalent (e.g. 'int').
+                if issubclass(dtype, pl.datatypes.Datetime):
+                    dtype = dtype()
+                else:
+                    dtype = dtype.to_python()
+
+            if isinstance(dtype, pl.datatypes.Datetime) or (dtype is dt.datetime):
                 if type(value) is str:
-                    return pl.Series([value]).str.to_datetime(time_unit=dtype.time_unit, time_zone=dtype.time_zone)[0]
+                    time_unit = getattr(dtype, "time_unit", None)
+                    time_zone = getattr(dtype, "time_zone", None)
+                    return pl.Series([value]).str.to_datetime(time_unit=time_unit, time_zone=time_zone)[0]
                 return pl.Series([value]).cast(dtype)[0]
             return dtype(value)
         except Exception as e:
