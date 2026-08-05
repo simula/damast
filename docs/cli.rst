@@ -28,7 +28,7 @@ Inspect
 
 
 Inspect allows to identify columns and properties of columns in a given dataset.
-The dataset can consists of one or more (zipped) files, either given as list of filenames or using file pattern.
+The dataset can consist of one or more (zipped) files, either given as list of filenames or using file pattern.
 
 .. highlight:: python
 
@@ -122,8 +122,29 @@ The dataset can consists of one or more (zipped) files, either given as list of 
      │ 333041379 ┆ 2020-11-19 03:00:48 ┆ 0.801778 ┆ 40.818448 ┆ null ┆ … ┆ null       ┆ null               ┆ null             ┆ null                  ┆ 3       │
      │ 333048134 ┆ 2020-11-19 03:00:54 ┆ 0.803097 ┆ 40.830813 ┆ null ┆ … ┆ null       ┆ 34                 ┆ SAT-AA_037       ┆ 2020-11-19 01:08:30   ┆ 3       │
      └───────────┴─────────────────────┴──────────┴───────────┴──────┴───┴────────────┴────────────────────┴──────────────────┴───────────────────────┴─────────┘
+
 .. highlight:: none
 
+By default, ``inspect`` runs in ``READONLY`` validation mode: it only checks metadata against the
+data, without computing or changing anything.
+If a file's stored metadata is missing ``value_range``/``value_stats``, then pass ``--validation-mode update_metadata`` to have them computed from the actual
+data instead:
+
+.. highlight:: python
+::
+
+    $ damast inspect -f data.parquet --validation-mode update_metadata
+
+
+.. highlight:: none
+To make the information persistent in the parquet file:
+
+.. highlight:: python
+::
+
+    $ damast annotate -f data.parquet --apply --inplace
+
+.. highlight:: none
 
 Examples
 ^^^^^^^^^
