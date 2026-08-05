@@ -625,13 +625,20 @@ class DataSpecification:
             if self.value_range:
                 if isinstance(self.value_range, MinMax):
                     if self.missing_value is None:
-                        logger.info(
-                                f"Filtering out for column '{column_name}' values that are out of range: {self.value_range}."
-                        )
-                        xdf.lazyframe = xdf.lazyframe.filter(
-                                (pl.col(column_name) >= self.value_range.min) &
-                                (pl.col(column_name) <= self.value_range.max)
+                        if not self.value_range.allow_missing:
+                            logger.info(
+                                    f"Missing values as not permitted for column '{column_name}', thus removing rows where column value is out of range: {self.value_range}."
                             )
+                            xdf.lazyframe = xdf.lazyframe.filter(
+                                    (pl.col(column_name) >= self.value_range.min) &
+                                    (pl.col(column_name) <= self.value_range.max)
+                                )
+                        else:
+                            xdf.lazyframe = xdf.lazyframe.filter(
+                                    ((pl.col(column_name) >= self.value_range.min) &
+                                    (pl.col(column_name) <= self.value_range.max)) |
+                                    pl.col(column_name).is_null()
+                                )
                     else:
                         xdf.lazyframe = xdf.lazyframe.with_columns(
                                     pl.when(

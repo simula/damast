@@ -268,12 +268,34 @@ def test_force_range():
                 is_optional=False,
                 representation_type=np.int64,
                 missing_value=None,
-                value_range=MinMax(min=0, max=40)
+                value_range=MinMax(min=0, max=40, allow_missing=False)
             )
 
     df = polars.LazyFrame(mmsi, ["mmsi"])
     df_filtered = df.filter(
             (polars.col("mmsi") >= 0) & (polars.col("mmsi") <= 40)
+    )
+    metadata = MetaData([column_a])
+    adf = AnnotatedDataFrame(df,
+            metadata=metadata,
+            validation_mode=ValidationMode.UPDATE_DATA
+          )
+
+    assert XDataFrame(adf.lazyframe).equals(XDataFrame(df_filtered))
+
+def test_force_range_allow_missing():
+    mmsi = polars.DataFrame({'mmsi': [0, -1, 2, 3, 8, 12, 52, 40, 18, None]})
+    column_a = DataSpecification(
+                name="mmsi",
+                is_optional=False,
+                representation_type=np.int64,
+                missing_value=None,
+                value_range=MinMax(min=0, max=40, allow_missing=True)
+            )
+
+    df = mmsi.lazy()
+    df_filtered = df.filter(
+            ((polars.col("mmsi") >= 0) & (polars.col("mmsi") <= 40)) | polars.col("mmsi").is_null()
     )
     metadata = MetaData([column_a])
     adf = AnnotatedDataFrame(df,
