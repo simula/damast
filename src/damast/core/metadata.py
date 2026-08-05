@@ -517,12 +517,18 @@ class DataSpecification:
                     value_range, dtype=spec.representation_type
                 )
 
+            # value_meanings describes individual values *within* value_range, so it only makes
+            # sense (and is only ever set - see _validate()) alongside a value_range.
             if cls.Key.value_meanings.value in data:
                 spec.value_meanings = data[cls.Key.value_meanings.value]
 
-            if cls.Key.value_stats.value in data:
-                if not str(spec.representation_type).lower().startswith("str"):
-                    spec.value_stats = NumericValueStats(**data[cls.Key.value_stats.value])
+        # value_stats describes the actual computed statistics of the data and is independent of
+        # value_range (the allowed/expected bounds) - e.g. a column can have valid stats even if
+        # no value_range could be computed for it. Must not be nested under the value_range
+        # check above, or it silently gets dropped on reload whenever value_range is unset.
+        if cls.Key.value_stats.value in data:
+            if not str(spec.representation_type).lower().startswith("str"):
+                spec.value_stats = NumericValueStats(**data[cls.Key.value_stats.value])
 
         return spec
 

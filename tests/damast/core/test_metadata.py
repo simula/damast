@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
-from damast.core.data_description import CyclicMinMax, MinMax
+from damast.core.data_description import CyclicMinMax, MinMax, NumericValueStats
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,
@@ -130,6 +130,35 @@ def test_data_specification_read_write(name, category, is_optional,
     ds_loaded = DataSpecification.from_dict(data=ds_loaded_dict)
 
     assert ds_loaded == ds
+
+
+def test_data_specification_value_stats_survives_read_write_without_value_range():
+    """
+    Regression test: DataSpecification.from_dict() used to parse 'value_stats' only when
+    'value_range' was also present in the data, since the check was nested inside the
+    'value_range' branch. But value_stats (actual computed statistics) is independent of
+    value_range (allowed/expected bounds) - a column can have valid stats without a defined
+    range (e.g. AnnotatedDataFrame.infer_annotation sets value_stats unconditionally for
+    numeric columns, but only sets value_range if min/max could be computed). That silently
+    dropped value_stats on every save/load roundtrip for such a column.
+    """
+    ds = DataSpecification(
+        name="mmsi",
+        representation_type=int,
+        value_stats=NumericValueStats(
+            mean=1.0, stddev=0.5, median=1.0, lower_quantile=0.5, upper_quantile=1.5, total_count=10
+        ),
+    )
+    assert ds.value_range is None
+
+    ds_dict = dict(ds)
+    assert "value_stats" in ds_dict
+
+    ds_loaded = DataSpecification.from_dict(data=ds_dict)
+
+    assert ds_loaded.value_stats is not None
+    assert ds_loaded.value_stats.mean == 1.0
+    assert ds_loaded.value_range is None
 
 
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "merge_strategy", "error_msg"],
