@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import logging
 import os
 import re
@@ -97,7 +98,44 @@ class PolarsDataFrame(metaclass=Meta):
         try:
             return cls.types()[type_txt]
         except KeyError:
-            raise TypeError(f"{cls.__name__}.resolve_type: unknown polars type '{type_txt}'")
+            pass
+
+        # A parameterized dtype (e.g. "Datetime(time_unit='us', time_zone='UTC')", as produced
+        # by str() on a DataType instance - see DataSpecification.__iter__) isn't a plain key in
+        # types(). Parse it back into an instance instead of just the bare class, so such dtypes
+        # round-trip through export/import instead of being silently downgraded/rejected.
+        parameterized = cls._resolve_parameterized_type(type_txt)
+        if parameterized is not None:
+            return parameterized
+
+        raise TypeError(f"{cls.__name__}.resolve_type: unknown polars type '{type_txt}'")
+
+    @classmethod
+    def _resolve_parameterized_type(cls, type_txt: str):
+        """
+        Parse a constructor-call-style dtype repr (e.g. "Datetime(time_unit='us')") back into a
+        `polars.datatypes.DataType` instance, or return None if `type_txt` isn't of that shape.
+
+        Uses `ast` rather than `eval` to only ever construct a known polars dtype class with
+        keyword arguments parsed as literals - never arbitrary code.
+        """
+        try:
+            node = ast.parse(type_txt, mode="eval").body
+        except SyntaxError:
+            return None
+
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.args:
+            return None
+
+        dtype_class = cls.types().get(node.func.id)
+        if dtype_class is None:
+            return None
+
+        try:
+            kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
+            return dtype_class(**kwargs)
+        except (ValueError, TypeError):
+            return None
 
 
     @property

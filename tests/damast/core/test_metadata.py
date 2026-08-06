@@ -132,6 +132,37 @@ def test_data_specification_read_write(name, category, is_optional,
     assert ds_loaded == ds
 
 
+@pytest.mark.parametrize("representation_type", [
+    polars.Datetime(time_unit="us", time_zone="UTC"),
+    polars.Datetime(time_unit="ns"),
+    polars.Duration(time_unit="ms"),
+    polars.Decimal(precision=10, scale=2),
+])
+def test_data_specification_read_write_parameterized_representation_type(representation_type, tmp_path):
+    """
+    Regression test: a parameterized polars dtype instance (e.g. as returned by
+    LazyFrame.collect_schema().dtypes()) is exported via str() - e.g.
+    "Datetime(time_unit='us', time_zone='UTC')" - but PolarsDataFrame.resolve_type() only ever
+    looked up plain type *names* in a dict, so reloading such a spec raised a TypeError/ValueError
+    instead of reconstructing the same parameterized instance.
+    """
+    ds = DataSpecification(name="timestamp", representation_type=representation_type)
+
+    ds_dict = dict(ds)
+    ds_yaml = tmp_path / "test_data_specification_read_write_parameterized-ds.yaml"
+
+    with open(ds_yaml, "w") as f:
+        yaml.dump(ds_dict, f)
+
+    with open(ds_yaml, "r") as f:
+        ds_loaded_dict = yaml.load(f, Loader=yaml.SafeLoader)
+
+    ds_loaded = DataSpecification.from_dict(data=ds_loaded_dict)
+
+    assert ds_loaded.representation_type == representation_type
+    assert ds_loaded == ds
+
+
 def test_data_specification_value_stats_survives_read_write_without_value_range():
     """
     Regression test: DataSpecification.from_dict() used to parse 'value_stats' only when
