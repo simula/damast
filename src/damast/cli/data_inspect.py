@@ -118,7 +118,8 @@ class DataInspectParser(BaseParser):
                             logger.warning(f"Filter expression invalid: {filter_expression}")
 
                     adf.lazyframe = eval(f"adf.lazyframe{filter_values}")
-                    adf._metadata = AnnotatedDataFrame.infer_annotation(adf.lazyframe)
+                    # Refresh value_range/value_stats in place to match the filtered rows,
+                    adf.validate_metadata(validation_mode=ValidationMode.UPDATE_METADATA)
 
                 print(adf.metadata.to_str(columns=args.columns))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
