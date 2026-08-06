@@ -124,6 +124,9 @@ class DataInspectParser(BaseParser):
                 print(adf.metadata.to_str(columns=args.columns))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
                 df = adf.lazyframe
+
+                df = df.select(pl.all().name.map(lambda name: name + f" ({unit})" if name in adf.metadata and (unit := getattr(adf.metadata[name], "unit", None)) else name))
+
                 if args.columns:
                     df = df.select(args.columns)
 
