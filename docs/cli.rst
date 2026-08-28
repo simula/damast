@@ -291,19 +291,42 @@ via the ``damast.plugins`` namespace::
 ``damast.plugins`` resolves names lazily on first access, so nothing beyond the requested class
 is ever imported - see :mod:`damast.plugins` for details.
 
-``damast plugins`` lists everything that is currently discoverable from either source, without
-requiring any Python code:
+Example: a local plugin transformer
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. highlight:: python
+A local, ad-hoc transformer is just a :class:`damast.core.transformations.PipelineElement`
+subclass in a loose ``*.py`` file, written like any other transformer:
+
+.. literalinclude:: ./examples/plugins/my_transformers.py
+   :language: Python
+
+With ``DAMAST_PLUGIN_PATH`` pointing at the directory containing that file, ``damast plugins``
+lists it without requiring any further Python code:
+
+.. highlight:: none
 
 ::
 
-    export DAMAST_PLUGIN_PATH=/path/to/my/transformers
-    damast plugins
+    $ export DAMAST_PLUGIN_PATH=./examples/plugins
+    $ damast plugins
 
     MyTripler: my_transformers:MyTripler
 
+``MyTripler`` is now resolvable via ``damast.plugins`` and can be used in a pipeline like any
+other transformer:
+
+.. literalinclude:: ./examples/damast-plugin-pipeline.py
+   :language: Python
+
+The resulting pipeline can be applied like any other, e.g. via ``damast process`` (see `Process`_
+above), as long as ``DAMAST_PLUGIN_PATH`` is still set to a directory containing
+``my_transformers.py``:
+
 .. highlight:: none
+
+::
+
+    damast process --input-data data.parquet --pipeline pipelines/my-plugin-pipeline.damast.ppl
 
 Pipelines saved with a plugin transformer record where it came from under ``requires`` (the
 installed distribution and version, or the original local file path), so that loading the pipeline
