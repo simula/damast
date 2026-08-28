@@ -1,3 +1,4 @@
+import datetime
 import logging
 import re
 from argparse import ArgumentParser
@@ -117,7 +118,13 @@ class DataInspectParser(BaseParser):
                         else:
                             logger.warning(f"Filter expression invalid: {filter_expression}")
 
-                    adf.lazyframe = eval(f"adf.lazyframe{filter_values}")
+                    safe_globals = {
+                        '__builtins__': None,
+                        'adf': adf,
+                        'dt': datetime,
+                        'pl': pl
+                    }
+                    adf.lazyframe = eval(f"adf.lazyframe{filter_values}", safe_globals)
                     # Refresh value_range/value_stats in place to match the filtered rows,
                     adf.validate_metadata(validation_mode=ValidationMode.UPDATE_METADATA)
 
