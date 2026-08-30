@@ -157,8 +157,8 @@ class ProcessingGraph:
             from_node = graph[edge_dict['from']]
             to_node = graph[edge_dict['to']]
 
-            # multi-input node (a join operator) needs save slots to disambiguate
-            # between available inputs
+            # multi-input node (a join operator) needs to save slots to allow
+            # for disambiguation between available inputs
             required_slots = to_node.inputs()
             if len(required_slots) == 1:
                 slot = required_slots[0]
@@ -215,6 +215,12 @@ class ProcessingGraph:
         if self._leaf_node is not None:
             self._graph.add_edge(self._leaf_node, node, slot=required_slots[0])
         self._leaf_node = node
+
+    def datasource_nodes(self) -> list:
+        """
+        Get every datasource node of this graph - in execution order
+        """
+        return [n for n in self.nodes() if n.is_datasource()]
 
     def join(self, name: str, operator: PipelineElement, processing_graph: ProcessingGraph | None = None):
         """
