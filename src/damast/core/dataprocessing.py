@@ -111,13 +111,13 @@ class DataProcessingPipeline(PipelineElement):
                 for step in processing_graph:
                     name, instance = step
                     if isinstance(instance, PipelineElement):
-                        self.processing_graph.add(Node(
+                        self.processing_graph.add_node(Node(
                                 name=name,
                                 transformer=instance
                             )
                         )
                     elif isinstance(instance, dict):
-                        self.processing_graph.add(Node(
+                        self.processing_graph.add_node(Node(
                                 name=name,
                                 transformer=PipelineElement.create_new(**instance)
                             )
@@ -172,7 +172,7 @@ class DataProcessingPipeline(PipelineElement):
             if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
                 transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings.copy() }
 
-        self.processing_graph.add(
+        self.processing_graph.add_node(
                 Node(name=name,
                      transformer=transformer
                      )
