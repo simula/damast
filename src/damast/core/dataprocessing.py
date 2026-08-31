@@ -111,13 +111,13 @@ class DataProcessingPipeline(PipelineElement):
                 for step in processing_graph:
                     name, instance = step
                     if isinstance(instance, PipelineElement):
-                        self.processing_graph.add(Node(
+                        self.processing_graph.add_node(Node(
                                 name=name,
                                 transformer=instance
                             )
                         )
                     elif isinstance(instance, dict):
-                        self.processing_graph.add(Node(
+                        self.processing_graph.add_node(Node(
                                 name=name,
                                 transformer=PipelineElement.create_new(**instance)
                             )
@@ -172,7 +172,7 @@ class DataProcessingPipeline(PipelineElement):
             if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
                 transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings.copy() }
 
-        self.processing_graph.add(
+        self.processing_graph.add_node(
                 Node(name=name,
                      transformer=transformer
                      )
@@ -592,6 +592,51 @@ class DataProcessingPipeline(PipelineElement):
         pipeline.processing_graph = copy.deepcopy(self.processing_graph)
         pipeline._output_specs = [copy.deepcopy(x) for x in self._output_specs]
         return pipeline
+
+    def describe(self) -> str:
+        """
+        Render a saved pipeline's interface and steps, without needing any input data.
+
+        The 'Interface' section lists, per datasource, the columns its first consuming step
+        declares - this is the external contract for that datasource: a step further downstream
+        consumes columns the pipeline itself has already produced, not the raw datasource.
+        """
+        lines = [f"Pipeline: {self.name}"]
+        if self.description:
+            lines.append(f"Description: {self.description}")
+        lines.append(f"Base dir: {self.base_dir}")
+
+        graph = self.processing_graph
+
+        lines.append("")
+        lines.append("Interface:")
+        for ds_node in graph.datasource_nodes():
+            lines.append(f"  {ds_node.name}:")
+            successors = list(graph.successors(ds_node))
+            if not successors:
+                lines.append("    (no steps consume this datasource)")
+                continue
+
+            successor = successors[0]
+            slot = graph.get_edge_data(ds_node, successor)["slot"]
+            try:
+                specs = successor.transformer.input_specs.get(slot, [])
+            except AttributeError:
+                specs = []
+
+            if not specs:
+                lines.append("    (no column requirements declared)")
+            else:
+                lines.append(DataSpecification.to_str(specs, indent_level=2).rstrip("\n"))
+
+        lines.append("")
+        lines.append("Steps:")
+        for idx, node in enumerate(graph.nodes(), start=1):
+            # node.transformer.to_str() already includes the class name as its first line
+            lines.append(f"#{idx} {node.name}")
+            lines.append(node.transformer.to_str(indent_level=1).rstrip("\n"))
+
+        return "\n".join(lines)
 
 def polar_data_type_constructor(loader, tag_suffix, node):
     module_whitelist = ["polars.datatypes.classes"]

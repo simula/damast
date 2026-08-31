@@ -611,9 +611,16 @@ class PipelineElement(Transformer):
 
         data += hspace + DEFAULT_INDENT * 2 + "input:\n"
         if hasattr(self.transform, DECORATED_INPUT_SPECS):
-            data += DataSpecification.to_str(
-                self.input_specs, indent_level=indent_level + 4
-            )
+            # input_specs is a dict keyed by label ('df' by default, plus e.g. 'other' for a
+            # join operator's second input) - label each one when there is more than one
+            input_specs = self.input_specs
+            show_labels = len(input_specs) > 1
+            for label, specs in input_specs.items():
+                if show_labels:
+                    data += hspace + DEFAULT_INDENT * 3 + label + ":\n"
+                    data += DataSpecification.to_str(specs, indent_level=indent_level + 4)
+                else:
+                    data += DataSpecification.to_str(specs, indent_level=indent_level + 4)
 
         data += hspace + DEFAULT_INDENT * 2 + "output:\n"
         if hasattr(self.transform, DECORATED_OUTPUT_SPECS):

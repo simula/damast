@@ -130,7 +130,10 @@ class ProcessingGraph:
 
     def __iter__(self):
         yield "nodes", [dict(x) for x in self._graph.nodes()]
-        yield "edges", [{'from': str(x[0].uuid), 'to': str(x[1].uuid)} for x in self._graph.edges()]
+        yield "edges", [
+            {'from': str(u.uuid), 'to': str(v.uuid), 'slot': data['slot']}
+            for u, v, data in self._graph.edges(data=True)
+        ]
 
     @classmethod
     def from_dict(cls, data: dict[str, any]):
@@ -148,13 +151,36 @@ class ProcessingGraph:
 
         for node_dict in data['nodes']:
             node = Node.from_dict(node_dict)
-            graph.add(node)
+            graph._add_node(node)
 
         for edge_dict in data['edges']:
             from_node = graph[edge_dict['from']]
             to_node = graph[edge_dict['to']]
 
-            graph.add_edge(from_node, to_node)
+            # multi-input node (a join operator) needs to save slots to allow
+            # for disambiguation between available inputs
+            required_slots = to_node.inputs()
+            if len(required_slots) == 1:
+                slot = required_slots[0]
+            elif 'slot' in edge_dict:
+                slot = edge_dict['slot']
+            else:
+                raise ValueError(
+                    f"ProcessingGraph.from_dict: cannot determine the input slots for target node {to_node}. "
+                    f" This pipeline file has been generated with an older damast version,"
+                    f" please regenerate."
+                )
+
+            graph.add_edge(from_node, to_node, slot=slot)
+
+        # restore _root_node/_leaf_node so a loaded pipeline can still be extended via
+        # .add_node()/.join() - the leaf is whichever node the saved edges leave without a
+        # successor (the join() operator itself, for a graph ending in a join)
+        if graph._graph.number_of_nodes() > 0:
+            graph._root_node = next(iter(graph._graph.nodes()))
+            leaves = [n for n in graph._graph.nodes() if graph._graph.out_degree(n) == 0]
+            if len(leaves) == 1:
+                graph._leaf_node = leaves[0]
 
         return graph
 
@@ -164,24 +190,37 @@ class ProcessingGraph:
         """
         return nx.utils.graphs_equal(self._graph, other._graph)
 
-    def add(self, node: Node):
+    def _add_node(self, node: Node):
         """
-        Add (or rather appaned) a node to the current graph
-        It will attach to the graph's current leaf node
+        Add a node to the graph without the side effects of :func:`add` - no single-input-slot
+        validation, and no automatic edge to the current leaf node.
         """
         if not self._root_node:
             self._root_node = node
 
         self._graph.add_node(node)
 
+    def add_node(self, node: Node):
+        """
+        Add (or rather append) a node to the current graph
+        It will attach to the graph's current leaf node
+        """
+        self._add_node(node=node)
+
         required_slots = node.inputs()
-        if len(required_slots) != 1:
-            raise RuntimeError(f"{node} needs to have exactly one dataframe input argument",
-                               " found {required_slots}")
+        if len(required_slots) < 1:
+            raise RuntimeError(f"{node} needs to have at least one dataframe input argument",
+                               f" found {required_slots}")
 
         if self._leaf_node is not None:
             self._graph.add_edge(self._leaf_node, node, slot=required_slots[0])
         self._leaf_node = node
+
+    def datasource_nodes(self) -> list:
+        """
+        Get every datasource node of this graph - in execution order
+        """
+        return [n for n in self.nodes() if n.is_datasource()]
 
     def join(self, name: str, operator: PipelineElement, processing_graph: ProcessingGraph | None = None):
         """

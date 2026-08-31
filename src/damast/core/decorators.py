@@ -221,11 +221,19 @@ def output(requirements: dict[str, any]):
 
 def artifacts(requirements: dict[str, any]):
     """
-    Specify the output for the decorated function.
+    Specify the (file) artifact(s) the decorated function is expected to produce as a side
+    effect - e.g. an exported file or a plot - in addition to (or instead of) any dataframe
+    columns declared via :func:`output`.
 
-    The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
+    The decorated function must return :class:`damast.core.AnnotatedDataFrame`. After it runs,
+    every artifact in ``requirements`` is checked to exist - relative to the transformer's
+    parent pipeline's ``base_dir`` for a relative pattern - or a :class:`RuntimeError` is
+    raised.
 
-    :param requirements: List of input requirements
+    :param requirements: Dictionary mapping a descriptor to the expected artifact - either an
+        absolute path, or a path/glob pattern resolved relative to the pipeline's ``base_dir``
+    :raise RuntimeError: If the decorated function does not return an ``AnnotatedDataFrame``,
+        or if no file matches one of the declared artifacts after it runs
     """
     required_artifact_specs = ArtifactSpecification(requirements=requirements)
 

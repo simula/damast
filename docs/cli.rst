@@ -261,6 +261,75 @@ Examples
 
 .. highlight:: none
 
+Multiple input datasources
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A pipeline is not limited to a single input - :func:`damast.core.dataprocessing.DataProcessingPipeline.join`
+lets a pipeline declare additional, named datasources, e.g., here to fuse AIS ship-position pings
+with OSINT (open-source intelligence) event reports by timestamp.
+Using damast process with ``--input-data`` allows to specify a datasource with a prefix, e.g.,
+``--input-data osint_events=1.parquet 2.parquet``.
+A pipeline with only the default datasource (the common case) can omit the prefix ``--input-data 1.parquet``
+name needed.
+
+The following trims down the pattern used in
+`damast-examples/hozint-ais/ais_osint_fusion.py <https://github.com/simula/damast-examples>`_ to
+a minimal, self-contained example - a ``JoinByTimestamp`` plugin transformer (see `Plugins`_
+below) that joins AIS pings (the default ``df`` datasource) with OSINT events (a second
+datasource, ``osint_events``) wherever their timestamps match:
+
+.. literalinclude:: ./examples/plugins/osint_ais_transformers.py
+   :language: Python
+
+.. literalinclude:: ./examples/damast-osint-ais-pipeline.py
+   :language: Python
+
+Generating small synthetic datasets to try it on:
+
+.. literalinclude:: ./examples/damast-osint-ais-generate-data.py
+   :language: Python
+
+.. highlight:: python
+
+::
+
+    python docs/examples/damast-osint-ais-generate-data.py
+    python docs/examples/damast-osint-ais-pipeline.py
+
+    # JoinByTimestamp is a local plugin transformer (see Plugins below) - needed both to
+    # build the pipeline above and to load it back for damast process
+    export DAMAST_PLUGIN_PATH=docs/examples/plugins
+    damast process --pipeline pipelines/osint_ais_preparation.damast.ppl \
+        --input-data df=docs/examples/data/ais.parquet \
+        --input-data osint_events=docs/examples/data/osint.parquet \
+        --output-file output.parquet
+
+.. highlight:: none
+
+Describe a pipeline
+^^^^^^^^^^^^^^^^^^^^
+
+``--describe`` prints a saved pipeline's interface: every datasource it requires and the
+columns each one must provide, followed by every processing step.
+Noe input data or running the pipeline is needed. Loading the pipeline still needs its transformers to be
+resolvable, i.e., ``DAMAST_PLUGIN_PATH`` must be set for a local plugin, while installed plugins will automatically be discovered:
+
+.. highlight:: python
+
+::
+
+    export DAMAST_PLUGIN_PATH=docs/examples/plugins
+    damast process --pipeline pipelines/osint_ais_preparation.damast.ppl --describe
+
+.. highlight:: none
+
+.. literalinclude:: ./examples/damast-process-describe.txt
+  :language: none
+
+The **Interface** section is specifically the requirement for each datasource's *first*
+consuming step - once inside the pipeline, later steps consume columns the pipeline itself has
+already produced, not the raw datasource, so this is the actual external contract to satisfy
+when supplying ``--input-data``.
 
 
 Plugins
@@ -291,19 +360,42 @@ via the ``damast.plugins`` namespace::
 ``damast.plugins`` resolves names lazily on first access, so nothing beyond the requested class
 is ever imported - see :mod:`damast.plugins` for details.
 
-``damast plugins`` lists everything that is currently discoverable from either source, without
-requiring any Python code:
+Example: a local plugin transformer
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. highlight:: python
+A local, ad-hoc transformer is just a :class:`damast.core.transformations.PipelineElement`
+subclass in a loose ``*.py`` file, written like any other transformer:
+
+.. literalinclude:: ./examples/plugins/my_transformers.py
+   :language: Python
+
+With ``DAMAST_PLUGIN_PATH`` pointing at the directory containing that file, ``damast plugins``
+lists it without requiring any further Python code:
+
+.. highlight:: none
 
 ::
 
-    export DAMAST_PLUGIN_PATH=/path/to/my/transformers
-    damast plugins
+    $ export DAMAST_PLUGIN_PATH=./examples/plugins
+    $ damast plugins
 
     MyTripler: my_transformers:MyTripler
 
+``MyTripler`` is now resolvable via ``damast.plugins`` and can be used in a pipeline like any
+other transformer:
+
+.. literalinclude:: ./examples/damast-plugin-pipeline.py
+   :language: Python
+
+The resulting pipeline can be applied like any other, e.g. via ``damast process`` (see `Process`_
+above), as long as ``DAMAST_PLUGIN_PATH`` is still set to a directory containing
+``my_transformers.py``:
+
 .. highlight:: none
+
+::
+
+    damast process --input-data data.parquet --pipeline pipelines/my-plugin-pipeline.damast.ppl
 
 Pipelines saved with a plugin transformer record where it came from under ``requires`` (the
 installed distribution and version, or the original local file path), so that loading the pipeline

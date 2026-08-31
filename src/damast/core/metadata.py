@@ -822,7 +822,10 @@ class DataSpecification:
                         other_value = other_value.to_python()
 
                 try:
-                    if hasattr(this_value, "merge"):
+                    if this_value == other_value:
+                        setattr(ds, key.value, this_value)
+                        return ds
+                    elif hasattr(this_value, "merge"):
                         merged_value = this_value.merge(other_value)
                         setattr(ds, key.value, merged_value)
                         return ds

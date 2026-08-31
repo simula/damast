@@ -1,0 +1,42 @@
+Subparser: DataProcessingParser
+Pipeline: osint_ais_preparation
+Description: Join AIS pings with OSINT events by timestamp
+Base dir: .
+
+Interface:
+  df:
+        date_time_utc
+        lon
+        lat
+  osint_events:
+        timestamp
+        latitude
+        longitude
+
+Steps:
+#1 df
+    DataSource
+            description: Node for marking a plain data entry
+            input:
+            output:
+#2 osint_events
+    DataSource
+            description: Node for marking a plain data entry
+            input:
+            output:
+#3 osint_events
+    JoinByTimestamp
+            description: Join by timestamp
+            input:
+                other:
+                    timestamp
+                    latitude
+                    longitude
+                df:
+                    date_time_utc
+                    lon
+                    lat
+            output:
+                    event_type
+                    latitude
+                    longitude
