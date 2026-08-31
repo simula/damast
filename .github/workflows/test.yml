@@ -40,8 +40,8 @@ jobs:
       - name: Install dependencies ${{ matrix.os }}
         if: runner.os == 'Linux'
         run: |
-          # ensure zstd.h is available
-          sudo apt update && sudo apt install -y libzstd-dev
+          # ensure zstd.h -> libzstd-dev, graphizv for plot
+          sudo apt update && sudo apt install -y libzstd-dev graphviz
 
       - name: Install pip
         run: python -m pip install -U pip
@@ -56,6 +56,8 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           echo "KERAS_BACKEND=${{ matrix.backend }}"  | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          choco install graphviz --no-progress
+          echo "C:\Program Files\Graphviz\bin" >> $env:GITHUB_PATH
         shell: pwsh
 
       - name: Set Env (Linux)
@@ -73,7 +75,7 @@ jobs:
           elif [ -d "/usr/local/bin" ]; then
             echo "/usr/local/bin" >> $GITHUB_PATH
           fi
-          brew install zstd
+          brew install zstd graphviz
 
 
       # Run keras backend specific tests (for keras>=3)
