@@ -19,6 +19,9 @@ in sub-commands:
 **plugins**
     list transformer plugins registered by installed packages or via ``DAMAST_PLUGIN_PATH``
 
+**watch**
+    watch directories for completed files and run a configured command on each
+
 
 Inspect
 --------
@@ -330,6 +333,156 @@ The **Interface** section is specifically the requirement for each datasource's 
 consuming step - once inside the pipeline, later steps consume columns the pipeline itself has
 already produced, not the raw datasource, so this is the actual external contract to satisfy
 when supplying ``--input-data``.
+
+
+Watch
+------
+
+.. literalinclude:: ./examples/damast-watch-help.txt
+  :language: none
+
+Some data sources are collected incrementally, e.g. one file per day, appended to for hours
+before it is complete. ``watch`` scans one or more directories for such files and, once a file
+has not been modified for a configurable *quiet period*, runs a configured command on it -
+typically ``damast convert`` with a metadata spec, or ``damast process`` with a pipeline.
+
+``watch`` performs a single scan-and-exit; it is not a daemon. Schedule it periodically with
+cron or a systemd timer (see `Deployment`_ below). On success a source file is moved into the
+job's ``processed_dir``, on failure into ``failed_dir`` alongside a ``<file>.error.log`` - this
+also means a file is only ever handled once, even across repeated invocations.
+
+Configuration
+^^^^^^^^^^^^^^
+
+A watch config is a YAML file listing one or more jobs:
+
+.. highlight:: yaml
+
+::
+
+    jobs:
+      - name: ais-daily                 # optional; default: source_dir's basename
+        source_dir: /data/incoming/ais
+        target_dir: /data/processed/ais # optional, default: source_dir; exposed to command as {output_dir}
+        pattern: "*.csv"                # optional, default "*.csv"
+        quiet_period: 1800              # optional, seconds, default 1800
+        processed_dir: /data/incoming/ais/processed   # optional, default {source_dir}/processed
+        failed_dir: /data/incoming/ais/failed          # optional, default {source_dir}/failed
+        command:                        # required, argv list - no shell
+          - damast
+          - process
+          - --pipeline
+          - /pipelines/ais.damast.ppl
+          - --input-data
+          - "{input}"
+          - --output-file
+          - "{output_dir}/{stem}.parquet"
+
+      - name: osint-daily
+        source_dir: /data/incoming/osint
+        command:
+          - damast
+          - convert
+          - -f
+          - "{input}"
+          - -m
+          - /specs/osint.spec.yaml
+          - -o
+          - "{output_dir}/{stem}.parquet"
+
+.. highlight:: none
+
+Each token of ``command`` is substituted with ``str.format``, so a job's command can use these
+placeholders:
+
+============  ==================================================
+placeholder   value
+============  ==================================================
+``{input}``   absolute path of the ready file
+``{output_dir}``  the job's ``target_dir``
+``{stem}``    the ready file's name without its suffix
+``{name}``    the ready file's name with its suffix
+============  ==================================================
+
+``--create-config`` builds a config interactively instead of hand-writing the YAML, prompting
+for each job's fields (blank answers accept the default shown in brackets) and writing the
+result to the file given via ``--config``:
+
+.. highlight:: none
+
+::
+
+    $ damast watch --config watch.yaml --create-config
+    --- job 1 ---
+    Source directory to watch: /data/incoming/ais
+    Job name [ais]:
+    Target directory (available to the command as {output_dir}) [/data/incoming/ais]: /data/processed/ais
+    File pattern [*.csv]:
+    Quiet period in seconds before a file is considered complete [1800]:
+    Command to run on each ready file (use {input}/{output_dir}/{stem}/{name}): damast process --pipeline /pipelines/ais.damast.ppl --input-data {input} --output-file {output_dir}/{stem}.parquet
+    Add another job? [y/N]: n
+    Wrote 1 job(s) to 'watch.yaml'
+
+The command line is split the same way a shell would (via ``shlex.split``) into the argv list
+the config stores - no shell is ever invoked. Running ``--create-config`` against a file that
+already exists asks whether to append the new job(s) to it or overwrite it.
+
+Examples
+^^^^^^^^
+
+.. highlight:: python
+
+::
+
+    damast watch --config watch.yaml
+
+    # restrict to one job, e.g. for a tighter cron schedule
+    damast watch --config watch.yaml --job ais-daily
+
+    # list which files are ready without running anything
+    damast watch --config watch.yaml --dry-run
+
+.. highlight:: none
+
+A non-zero exit code means at least one job or file failed - useful for cron/systemd failure
+alerting. ``watch`` does not interpret the configured command's output; check a job's
+``failed_dir`` for the moved input and its ``.error.log`` (captured stdout/stderr and exit code).
+
+Deployment
+^^^^^^^^^^^
+
+Since ``damast watch`` performs a single scan, recurring execution is the deployment's
+responsibility. A crontab entry, scanning every 15 minutes:
+
+.. highlight:: none
+
+::
+
+    */15 * * * * damast watch --config /etc/damast/watch.yaml
+
+Or a systemd service/timer pair::
+
+    # /etc/systemd/system/damast-watch.service
+    [Unit]
+    Description=damast watch
+
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/local/bin/damast watch --config /etc/damast/watch.yaml
+
+    # /etc/systemd/system/damast-watch.timer
+    [Unit]
+    Description=Run damast-watch periodically
+
+    [Timer]
+    OnCalendar=*:0/15
+    Persistent=true
+
+    [Install]
+    WantedBy=timers.target
+
+Enable with ``systemctl enable --now damast-watch.timer``; ``OnFailure=`` on the service can
+point at an alerting unit, since the non-zero exit code on any job/file failure is preserved.
 
 
 Plugins
