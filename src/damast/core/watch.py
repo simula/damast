@@ -73,20 +73,24 @@ class WatchJob(BaseModel):
     quiet_period_seconds: float = Field(DAMAST_WATCH_DEFAULT_QUIET_PERIOD_IN_S, alias="quiet_period")
 
     @classmethod
-    def expand_path(cls, path: Path | str) -> Path:
-            resolved_name = str(Path(path))
-            m = re.match(r".*\${(?P<envvar>[a-zA-Z_]+)}.*", resolved_name)
+    def expand_envvars(cls, txt: str) -> str:
+            resolved_txt = txt
+            m = re.match(r".*\${(?P<envvar>[a-zA-Z_]+)}.*", resolved_txt)
             if m:
                 envvar = m.group("envvar")
                 if envvar not in os.environ:
                     raise RuntimeError(f"WatchJob: variable ${envvar} is not available in environment")
-                resolved_name = re.sub(r"\${" + envvar + "}", os.environ[envvar], resolved_name)
+                resolved_txt = re.sub(r"\${" + envvar + "}", os.environ[envvar], resolved_txt)
 
             for home_vars in [r"~", r"{home}"]:
-                resolved_name = re.sub(home_vars, str(Path.home()), resolved_name)
+                resolved_txt = re.sub(home_vars, str(Path.home()), resolved_txt)
 
-            return Path(resolved_name)
+            return resolved_txt
 
+    @classmethod
+    def expand_path(cls, path: Path | str) -> Path:
+            resolved_name = str(Path(path))
+            return Path(cls.expand_envvars(txt=resolved_name))
 
     @model_validator(mode="before")
     @classmethod
@@ -179,7 +183,9 @@ class WatchJob(BaseModel):
             "stem": input_path.stem,
             "name": input_path.name,
         }
-        return [token.format(**variables) for token in self.command]
+
+        tokens = [str(self.expand_envvars(token)) for token in self.command]
+        return [token.format(**variables) for token in tokens]
 
     def run_command(self, csv_path: Path) -> subprocess.CompletedProcess:
         """
