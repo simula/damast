@@ -188,13 +188,17 @@ class WatchJob(BaseModel):
         tokens = [str(self.expand_envvars(token)) for token in self.command]
         return [token.format(**variables) for token in tokens]
 
+    def log_path_for(self, csv_path: Path) -> Path:
+        """Path of the per-file log `run_command` writes while processing `csv_path`."""
+        return self.target_dir / f"{csv_path.stem}.log"
+
     def run_command(self, csv_path: Path) -> subprocess.CompletedProcess:
         """
         Run this job's command on a single ready file.
 
-        Output is logged line by line at DEBUG level as it runs - available for checking
-        (e.g. via ``--log-level DEBUG`` or ``--log-file``) without spamming the console during
-        a normal run; `WatchJob.run` shows a `tqdm` progress bar instead.
+        Output is streamed line by line as it runs into `log_path_for` (tail that file to
+        follow progress) and logged at DEBUG level - available for checking without spamming
+        the console during a normal run; `WatchJob.run` shows a `tqdm` progress bar instead.
 
         Args:
             csv_path: The ready file to run it on
@@ -205,7 +209,7 @@ class WatchJob(BaseModel):
 
         Raises:
             RuntimeError: If the command exits with a non-zero status - the message includes
-                the command, exit code, and captured output
+                the command, exit code, the log file path, and the captured output
         """
         argv = self.render_command(csv_path)
         # Force UTF-8 for the child's stdio: a piped stdout otherwise falls back to the
@@ -217,17 +221,24 @@ class WatchJob(BaseModel):
             text=True, encoding="utf-8", errors="replace", env=env,
         )
 
+        log_path = self.log_path_for(csv_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
         lines: list[str] = []
         assert process.stdout is not None  # guaranteed by stdout=PIPE above
-        for line in process.stdout:
-            lines.append(line)
-            logger.debug(f"[{self.name}] {line.rstrip()}")
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            for line in process.stdout:
+                lines.append(line)
+                logger.debug(f"[{self.name}] {line.rstrip()}")
+                log_file.write(line)
+                log_file.flush()
         process.wait()
 
         output = "".join(lines)
         if process.returncode != 0:
             raise RuntimeError(
-                f"command failed (exit {process.returncode}): {' '.join(argv)}\n{output}"
+                f"command failed (exit {process.returncode}): {' '.join(argv)}\n"
+                f"see '{log_path}' for full output\n{output}"
             )
 
         return subprocess.CompletedProcess(argv, process.returncode, output, None)
@@ -257,9 +268,10 @@ class WatchJob(BaseModel):
         """
         Run a single watch cycle for this job.
 
-        Shows a `tqdm` progress bar naming this job and the file currently being processed;
-        each command's own output is only logged at DEBUG level (see `run_command`), so it
-        doesn't interleave with or spam the progress bar.
+        Shows a `tqdm` progress bar naming this job, the file currently being processed, and
+        the log file to tail for its live output (see `log_path_for`); the command's own
+        output is only logged at DEBUG level (see `run_command`), so it doesn't interleave
+        with or spam the progress bar.
 
         Args:
             dry_run: If True, only report what would be processed - no command is run and
@@ -282,6 +294,7 @@ class WatchJob(BaseModel):
         with tqdm(ready, desc=self.name, unit="file") as progress:
             for csv_path in progress:
                 progress.set_description_str(f"[{self.name}] {csv_path.name}")
+                progress.set_postfix_str(f"log: {self.log_path_for(csv_path)}")
                 try:
                     self.run_command(csv_path)
                     result.processed.append(self.move_to_processed(csv_path))
