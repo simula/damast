@@ -44,6 +44,9 @@ class AnnotatedDataFrame(XDataFrame):
           valid range (specified in :attr:`metadata`) with missing value.
         - If :attr:`damast.core.ValidationMode.UPDATE_METADATA` update the metadata according to the encountered values.
         - Else :attr:`damast.core.ValidationMode.READONLY` will throw when encountering inconsistencies
+    :param metadata_inferred: Whether `metadata` was inferred from the data (e.g. by
+        :func:`infer_annotation`, when no spec file was found) rather than loaded from an
+        actual metadata spec - see :attr:`metadata_inferred`
     """
 
     #: Metadata associated with the dataframe
@@ -54,6 +57,7 @@ class AnnotatedDataFrame(XDataFrame):
         dataframe: polars.DataFrame | polars.LazyFrame | XDataFrame,
         metadata: MetaData,
         validation_mode: ValidationMode = ValidationMode.READONLY,
+        metadata_inferred: bool = False,
     ):
         if isinstance(dataframe, XDataFrame):
             dataframe = dataframe.lazyframe
@@ -76,6 +80,7 @@ class AnnotatedDataFrame(XDataFrame):
         super().__init__(df=dataframe)
 
         self._metadata = metadata
+        self._metadata_inferred = metadata_inferred
 
         # Ensure conformity of the metadata with the dataframe
         self.validate_metadata(validation_mode=validation_mode)
@@ -84,6 +89,11 @@ class AnnotatedDataFrame(XDataFrame):
     def metadata(self) -> MetaData:
         """Get the metadata for this dataframe"""
         return self._metadata
+
+    @property
+    def metadata_inferred(self) -> bool:
+        """Whether `metadata` was inferred from the data rather than loaded from a spec file."""
+        return self._metadata_inferred
 
     @classmethod
     def ensure_type(cls, obj: any):
@@ -289,14 +299,16 @@ class AnnotatedDataFrame(XDataFrame):
                     _log.info("Metadata is not available and not required, so inferring annotation")
                     metadata = cls.infer_annotation(df)
                     _log.info("Metadata inferring completed")
-                    return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE)
+                    return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE,
+                               metadata_inferred=True)
             else:
                 _log.info(f"Found metadata: {[str(x) for x in metadata_file_candidates]}")
         elif len(metadata) != len(files):
             _log.info("Metadata is not available for all files, so inferring annotation")
             metadata = cls.infer_annotation(df)
             _log.info("Metadata inferring completed")
-            return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE)
+            return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE,
+                       metadata_inferred=True)
         elif len(metadata) == len(files):
             metadata_list = list(metadata.values())
             metadata = MetaData(
@@ -473,4 +485,5 @@ class AnnotatedDataFrame(XDataFrame):
 
     def __deepcopy__(self, memo=None):
         # ignore validation, also erroneous frames should be copyable
-        return AnnotatedDataFrame(self.lazyframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE)
+        return AnnotatedDataFrame(self.lazyframe.clone(), copy.deepcopy(self._metadata), validation_mode=ValidationMode.IGNORE,
+                                  metadata_inferred=self._metadata_inferred)

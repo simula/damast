@@ -192,6 +192,31 @@ def test_data_specification_value_stats_survives_read_write_without_value_range(
     assert ds_loaded.value_range is None
 
 
+def test_metadata_to_str_marks_generated_fields():
+    x_spec = DataSpecification(name="x", value_range=MinMax(0, 3))
+    y_spec = DataSpecification(
+        name="y",
+        value_stats=NumericValueStats(
+            mean=1.0, stddev=0.5, median=1.0, lower_quantile=0.5, upper_quantile=1.5, total_count=10
+        ),
+    )
+    metadata = MetaData([x_spec, y_spec])
+
+    plain = metadata.to_str()
+    assert "*" not in plain
+
+    marked = metadata.to_str(generated_fields={"y": {"value_stats"}})
+    lines = marked.splitlines()
+
+    stats_line = next(line for line in lines if line.strip().startswith("value_stats"))
+    assert stats_line.strip().startswith("value_stats*:")
+
+    range_line = next(line for line in lines if line.strip().startswith("value_range"))
+    assert range_line.strip().startswith("value_range:")
+
+    assert "computed on the fly" in marked
+
+
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "merge_strategy", "error_msg"],
                          [
                              [DataSpecification(name="a",unit=units.m),

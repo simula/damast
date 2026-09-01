@@ -1043,7 +1043,29 @@ class MetaData:
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
 
-    def to_str(self, columns: list[str] | None = None, indent: int = 0, default_indent: str = " " * 4) -> str:
+    def to_str(
+        self,
+        columns: list[str] | None = None,
+        indent: int = 0,
+        default_indent: str = " " * 4,
+        generated_fields: Dict[str, set] | None = None,
+    ) -> str:
+        """
+        Render this metadata as a human-readable string.
+
+        Args:
+            columns: Only render these columns; default: all columns
+            indent: Number of leading spaces before every line
+            default_indent: Indent added per nesting level, below `indent`
+            generated_fields: Column name to the set of that column's field names (e.g.
+                ``{"value_stats"}``) that were computed on the fly for this call rather than
+                loaded from the metadata itself - marked as e.g. ``value_stats*`` in the
+                output, with a legend appended if any field is marked
+
+        Returns:
+            The rendered metadata
+        """
+        generated_fields = generated_fields or {}
         hspace = " " * indent
         txt_repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
@@ -1055,12 +1077,17 @@ class MetaData:
                 continue
 
             txt_repr.append(hspace + default_indent + f"{spec_dict['name']}:")
+            column_generated_fields = generated_fields.get(spec_dict['name'], set())
             for field_name, value in spec_dict.items():
                 if field_name == "name":
                     continue
+                marker = "*" if field_name in column_generated_fields else ""
                 txt_repr.append(
-                    hspace + default_indent + default_indent + f"{field_name}: {value}"
+                    hspace + default_indent + default_indent + f"{field_name}{marker}: {value}"
                 )
+
+        if any(generated_fields.values()):
+            txt_repr.append(f"{hspace}* computed on the fly for display, not part of the loaded metadata")
 
         return "\n".join(txt_repr)
 

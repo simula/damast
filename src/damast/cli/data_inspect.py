@@ -55,6 +55,50 @@ class DataInspectParser(BaseParser):
                             choices=[x.value.lower() for x in ValidationMode],
                             help="Define the validation mode")
 
+    def fill_missing_value_stats(self, adf: AnnotatedDataFrame) -> dict[str, set[str]]:
+        """
+        Compute a column's 'value_range'/'value_stats' on the fly wherever the loaded
+        metadata left them unset, without touching either field where it is already set.
+
+        If `adf.metadata_inferred` is True (no metadata spec file was found for the input,
+        so its metadata was inferred from the data itself - see
+        `damast.core.dataframe.AnnotatedDataFrame.metadata_inferred`), every populated
+        'value_range'/'value_stats' is reported as generated too, not just the ones this
+        call fills in, since none of it came from an actual spec file either way.
+
+        Args:
+            adf: The dataframe whose metadata columns to fill in, updated in place
+
+        Returns:
+            Column name to the set of field names ('value_range' and/or 'value_stats') that
+            are not backed by an actual metadata spec - for
+            `damast.core.metadata.MetaData.to_str`'s ``generated_fields``
+        """
+        generated_fields: dict[str, set[str]] = {}
+        for column_spec in adf.metadata.columns:
+            original_range = column_spec.value_range
+            original_stats = column_spec.value_stats
+
+            if original_range is None or original_stats is None:
+                column_spec.update_datarange_and_stats(adf.lazyframe, column_spec.name)
+
+                if not (original_range is None and column_spec.value_range is not None):
+                    column_spec.value_range = original_range
+                if not (original_stats is None and column_spec.value_stats is not None):
+                    column_spec.value_stats = original_stats
+
+            computed = set()
+            for field_name, original_value in (("value_range", original_range), ("value_stats", original_stats)):
+                if getattr(column_spec, field_name) is None:
+                    continue
+                if original_value is None or adf.metadata_inferred:
+                    computed.add(field_name)
+
+            if computed:
+                generated_fields[column_spec.name] = computed
+
+        return generated_fields
+
     def expand_filter_arg(self, adf: AnnotatedDataFrame, arg: str):
         if arg in adf.column_names:
             return f"pl.col('{arg}')"
@@ -128,7 +172,8 @@ class DataInspectParser(BaseParser):
                     # Refresh value_range/value_stats in place to match the filtered rows,
                     adf.validate_metadata(validation_mode=ValidationMode.UPDATE_METADATA)
 
-                print(adf.metadata.to_str(columns=args.columns))
+                generated_fields = self.fill_missing_value_stats(adf)
+                print(adf.metadata.to_str(columns=args.columns, generated_fields=generated_fields))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
                 df = adf.lazyframe
 
