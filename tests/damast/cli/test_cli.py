@@ -14,6 +14,7 @@ from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
+from damast.cli.data_watch import DataWatchParser
 from damast.cli.experiment import ExperimentParser
 from damast.cli.plugins import PluginsParser
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
@@ -29,6 +30,7 @@ def subparsers():
         "inspect",
         "process",
         "plugins",
+        "watch",
     ]
 
 def test_help(subparsers, capsys, monkeypatch):
@@ -47,6 +49,7 @@ def test_help(subparsers, capsys, monkeypatch):
     [ "experiment", ExperimentParser ],
     [ "process", DataProcessingParser ],
     [ "plugins", PluginsParser ],
+    [ "watch", DataWatchParser ],
 ])
 def test_subparser(name, klass, script_runner):
     result = script_runner.run(['damast', name, "--help"])
