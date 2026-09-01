@@ -427,6 +427,59 @@ The command line is split the same way a shell would (via ``shlex.split``) into 
 the config stores - no shell is ever invoked. Running ``--create-config`` against a file that
 already exists asks whether to append the new job(s) to it or overwrite it.
 
+Environment variables and home directory
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``source_dir``, ``target_dir``, ``processed_dir``, ``failed_dir`` and every token of
+``command`` accept ``${VARNAME}`` and ``~``/``{home}``, expanded to the named environment
+variable and the current user's home directory respectively:
+
+.. highlight:: yaml
+
+::
+
+    jobs:
+      - name: ais-daily
+        source_dir: ${DATA_ROOT}/incoming/ais
+        target_dir: ~/damast-watch/ais
+        command:
+          - damast
+          - convert
+          - -f
+          - "{input}"
+          - -m
+          - "{home}/specs/ais.spec.yaml"
+          - -o
+          - "{output_dir}/{stem}.parquet"
+
+.. highlight:: none
+
+Expansions run at different times, which matters for how a missing
+variable shows up:
+
+- ``source_dir``/``target_dir``/``processed_dir``/``failed_dir`` are expanded once, when the
+  job is loaded - raising an exception when encountering an unset variable
+- ``command`` tokens are expanded for every ready file.
+
+Progress
+^^^^^^^^
+
+While a job runs, ``watch`` shows a live ``tqdm`` progress bar naming the job, the file
+currently being processed, and the log to check on it:
+
+.. highlight:: none
+
+::
+
+    [ais-daily] 2026-08-30.csv:  45%|####5     | 5/11 [00:03<00:04,  1.32file/s, log: /data/processed/ais/2026-08-30.log]
+
+The command's own stdout/stderr is streamed live into that ``<target_dir>/<stem>.log`` file -
+``tail -f`` it to follow a long-running command - and mirrored to the ``damast.core.watch``
+logger at ``DEBUG`` level. Neither is printed to the console at the default ``INFO`` level, so
+the progress bar stays a single, clean line; pass ``--log-level DEBUG`` to see that output
+inline instead. On failure, the same log path is named in the raised error and, for the moved
+file, duplicated into ``<failed_dir>/<file>.error.log`` alongside the traceback.
+
 Examples
 ^^^^^^^^
 

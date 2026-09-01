@@ -76,17 +76,25 @@ class WatchJob(BaseModel):
     @classmethod
     def expand_envvars(cls, txt: str) -> str:
             resolved_txt = txt
-            m = re.match(r".*\${(?P<envvar>[a-zA-Z_]+)}.*", resolved_txt)
-            if m:
-                envvar = m.group("envvar")
+            # Handle home explicitely to keep config skip platform agnostic
+            # WIN does not have HOME but uses USERPROFILE
+            #
+            # repl is a plain string, not a callable - re.sub always parses it as a template,
+            # even when the pattern matches nothing, so a literal backslash-letter sequence in
+            # str(Path.home()) (e.g. Windows' "C:\Users\...") raises "bad escape" before the
+            # pattern is even searched for. A lambda repl is used verbatim, with no parsing.
+            home_str = str(Path.home())
+            for home_vars in [r"\$HOME", r"\${HOME}", r"~", r"{home}"]:
+                resolved_txt = re.sub(home_vars, lambda _match: home_str, resolved_txt)
+
+            def _replace_envvar(match: re.Match) -> str:
+                envvar = match.group("envvar")
                 if envvar not in os.environ:
                     raise RuntimeError(f"WatchJob: variable ${envvar} is not available in environment")
-                resolved_txt = re.sub(r"\${" + envvar + "}", os.environ[envvar], resolved_txt)
+                return os.environ[envvar]
 
-            for home_vars in [r"~", r"{home}"]:
-                resolved_txt = re.sub(home_vars, str(Path.home()), resolved_txt)
-
-            return resolved_txt
+            # Matches both ${VAR} and bare $VAR, and replaces every occurrence - not just the first.
+            return re.sub(r"\$\{?(?P<envvar>[a-zA-Z_][a-zA-Z0-9_]*)\}?", _replace_envvar, resolved_txt)
 
     @classmethod
     def expand_path(cls, path: Path | str) -> Path:

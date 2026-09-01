@@ -26,15 +26,16 @@ COPY_COMMAND = [sys.executable, "-c",
 
 FAIL_COMMAND = [sys.executable, "-c", "import sys; sys.exit(1)"]
 
+home_dir = os.environ.get('HOME') or os.environ.get('USERPROFILE')
 
 @pytest.mark.parametrize("expression, expected_path",
                          [
-                             ["${HOME}", os.environ["HOME"]],
-                             ["~", os.environ["HOME"]],
-                             ["{home}", os.environ["HOME"]],
-                             ["${HOME}/a/bc/def", f"{os.environ['HOME']}/a/bc/def"],
-                             ["~/a/b", f"{os.environ['HOME']}/a/b"],
-                             ["{home}/abc", f"{os.environ['HOME']}/abc"],
+                             ["${HOME}", home_dir],
+                             ["~", home_dir],
+                             ["{home}", home_dir],
+                             ["${HOME}/a/bc/def", f"{home_dir}/a/bc/def"],
+                             ["~/a/b", f"{home_dir}/a/b"],
+                             ["{home}/abc", f"{home_dir}/abc"],
                          ])
 def test_WatchJob_expand_path(expression, expected_path):
     assert Path(expected_path) == WatchJob.expand_path(expression)
