@@ -196,7 +196,13 @@ class WatchJob(BaseModel):
                 the command, exit code, and captured stdout/stderr
         """
         argv = self.render_command(csv_path)
-        result = subprocess.run(argv, capture_output=True, text=True)
+        # Force UTF-8 for the child's stdio: a piped stdout otherwise falls back to the
+        # platform's legacy encoding (e.g. Windows' ANSI code page), which raises a
+        # UnicodeEncodeError on non-ASCII output such as polars' box-drawing table borders.
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        result = subprocess.run(
+            argv, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+        )
 
         if result.returncode != 0:
             raise RuntimeError(
