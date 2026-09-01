@@ -17,6 +17,8 @@ command owns that, e.g., typically invoking ``damast convert``/``damast process`
 from __future__ import annotations
 
 import logging
+import os
+import re
 import shlex
 import subprocess
 import time
@@ -26,6 +28,7 @@ from typing import Callable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from typing_extensions import Self
 
 __all__ = [
     "WatchJob",
@@ -69,6 +72,22 @@ class WatchJob(BaseModel):
     pattern: str = DAMAST_WATCH_DEFAULT_PATTERN
     quiet_period_seconds: float = Field(DAMAST_WATCH_DEFAULT_QUIET_PERIOD_IN_S, alias="quiet_period")
 
+    @classmethod
+    def expand_path(cls, path: Path | str) -> Path:
+            resolved_name = str(Path(path))
+            m = re.match(r".*\${(?P<envvar>[a-zA-Z_]+)}.*", resolved_name)
+            if m:
+                envvar = m.group("envvar")
+                if envvar not in os.environ:
+                    raise RuntimeError(f"WatchJob: variable ${envvar} is not available in environment")
+                resolved_name = re.sub(r"\${" + envvar + "}", os.environ[envvar], resolved_name)
+
+            for home_vars in [r"~", r"{home}"]:
+                resolved_name = re.sub(home_vars, str(Path.home()), resolved_name)
+
+            return Path(resolved_name)
+
+
     @model_validator(mode="before")
     @classmethod
     def _default_dirs_from_source_dir(cls, data: object) -> object:
@@ -77,12 +96,24 @@ class WatchJob(BaseModel):
             return data
 
         data = dict(data)
-        source_dir = Path(data["source_dir"])
+        source_dir = cls.expand_path(Path(data["source_dir"]))
+
         data.setdefault("name", source_dir.name)
         data.setdefault("target_dir", source_dir)
         data.setdefault("processed_dir", source_dir / "processed")
         data.setdefault("failed_dir", source_dir / "failed")
         return data
+
+    @model_validator(mode="after")
+    def _auto_expand_var(self) -> Self:
+        """Ensure that home directory and variable are being resolved"""
+        for dirname in ["source_dir", "target_dir", "processed_dir", "failed_dir"]:
+            path = getattr(self, dirname)
+            expanded_path = self.expand_path(path)
+
+            if expanded_path != path:
+                setattr(self, dirname, Path(expanded_path))
+        return self
 
     def unique_path(self, dirname: Path, name: str) -> Path:
         """Return `target_dir / name`, disambiguated with a timestamp suffix if it already exists."""

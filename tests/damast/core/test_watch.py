@@ -27,9 +27,21 @@ COPY_COMMAND = [sys.executable, "-c",
 FAIL_COMMAND = [sys.executable, "-c", "import sys; sys.exit(1)"]
 
 
+@pytest.mark.parametrize("expression, expected_path",
+                         [
+                             ["${HOME}", os.environ["HOME"]],
+                             ["~", os.environ["HOME"]],
+                             ["{home}", os.environ["HOME"]],
+                             ["${HOME}/a/bc/def", f"{os.environ['HOME']}/a/bc/def"],
+                             ["~/a/b", f"{os.environ['HOME']}/a/b"],
+                             ["{home}/abc", f"{os.environ['HOME']}/abc"],
+                         ])
+def test_WatchJob_expand_path(expression, expected_path):
+    assert Path(expected_path) == WatchJob.expand_path(expression)
+
 # --- WatchConfig.load -------------------------------------------------------------------
 
-def test_load_watch_config_applies_defaults(tmp_path):
+def test_load_WatchConfig_applies_defaults(tmp_path):
     source_dir = tmp_path / "incoming"
     source_dir.mkdir()
     config_path = tmp_path / "watch.yaml"
@@ -49,12 +61,12 @@ def test_load_watch_config_applies_defaults(tmp_path):
     assert job.quiet_period_seconds == 1800
 
 
-def test_load_watch_config_missing_file(tmp_path):
+def test_load_WatchConfig_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         WatchConfig.load(tmp_path / "no-such-config.yaml")
 
 
-def test_load_watch_config_requires_jobs(tmp_path):
+def test_load_WatchConfig_requires_jobs(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({"jobs": []}))
 
@@ -62,7 +74,7 @@ def test_load_watch_config_requires_jobs(tmp_path):
         WatchConfig.load(config_path)
 
 
-def test_load_watch_config_requires_source_dir(tmp_path):
+def test_load_WatchConfig_requires_source_dir(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({"jobs": [{"command": ["true"]}]}))
 
@@ -70,7 +82,7 @@ def test_load_watch_config_requires_source_dir(tmp_path):
         WatchConfig.load(config_path)
 
 
-def test_load_watch_config_requires_command(tmp_path):
+def test_load_WatchConfig_requires_command(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({"jobs": [{"source_dir": str(tmp_path)}]}))
 
@@ -78,7 +90,7 @@ def test_load_watch_config_requires_command(tmp_path):
         WatchConfig.load(config_path)
 
 
-def test_load_watch_config_rejects_duplicate_names(tmp_path):
+def test_load_WatchConfig_rejects_duplicate_names(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({
         "jobs": [
@@ -378,7 +390,7 @@ def test_prompt_job_config_reprompts_on_invalid_number():
     assert any("not a number" in m for m in messages)
 
 
-def test_create_watch_config_interactively_writes_one_job(tmp_path):
+def test_create_WatchConfig_interactively_writes_one_job(tmp_path):
     config_path = tmp_path / "watch.yaml"
     source_dir = str(tmp_path / "incoming")
     answers = _fake_input([
@@ -395,7 +407,7 @@ def test_create_watch_config_interactively_writes_one_job(tmp_path):
     assert jobs[0].source_dir == Path(source_dir)
 
 
-def test_create_watch_config_interactively_writes_multiple_jobs(tmp_path):
+def test_create_WatchConfig_interactively_writes_multiple_jobs(tmp_path):
     config_path = tmp_path / "watch.yaml"
     answers = _fake_input([
         str(tmp_path / "a"), "", "", "", "", "damast convert -f {input}",
@@ -410,7 +422,7 @@ def test_create_watch_config_interactively_writes_multiple_jobs(tmp_path):
     assert {j.name for j in jobs} == {"a", "b"}
 
 
-def test_create_watch_config_interactively_cancel_leaves_existing_config_untouched(tmp_path):
+def test_create_WatchConfig_interactively_cancel_leaves_existing_config_untouched(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text("jobs:\n  - name: existing\n    source_dir: /x\n    command: [true]\n")
     original = config_path.read_text()
@@ -421,7 +433,7 @@ def test_create_watch_config_interactively_cancel_leaves_existing_config_untouch
     assert config_path.read_text() == original
 
 
-def test_create_watch_config_interactively_appends_to_existing_config(tmp_path):
+def test_create_WatchConfig_interactively_appends_to_existing_config(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({
         "jobs": [{"name": "existing", "source_dir": str(tmp_path / "x"), "command": ["true"]}],
@@ -440,7 +452,7 @@ def test_create_watch_config_interactively_appends_to_existing_config(tmp_path):
     assert {j.name for j in jobs} == {"existing", "new"}
 
 
-def test_create_watch_config_interactively_overwrites_existing_config(tmp_path):
+def test_create_WatchConfig_interactively_overwrites_existing_config(tmp_path):
     config_path = tmp_path / "watch.yaml"
     config_path.write_text(yaml.dump({
         "jobs": [{"name": "existing", "source_dir": str(tmp_path / "x"), "command": ["true"]}],
