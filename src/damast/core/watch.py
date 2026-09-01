@@ -28,6 +28,7 @@ from typing import Callable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from tqdm import tqdm
 from typing_extensions import Self
 
 __all__ = [
@@ -191,33 +192,45 @@ class WatchJob(BaseModel):
         """
         Run this job's command on a single ready file.
 
+        Output is logged line by line at DEBUG level as it runs - available for checking
+        (e.g. via ``--log-level DEBUG`` or ``--log-file``) without spamming the console during
+        a normal run; `WatchJob.run` shows a `tqdm` progress bar instead.
+
         Args:
             csv_path: The ready file to run it on
 
         Returns:
-            The completed subprocess
+            The completed subprocess, with `stdout` holding its combined stdout/stderr; `stderr`
+            is always `None` since both are interleaved into `stdout` for line-by-line logging
 
         Raises:
             RuntimeError: If the command exits with a non-zero status - the message includes
-                the command, exit code, and captured stdout/stderr
+                the command, exit code, and captured output
         """
         argv = self.render_command(csv_path)
         # Force UTF-8 for the child's stdio: a piped stdout otherwise falls back to the
         # platform's legacy encoding (e.g. Windows' ANSI code page), which raises a
         # UnicodeEncodeError on non-ASCII output such as polars' box-drawing table borders.
         env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-        result = subprocess.run(
-            argv, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+        process = subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", env=env,
         )
 
-        if result.returncode != 0:
+        lines: list[str] = []
+        assert process.stdout is not None  # guaranteed by stdout=PIPE above
+        for line in process.stdout:
+            lines.append(line)
+            logger.debug(f"[{self.name}] {line.rstrip()}")
+        process.wait()
+
+        output = "".join(lines)
+        if process.returncode != 0:
             raise RuntimeError(
-                f"command failed (exit {result.returncode}): {' '.join(argv)}\n"
-                f"--- stdout ---\n{result.stdout}\n"
-                f"--- stderr ---\n{result.stderr}"
+                f"command failed (exit {process.returncode}): {' '.join(argv)}\n{output}"
             )
 
-        return result
+        return subprocess.CompletedProcess(argv, process.returncode, output, None)
 
     def move_to_processed(self, csv_path: Path) -> Path:
         """
@@ -244,6 +257,10 @@ class WatchJob(BaseModel):
         """
         Run a single watch cycle for this job.
 
+        Shows a `tqdm` progress bar naming this job and the file currently being processed;
+        each command's own output is only logged at DEBUG level (see `run_command`), so it
+        doesn't interleave with or spam the progress bar.
+
         Args:
             dry_run: If True, only report what would be processed - no command is run and
                 no file is moved
@@ -262,13 +279,15 @@ class WatchJob(BaseModel):
             return WatchResult(not_ready=not_ready, would_process=ready)
 
         result = WatchResult(not_ready=not_ready)
-        for csv_path in ready:
-            try:
-                self.run_command(csv_path)
-                result.processed.append(self.move_to_processed(csv_path))
-            except Exception as e:
-                logger.exception(f"watch job '{self.name}': failed to process '{csv_path}'")
-                result.failed.append(self.move_to_failed(csv_path, e))
+        with tqdm(ready, desc=self.name, unit="file") as progress:
+            for csv_path in progress:
+                progress.set_description_str(f"[{self.name}] {csv_path.name}")
+                try:
+                    self.run_command(csv_path)
+                    result.processed.append(self.move_to_processed(csv_path))
+                except Exception as e:
+                    logger.exception(f"watch job '{self.name}': failed to process '{csv_path}'")
+                    result.failed.append(self.move_to_failed(csv_path, e))
 
         return result
 
