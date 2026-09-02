@@ -801,6 +801,13 @@ class DataSpecification:
 
         ds = DataSpecification(name=self.name)
 
+        # value_range/value_stats describe the data actually observed for this column. If
+        # either side never computed them (e.g. a spec written without stats), the merged
+        # value must not silently fall back to just the other side's - that range was never
+        # checked against the side with no recorded stats and can understate the true
+        # combined range once both sides' data is considered together.
+        data_dependent_keys = (self.Key.value_range, self.Key.value_stats)
+
         for key in self.Key:
             if key == self.Key.name:
                 continue
@@ -810,42 +817,51 @@ class DataSpecification:
 
             if this_value == other_value:
                 setattr(ds, key.value, this_value)
-            elif this_value is None:
+                continue
+
+            if key in data_dependent_keys and (this_value is None or other_value is None):
+                setattr(ds, key.value, None)
+                continue
+
+            if this_value is None:
                 setattr(ds, key.value, other_value)
-            elif other_value is None:
+                continue
+            if other_value is None:
+                setattr(ds, key.value, this_value)
+                continue
+
+            if key == self.Key.representation_type:
+                if hasattr(this_value, "to_python"):
+                    this_value = this_value.to_python()
+                if hasattr(other_value, "to_python"):
+                    other_value = other_value.to_python()
+
+            try:
+                if this_value == other_value:
+                    setattr(ds, key.value, this_value)
+                    continue
+                elif hasattr(this_value, "merge"):
+                    merged_value = this_value.merge(other_value)
+                    setattr(ds, key.value, merged_value)
+                    continue
+            except Exception as e:
+                logger.warning(f"Merge failed: {e}")
+
+            if not strategy:
+                raise ValueError(
+                    f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
+
+                    f" on self: '{this_value}' vs. other: '{other_value}'"
+                )
+
+            logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
+            if strategy == DataSpecification.MergeStrategy.OTHER:
+                setattr(ds, key.value, other_value)
+            elif strategy == DataSpecification.MergeStrategy.THIS:
                 setattr(ds, key.value, this_value)
             else:
-                if key == self.Key.representation_type:
-                    if hasattr(this_value, "to_python"):
-                        this_value = this_value.to_python()
-                    if hasattr(other_value, "to_python"):
-                        other_value = other_value.to_python()
+                raise RuntimeError(f"{self.__class__.__name__}.merge: Invalid merge strategy {strategy} provided")
 
-                try:
-                    if this_value == other_value:
-                        setattr(ds, key.value, this_value)
-                        return ds
-                    elif hasattr(this_value, "merge"):
-                        merged_value = this_value.merge(other_value)
-                        setattr(ds, key.value, merged_value)
-                        return ds
-                except Exception as e:
-                    logger.warning(f"Merge failed: {e}")
-
-                if not strategy:
-                    raise ValueError(
-                        f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
-
-                        f" on self: '{this_value}' vs. other: '{other_value}'"
-                    )
-
-                logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
-                if strategy == DataSpecification.MergeStrategy.OTHER:
-                    setattr(ds, key.value, other_value)
-                elif strategy == DataSpecification.MergeStrategy.THIS:
-                    setattr(ds, key.value, this_value)
-                else:
-                    raise RuntimeError(f"{self.__class__.__name__}.merge: Invalid merge strategy {strategy} provided")
         return ds
 
     @classmethod
