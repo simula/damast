@@ -221,6 +221,18 @@ class PolarsDataFrame(metaclass=Meta):
         self.lazyframe = self.lazyframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
         return representation_type
 
+    def rescale(self, column_name: str, factor: float) -> None:
+        """
+        Multiply a column's values by `factor` in place (e.g. to convert between two
+        equivalent physical units), preserving the column's existing representation type.
+        """
+        self.ensure_column(column_name)
+
+        original_dtype = self.dtype(column_name)
+        self.lazyframe = self.lazyframe.with_columns(
+            (polars.col(column_name) * factor).cast(original_dtype).alias(column_name)
+        )
+
     def precompute_minmax(self, column_names: list[str]) -> None:
         """
         Compute min/max for several columns in a single collect() and cache the

@@ -381,6 +381,41 @@ def test_data_processor_input(height_dataframe, height_metadata):
     height_processor.transform(df=height_adf)
 
 
+def test_data_processor_input_unit_conversion():
+    """
+    A column whose declared unit is dimensionally equivalent to, but not identical
+    to, the one required by @input() is auto-converted rather than rejected.
+    """
+    data = polars.DataFrame({"dist": [1000.0, 2000.0]}).lazy()
+    column_spec = DataSpecification(name="dist", category=DataCategory.STATIC, unit=units.m)
+    adf = AnnotatedDataFrame(dataframe=data, metadata=MetaData(columns=[column_spec]))
+
+    class ApplyDistance(PipelineElement):
+        @damast.core.input({"dist": {"unit": units.km}})
+        @damast.core.output({"dist": {"unit": units.km}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    result = ApplyDistance().transform(df=adf)
+
+    assert result.lazyframe.collect()["dist"].to_list() == [1.0, 2.0]
+    assert result.metadata["dist"].unit == units.km
+
+
+def test_data_processor_input_incompatible_unit_still_fails():
+    data = polars.DataFrame({"dist": [1000.0, 2000.0]}).lazy()
+    column_spec = DataSpecification(name="dist", category=DataCategory.STATIC, unit=units.K)
+    adf = AnnotatedDataFrame(dataframe=data, metadata=MetaData(columns=[column_spec]))
+
+    class ApplyDistance(PipelineElement):
+        @damast.core.input({"dist": {"unit": units.km}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
+        ApplyDistance().transform(df=adf)
+
+
 def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
     adf = AnnotatedDataFrame(dataframe=lat_lon_dataframe,
                              metadata=lat_lon_metadata)

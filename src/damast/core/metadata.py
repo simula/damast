@@ -758,6 +758,28 @@ class DataSpecification:
                     }
                 else:
                     fulfillment.status[key] = {"status": Status.OK}
+            elif key == DataSpecification.Key.unit:
+                if spec_value is None:
+                    fulfillment.status[key] = {
+                        "status": Status.FAIL,
+                        "message": f"Expected unit '{expected_value}', but no unit is defined",
+                    }
+                elif expected_value == spec_value:
+                    fulfillment.status[key] = {"status": Status.OK}
+                elif expected_value.is_equivalent(spec_value):
+                    # Same physical dimension, different scale - convertible, not a
+                    # failure. Carries both units so the input() decorator can rescale
+                    # the incoming data without re-deriving them.
+                    fulfillment.status[key] = {
+                        "status": Status.OK,
+                        "convert_from": spec_value,
+                        "convert_to": expected_value,
+                    }
+                else:
+                    fulfillment.status[key] = {
+                        "status": Status.FAIL,
+                        "message": f"unit '{spec_value}' is not convertible to expected unit '{expected_value}'",
+                    }
             else:
                 expected_value = getattr(self, key.value)
                 if expected_value is not None:
