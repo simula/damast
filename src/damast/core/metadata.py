@@ -801,6 +801,13 @@ class DataSpecification:
 
         ds = DataSpecification(name=self.name)
 
+        # value_range/value_stats describe the data actually observed for this column. If
+        # either side never computed them (e.g. a spec written without stats), the merged
+        # value must not silently fall back to just the other side's - that range was never
+        # checked against the side with no recorded stats and can understate the true
+        # combined range once both sides' data is considered together.
+        data_dependent_keys = (self.Key.value_range, self.Key.value_stats)
+
         for key in self.Key:
             if key == self.Key.name:
                 continue
@@ -810,42 +817,51 @@ class DataSpecification:
 
             if this_value == other_value:
                 setattr(ds, key.value, this_value)
-            elif this_value is None:
+                continue
+
+            if key in data_dependent_keys and (this_value is None or other_value is None):
+                setattr(ds, key.value, None)
+                continue
+
+            if this_value is None:
                 setattr(ds, key.value, other_value)
-            elif other_value is None:
+                continue
+            if other_value is None:
+                setattr(ds, key.value, this_value)
+                continue
+
+            if key == self.Key.representation_type:
+                if hasattr(this_value, "to_python"):
+                    this_value = this_value.to_python()
+                if hasattr(other_value, "to_python"):
+                    other_value = other_value.to_python()
+
+            try:
+                if this_value == other_value:
+                    setattr(ds, key.value, this_value)
+                    continue
+                elif hasattr(this_value, "merge"):
+                    merged_value = this_value.merge(other_value)
+                    setattr(ds, key.value, merged_value)
+                    continue
+            except Exception as e:
+                logger.warning(f"Merge failed: {e}")
+
+            if not strategy:
+                raise ValueError(
+                    f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
+
+                    f" on self: '{this_value}' vs. other: '{other_value}'"
+                )
+
+            logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
+            if strategy == DataSpecification.MergeStrategy.OTHER:
+                setattr(ds, key.value, other_value)
+            elif strategy == DataSpecification.MergeStrategy.THIS:
                 setattr(ds, key.value, this_value)
             else:
-                if key == self.Key.representation_type:
-                    if hasattr(this_value, "to_python"):
-                        this_value = this_value.to_python()
-                    if hasattr(other_value, "to_python"):
-                        other_value = other_value.to_python()
+                raise RuntimeError(f"{self.__class__.__name__}.merge: Invalid merge strategy {strategy} provided")
 
-                try:
-                    if this_value == other_value:
-                        setattr(ds, key.value, this_value)
-                        return ds
-                    elif hasattr(this_value, "merge"):
-                        merged_value = this_value.merge(other_value)
-                        setattr(ds, key.value, merged_value)
-                        return ds
-                except Exception as e:
-                    logger.warning(f"Merge failed: {e}")
-
-                if not strategy:
-                    raise ValueError(
-                        f"{self.__class__.__name__}.merge cannot merge specs for '{self.name}': value for '{key.value}' differs: "
-
-                        f" on self: '{this_value}' vs. other: '{other_value}'"
-                    )
-
-                logger.info(f"{self.__class__.__name__}.merge: using merge strategy {strategy} for {key.value}: this={this_value} -- other={other_value}")
-                if strategy == DataSpecification.MergeStrategy.OTHER:
-                    setattr(ds, key.value, other_value)
-                elif strategy == DataSpecification.MergeStrategy.THIS:
-                    setattr(ds, key.value, this_value)
-                else:
-                    raise RuntimeError(f"{self.__class__.__name__}.merge: Invalid merge strategy {strategy} provided")
         return ds
 
     @classmethod
@@ -1043,7 +1059,29 @@ class MetaData:
             annotations[key] = dict(value)[key]
         yield "annotations", annotations
 
-    def to_str(self, columns: list[str] | None = None, indent: int = 0, default_indent: str = " " * 4) -> str:
+    def to_str(
+        self,
+        columns: list[str] | None = None,
+        indent: int = 0,
+        default_indent: str = " " * 4,
+        generated_fields: Dict[str, set] | None = None,
+    ) -> str:
+        """
+        Render this metadata as a human-readable string.
+
+        Args:
+            columns: Only render these columns; default: all columns
+            indent: Number of leading spaces before every line
+            default_indent: Indent added per nesting level, below `indent`
+            generated_fields: Column name to the set of that column's field names (e.g.
+                ``{"value_stats"}``) that were computed on the fly for this call rather than
+                loaded from the metadata itself - marked as e.g. ``value_stats*`` in the
+                output, with a legend appended if any field is marked
+
+        Returns:
+            The rendered metadata
+        """
+        generated_fields = generated_fields or {}
         hspace = " " * indent
         txt_repr = [f"{hspace}Annotations:"]
         for name, annotation in self.annotations.items():
@@ -1055,12 +1093,17 @@ class MetaData:
                 continue
 
             txt_repr.append(hspace + default_indent + f"{spec_dict['name']}:")
+            column_generated_fields = generated_fields.get(spec_dict['name'], set())
             for field_name, value in spec_dict.items():
                 if field_name == "name":
                     continue
+                marker = "*" if field_name in column_generated_fields else ""
                 txt_repr.append(
-                    hspace + default_indent + default_indent + f"{field_name}: {value}"
+                    hspace + default_indent + default_indent + f"{field_name}{marker}: {value}"
                 )
+
+        if any(generated_fields.values()):
+            txt_repr.append(f"{hspace}* computed on the fly for display, not part of the loaded metadata")
 
         return "\n".join(txt_repr)
 

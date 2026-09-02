@@ -192,6 +192,31 @@ def test_data_specification_value_stats_survives_read_write_without_value_range(
     assert ds_loaded.value_range is None
 
 
+def test_metadata_to_str_marks_generated_fields():
+    x_spec = DataSpecification(name="x", value_range=MinMax(0, 3))
+    y_spec = DataSpecification(
+        name="y",
+        value_stats=NumericValueStats(
+            mean=1.0, stddev=0.5, median=1.0, lower_quantile=0.5, upper_quantile=1.5, total_count=10
+        ),
+    )
+    metadata = MetaData([x_spec, y_spec])
+
+    plain = metadata.to_str()
+    assert "*" not in plain
+
+    marked = metadata.to_str(generated_fields={"y": {"value_stats"}})
+    lines = marked.splitlines()
+
+    stats_line = next(line for line in lines if line.strip().startswith("value_stats"))
+    assert stats_line.strip().startswith("value_stats*:")
+
+    range_line = next(line for line in lines if line.strip().startswith("value_range"))
+    assert range_line.strip().startswith("value_range:")
+
+    assert "computed on the fly" in marked
+
+
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "merge_strategy", "error_msg"],
                          [
                              [DataSpecification(name="a",unit=units.m),
@@ -230,6 +255,53 @@ def test_data_specification_merge(dataspec, other_dataspec, merge_strategy, erro
     else:
         with pytest.raises(ValueError, match=error_msg):
             dataspec.merge(other=other_dataspec, strategy=merge_strategy)
+
+
+def test_data_specification_merge_drops_value_range_if_either_side_unknown():
+    """
+    Regression test: a column whose value_range/value_stats was never computed for one of
+    the merged files (e.g. an older file converted without stats) used to have its merged
+    spec silently fall back to just the *other* file's range - which does not cover the file
+    with no recorded stats, and could then fail a later apply(READONLY) validation against
+    data that legitimately falls outside that incomplete range.
+    """
+    with_range = DataSpecification(name="callSign", value_range=MinMax(min="0", max="ZGVC6"))
+    without_range = DataSpecification(name="callSign")
+
+    merged = with_range.merge(other=without_range)
+    assert merged.value_range is None
+
+    merged = without_range.merge(other=with_range)
+    assert merged.value_range is None
+
+
+def test_data_specification_merge_combines_both_value_range_and_value_stats():
+    """
+    Regression test: merge() used to return as soon as it merged one field via that field's
+    own .merge() (e.g. value_range) - value_range is declared before value_stats in
+    DataSpecification.Key, so a differing value_stats was silently dropped from the merged
+    spec whenever value_range also needed merging.
+    """
+    a = DataSpecification(
+        name="mmsi",
+        value_range=MinMax(0, 10),
+        value_stats=NumericValueStats(
+            mean=1.0, stddev=0.5, median=1.0, lower_quantile=0.5, upper_quantile=1.5, total_count=10
+        ),
+    )
+    b = DataSpecification(
+        name="mmsi",
+        value_range=MinMax(5, 20),
+        value_stats=NumericValueStats(
+            mean=2.0, stddev=0.5, median=2.0, lower_quantile=1.5, upper_quantile=2.5, total_count=20
+        ),
+    )
+
+    merged = a.merge(other=b)
+
+    assert merged.value_range == MinMax(0, 20)
+    assert merged.value_stats is not None
+    assert merged.value_stats.total_count == 30
 
 
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "error_type"],
