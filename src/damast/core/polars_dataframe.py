@@ -55,6 +55,7 @@ class Meta(type):
 class PolarsDataFrame(metaclass=Meta):
     _polars_dataframe: PolarsDataFrame
     _dataframe_collected: polars.DataFrame
+    _minmax_cache: dict[str, tuple]
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
         self.lazyframe = df
@@ -79,6 +80,7 @@ class PolarsDataFrame(metaclass=Meta):
         self.__lazyframe = df
         self._dataframe_collected = None
         self._polars_dataframe = None
+        self._minmax_cache = {}
 
     @classmethod
     def types(cls) -> dict[str, any]:
@@ -219,11 +221,48 @@ class PolarsDataFrame(metaclass=Meta):
         self.lazyframe = self.lazyframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
         return representation_type
 
+    def precompute_minmax(self, column_names: list[str]) -> None:
+        """
+        Compute min/max for several columns in a single collect() and cache the
+        results, so that later `minmax(column_name)` calls for these columns are
+        served from cache instead of each triggering their own collect().
+
+        The cache is invalidated automatically whenever `lazyframe` is reassigned.
+        """
+        if not column_names:
+            return
+
+        for column_name in column_names:
+            self.ensure_column(column_name)
+
+        fields = []
+        for column_name in column_names:
+            fields.extend([
+                polars.col(column_name).min().alias(f"{column_name}::min"),
+                polars.col(column_name).max().alias(f"{column_name}::max"),
+            ])
+
+        try:
+            result = self.lazyframe.select(fields).collect()
+        except polars.exceptions.InvalidOperationError as e:
+            raise ValueError(
+                f"damast.core.polars_dataframe.precompute_minmax: cannot compute min/max for columns {column_names}"
+            ) from e
+
+        for column_name in column_names:
+            self._minmax_cache[column_name] = (
+                result[f"{column_name}::min"][0],
+                result[f"{column_name}::max"][0],
+            )
+
     def minmax(self, column_name: str) -> tuple[any, any]:
         """
         Tuple of min and max values of the given column
         """
         self.ensure_column(column_name)
+
+        if column_name in self._minmax_cache:
+            return self._minmax_cache[column_name]
 
         try:
             result = self.lazyframe.select([
@@ -235,6 +274,7 @@ class PolarsDataFrame(metaclass=Meta):
 
         min_value = result["min_value"][0]
         max_value = result["max_value"][0]
+        self._minmax_cache[column_name] = (min_value, max_value)
 
         return min_value, max_value
 

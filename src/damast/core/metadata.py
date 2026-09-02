@@ -584,7 +584,7 @@ class DataSpecification:
         if validation_mode == ValidationMode.IGNORE:
             return df
 
-        xdf = XDataFrame(df)
+        xdf = df.compat
         # Check if representation type is the same and apply known metadata
         if validation_mode == ValidationMode.READONLY:
             if self.representation_type is not None:
@@ -598,17 +598,37 @@ class DataSpecification:
                     )
 
             if self.value_range:
-                min_value, max_value = xdf.minmax(column_name)
-                if not self.value_range.is_in_range(min_value):
-                    raise ValueError(
-                        f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
-                        f" lies outside of range {self.value_range} for column '{column_name}'"
-                    )
-                if not self.value_range.is_in_range(max_value):
-                    raise ValueError(
-                        f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
-                        f" lies outside of range {self.value_range} for column '{column_name}'"
-                    )
+                if isinstance(self.value_range, ListOfValues):
+                    # Membership check across all distinct values - unlike MinMax, the
+                    # allowed set isn't contiguous, so checking only the sorted extremes
+                    # (as done below for MinMax) would miss an invalid value in the middle.
+                    allowed = [v for v in self.value_range.values if v is not None]
+                    valid_expr = pl.col(column_name).is_in(allowed)
+                    if None in self.value_range.values:
+                        valid_expr = valid_expr | pl.col(column_name).is_null()
+
+                    is_valid = xdf.lazyframe.select(valid_expr.all()).collect().item()
+                    if not is_valid:
+                        invalid = (
+                            xdf.lazyframe.select(pl.col(column_name).filter(~valid_expr).unique())
+                            .collect()[column_name].to_list()
+                        )
+                        raise ValueError(
+                            f"{self.__class__.__name__}.apply: value(s) {invalid} lie outside"
+                            f" of range {self.value_range} for column '{column_name}'"
+                        )
+                else:
+                    min_value, max_value = xdf.minmax(column_name)
+                    if not self.value_range.is_in_range(min_value):
+                        raise ValueError(
+                            f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
+                            f" lies outside of range {self.value_range} for column '{column_name}'"
+                        )
+                    if not self.value_range.is_in_range(max_value):
+                        raise ValueError(
+                            f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
+                            f" lies outside of range {self.value_range} for column '{column_name}'"
+                        )
             return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
@@ -1247,6 +1267,18 @@ class MetaData:
         assert isinstance(df, pl.LazyFrame), f"Expected polars.LazyFrame, got {type(df)}"
 
         columns = df.compat.column_names
+
+        if validation_mode == ValidationMode.READONLY:
+            # Batch all MinMax value_range aggregates into a single collect() up front -
+            # DataSpecification.apply() below picks these up from the xdf minmax cache
+            # (df.compat is memoized per-frame by polars) instead of collecting per column.
+            minmax_columns = [
+                spec.name for spec in self.columns
+                if spec.name in columns and isinstance(spec.value_range, MinMax)
+            ]
+            if minmax_columns:
+                df.compat.precompute_minmax(minmax_columns)
+
         for column_spec in self.columns:
             if column_spec.name in columns:
                 try:
