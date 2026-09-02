@@ -42,14 +42,14 @@ class DataConvertParser(BaseParser):
                             required=False,
                             )
         parser.add_argument("--output-type",
-                            help="The output file type: .parquet (default) or .hdf5 ",
+                            help="The output file type: .parquet or .hdf5 (default: %(default)s)",
                             default=".parquet",
                             required=False,
                             )
         parser.add_argument("--validation-mode",
-                            default="readonly",
+                            default="update_data",
                             choices=[x.value.lower() for x in ValidationMode],
-                            help="Define the validation mode")
+                            help="Define the validation mode (default: %(default)s)")
 
     def validate(self, adf: AnnotatedDataFrame, args):
         """
