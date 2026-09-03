@@ -33,3 +33,9 @@ The following pages contains the API of Damast
    :recursive:
 
    damast.domains
+
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
+
+   damast.integrations

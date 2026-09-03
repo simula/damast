@@ -334,6 +334,37 @@ consuming step - once inside the pipeline, later steps consume columns the pipel
 already produced, not the raw datasource, so this is the actual external contract to satisfy
 when supplying ``--input-data``.
 
+Experiment tracking
+^^^^^^^^^^^^^^^^^^^^
+
+``damast.integrations.mlflow_tracker.track_pipeline`` permits a pipeline to use [mlflow](https://mlflow.org) for reporting.
+Part of the reporting is the output ``AnnotatedDataFrame``'s metadata contract, i.e., units, and representation_type as well as runtime stats for per-step timing and row counts.
+
+The feature requires mlflow, which will be installed with the extra ``ml``:
+(``uv pip install damast[ml]``).
+
+.. literalinclude:: ./examples/damast-mlflow-tracking.py
+   :language: Python
+
+
+A ``damast.ml.experiments.Experiment`` (see the *Experiments* notebook) combines such a pipeline
+with model training and evaluation. ``Experiment.run()`` performs all three internally, so the pipeline-level
+contract and the per-epoch training metrics need two separate hooks in the same run: wrap the
+call in ``track_pipeline`` for the pipeline (as above), and additionally call
+``mlflow.keras.autolog()`` beforehand.
+
+The experiment report that ``Experiment.run()`` writes (training parameters, per-model evaluation
+results) isn't part of any ``AnnotatedDataFrame``'s metadata, so it is logged separately, straight
+onto the tracker:
+
+.. literalinclude:: ./examples/damast-mlflow-ml-experiment.py
+   :language: Python
+
+If other trackers, e.g. W&B, shall be used, an integration can be based on
+``damast.integrations.tracking.flatten_metadata``/``flatten_step_stats`` and the
+``damast.integrations.tracking.ExperimentTracker`` interface, both are backend-agnostic,
+
+
 
 Watch
 ------

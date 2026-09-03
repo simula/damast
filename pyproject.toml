@@ -87,6 +87,7 @@ dev = [
 ]
 
 ml = [
+    "mlflow",
     "keras>=3.0",
     # BEGIN keras backends
     "torch",

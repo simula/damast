@@ -144,6 +144,18 @@ class DataProcessingPipeline(PipelineElement):
             }
 
     @property
+    def processing_stats(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Per-step timing and row-count statistics collected by the last :func:`transform` run.
+
+        Keyed by step name, e.g. ``{"my_step": {"processing_time_in_s": 0.1,
+        "input_dataframe_length": {...}, "output_dataframe_length": 123, ...}}``. Populated
+        incrementally by :func:`on_transform_start`/:func:`on_transform_end` as steps run, so
+        it also reflects partial progress if a pipeline fails mid-run.
+        """
+        return self._processing_stats
+
+    @property
     def output_specs(self):
         if not self.is_ready:
             raise RuntimeError(
