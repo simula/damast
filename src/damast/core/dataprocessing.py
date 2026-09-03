@@ -14,6 +14,7 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import pydantic
 import yaml
 from tqdm import tqdm
 
@@ -24,6 +25,7 @@ from damast.core.transformations import PipelineElement
 from .constants import DAMAST_DEFAULT_DATASOURCE
 from .dataframe import AnnotatedDataFrame
 from .metadata import DataSpecification, MetaData
+from .pydantic_export import PydanticExporter
 
 __all__ = [
     "DataProcessingPipeline",
@@ -289,6 +291,168 @@ class DataProcessingPipeline(PipelineElement):
                                    f"{msg}")
 
         return {"processing_graph": processing_graph, "output_spec": node.validation_output_spec}
+
+    @classmethod
+    def _declared_interface(
+            cls, processing_graph: ProcessingGraph
+    ) -> Tuple[Dict[str, List[DataSpecification]], List[DataSpecification]]:
+        """
+        Statically compute the pipeline's minimal input/output contract from the declared
+        ``@input``/``@output`` decorators alone - no data required.
+
+        Walks ``processing_graph`` once, tracking - per node - which columns are known to be
+        available on its output. Whenever a step's declared input requirement is not yet
+        covered by what is known available, it is attributed to the datasource feeding that
+        branch (added to that datasource's minimal required-input set) and treated as available
+        from then on, so a later step needing the same column doesn't count it twice. This
+        mirrors `validate`'s data-driven fulfillment walk, but infers the requirement instead of
+        checking it against real data.
+
+        Args:
+            processing_graph: The processing graph to walk
+
+        Returns:
+            A tuple ``(required, output_spec)``: ``required`` maps each datasource name to its
+            minimal list of required `DataSpecification`, and ``output_spec`` is the pipeline's
+            minimal guaranteed output column list
+
+        Raises:
+            RuntimeError: If a step's input requirement can only be attributed to more than one
+                datasource, because it first surfaces after those datasources have been joined
+        """
+        required: Dict[str, List[DataSpecification]] = {
+            ds_node.name: [] for ds_node in processing_graph.datasource_nodes()
+        }
+        known: Dict[str, List[DataSpecification]] = {}
+        origin: Dict[str, set] = {}
+
+        node = None
+        for node in processing_graph.nodes():
+            if node.is_datasource():
+                known[node.uuid] = []
+                origin[node.uuid] = {node.name}
+                continue
+
+            merged_known: List[DataSpecification] = []
+            merged_origin: set = set()
+            for from_node, _to_node, data in processing_graph._graph.in_edges(node, data=True):
+                slot = data["slot"]
+                available_names = {s.name for s in known[from_node.uuid]}
+                expected = node.transformer.input_specs.get(slot, [])
+                missing = [s for s in expected if s.name not in available_names]
+
+                if missing:
+                    from_origins = origin[from_node.uuid]
+                    if len(from_origins) != 1:
+                        raise RuntimeError(
+                            f"{cls.__name__}._declared_interface: step '{node.name}' requires"
+                            f" column(s) {[s.name for s in missing]} that cannot be statically"
+                            " attributed to a single datasource - they are only known missing"
+                            f" after datasources {sorted(from_origins)} have already been"
+                            " joined. Declare them explicitly before the join instead."
+                        )
+                    (origin_ds,) = from_origins
+                    required[origin_ds] = DataSpecification.merge_lists(missing, required[origin_ds])
+                    known[from_node.uuid] = DataSpecification.merge_lists(missing, known[from_node.uuid])
+
+                merged_known = DataSpecification.merge_lists(known[from_node.uuid], merged_known)
+                merged_origin |= origin[from_node.uuid]
+
+            known[node.uuid] = DataSpecification.merge_lists(node.transformer.output_specs, merged_known)
+            origin[node.uuid] = merged_origin
+
+        output_spec = known[node.uuid] if node is not None else []
+        return required, output_spec
+
+    def input_metadata(self, datasource: str = DAMAST_DEFAULT_DATASOURCE) -> MetaData:
+        """
+        The minimal input contract for one of this pipeline's datasources - the columns it
+        must supply - statically derived from the declared ``@input``/``@output`` decorators of
+        every step in its chain. No data, and no prior call to `prepare`, is required.
+
+        Example:
+
+        ```python
+        pipeline = DataProcessingPipeline(name="p").add("step", MyTransformer())
+        metadata = pipeline.input_metadata()
+        ```
+
+        Args:
+            datasource: Name of the datasource - as passed to `add`/`join`, or the default
+                `DAMAST_DEFAULT_DATASOURCE` for a single-datasource pipeline
+
+        Returns:
+            `MetaData` describing the minimal columns required from ``datasource``
+
+        Raises:
+            ValueError: If ``datasource`` does not name a datasource of this pipeline
+            RuntimeError: See `_declared_interface`
+        """
+        required, _ = self._declared_interface(self.processing_graph)
+        if datasource not in required:
+            raise ValueError(
+                f"{self.__class__.__name__}.input_metadata: unknown datasource '{datasource}',"
+                f" known datasources: {sorted(required.keys())}"
+            )
+        return MetaData(columns=required[datasource], annotations=[])
+
+    def output_metadata(self) -> MetaData:
+        """
+        This pipeline's minimal guaranteed output contract, statically derived from the
+        declared ``@input``/``@output`` decorators of every step. No data, and no prior call to
+        `prepare`, is required.
+
+        .. note::
+            This differs from `output_specs` (populated by `prepare`), which reflects what the
+            pipeline actually produced the last time it ran against real data - informed by
+            observed dtypes and value ranges. `output_metadata` only reports what every run is
+            guaranteed to produce by declaration.
+
+        Example:
+
+        ```python
+        pipeline = DataProcessingPipeline(name="p").add("step", MyTransformer())
+        metadata = pipeline.output_metadata()
+        ```
+
+        Returns:
+            `MetaData` describing the pipeline's minimal guaranteed output columns
+
+        Raises:
+            RuntimeError: See `_declared_interface`
+        """
+        _, output_spec = self._declared_interface(self.processing_graph)
+        return MetaData(columns=output_spec, annotations=[])
+
+    def validate_record(
+            self, record: Dict[str, Any], datasource: str = DAMAST_DEFAULT_DATASOURCE
+    ) -> pydantic.BaseModel:
+        """
+        Validate a single record against this pipeline's declared input contract for
+        ``datasource``, before it is wrapped into an `AnnotatedDataFrame` and submitted to
+        `transform`.
+
+        Example:
+
+        ```python
+        pipeline = DataProcessingPipeline(name="p").add("step", MyTransformer())
+        pipeline.validate_record({"mmsi": 123456789, "lon": 10.5, "lat": 59.9})
+        ```
+
+        Args:
+            record: The record to validate, as a plain dict of column name to value
+            datasource: Name of the datasource ``record`` is meant for
+
+        Returns:
+            The validated (range/type-checked) `pydantic.BaseModel` instance
+
+        Raises:
+            pydantic.ValidationError: If ``record`` does not conform to ``datasource``'s
+                minimal input contract
+            ValueError: If ``datasource`` does not name a datasource of this pipeline
+        """
+        model = PydanticExporter().to_pydantic_model(self.input_metadata(datasource))
+        return model(**record)
 
     def save(self, dir: Union[str, Path]) -> Path:
         """
@@ -622,20 +786,14 @@ class DataProcessingPipeline(PipelineElement):
 
         lines.append("")
         lines.append("Interface:")
+        required, _ = self._declared_interface(graph)
         for ds_node in graph.datasource_nodes():
             lines.append(f"  {ds_node.name}:")
-            successors = list(graph.successors(ds_node))
-            if not successors:
+            if not list(graph.successors(ds_node)):
                 lines.append("    (no steps consume this datasource)")
                 continue
 
-            successor = successors[0]
-            slot = graph.get_edge_data(ds_node, successor)["slot"]
-            try:
-                specs = successor.transformer.input_specs.get(slot, [])
-            except AttributeError:
-                specs = []
-
+            specs = required.get(ds_node.name, [])
             if not specs:
                 lines.append("    (no column requirements declared)")
             else:
