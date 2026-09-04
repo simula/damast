@@ -100,8 +100,13 @@ class DataProcessingParser(BaseParser):
         parser.add_argument("--pipeline", help="Pipeline (*.damast.ppl) file to apply to the data", required=True)
 
         parser.add_argument("--output-file",
-                        help="Save the result in the given (*.parquet) file",
+                        help="Save the result of a pipeline in the given (*.parquet) file",
+                        default=None,
                         required=False)
+
+        parser.add_argument("--base-dir",
+                        help="Save pipeline artifacts relative to the given base directory (default: %(default)s)",
+                        default=".")
 
         parser.add_argument("--describe",
                         help="Print the pipeline's interface (required datasources and their"
@@ -120,6 +125,8 @@ class DataProcessingParser(BaseParser):
             raise ValueError(f"File suffix of pipeline file is not matching {DAMAST_PIPELINE_SUFFIX}")
 
         pipeline = DataProcessingPipeline.load(pipeline_path)
+        if args.base_dir:
+            pipeline.base_dir = args.base_dir
 
         if args.describe:
             print(pipeline.describe())
@@ -134,9 +141,11 @@ class DataProcessingParser(BaseParser):
         print(new_adf.head().collect())
         print(new_adf.tail().collect())
 
+        path = Path(pipeline.base_dir) / f"{pipeline.name}.parquet"
         if args.output_file:
             path = Path(args.output_file)
-            path.parent.resolve().mkdir(parents=True, exist_ok=True)
 
-            new_adf.save(filename=path)
-            print(f"Saved {path.resolve()}")
+        path.parent.resolve().mkdir(parents=True, exist_ok=True)
+
+        new_adf.save(filename=path)
+        print(f"Saved {path.resolve()}")

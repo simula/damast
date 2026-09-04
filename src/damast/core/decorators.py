@@ -124,6 +124,16 @@ def input(requirements: dict[str, any], label: str | None = None):
             pipeline_element = args[0]
             fulfillment = _df.get_fulfillment(expected_specs=pipeline_element.input_specs[label])
             if fulfillment.is_met():
+                # Auto-convert columns whose unit is dimensionally equivalent to, but
+                # not identical to, the expected one (e.g. m -> km) instead of just
+                # having failed above - see DataSpecification.get_fulfillment().
+                for column_name, column_fulfillment in fulfillment.column_fulfillments.items():
+                    unit_status = column_fulfillment.status.get(DataSpecification.Key.unit, {})
+                    if "convert_from" in unit_status:
+                        factor = unit_status["convert_from"].to(unit_status["convert_to"], 1)
+                        _df.rescale(column_name, factor)
+                        _df.metadata[column_name].unit = unit_status["convert_to"]
+
                 if hasattr(pipeline_element, "parent_pipeline"):
                     # if this is the last datasource parameter, this is also the last input decorators
                     # so the transform can start

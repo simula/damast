@@ -1,5 +1,8 @@
 
+import re
+
 import polars
+import pydantic
 import pytest
 from astropy import units
 
@@ -379,6 +382,41 @@ def test_data_processor_input(height_dataframe, height_metadata):
 
     height_processor = ApplyHeight()
     height_processor.transform(df=height_adf)
+
+
+def test_data_processor_input_unit_conversion():
+    """
+    A column whose declared unit is dimensionally equivalent to, but not identical
+    to, the one required by @input() is auto-converted rather than rejected.
+    """
+    data = polars.DataFrame({"dist": [1000.0, 2000.0]}).lazy()
+    column_spec = DataSpecification(name="dist", category=DataCategory.STATIC, unit=units.m)
+    adf = AnnotatedDataFrame(dataframe=data, metadata=MetaData(columns=[column_spec]))
+
+    class ApplyDistance(PipelineElement):
+        @damast.core.input({"dist": {"unit": units.km}})
+        @damast.core.output({"dist": {"unit": units.km}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    result = ApplyDistance().transform(df=adf)
+
+    assert result.lazyframe.collect()["dist"].to_list() == [1.0, 2.0]
+    assert result.metadata["dist"].unit == units.km
+
+
+def test_data_processor_input_incompatible_unit_still_fails():
+    data = polars.DataFrame({"dist": [1000.0, 2000.0]}).lazy()
+    column_spec = DataSpecification(name="dist", category=DataCategory.STATIC, unit=units.K)
+    adf = AnnotatedDataFrame(dataframe=data, metadata=MetaData(columns=[column_spec]))
+
+    class ApplyDistance(PipelineElement):
+        @damast.core.input({"dist": {"unit": units.km}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
+        ApplyDistance().transform(df=adf)
 
 
 def test_data_processor_output(lat_lon_dataframe, lat_lon_metadata):
@@ -788,5 +826,102 @@ def test_join_spatio_temporal_pipeline(data_path, tmp_path):
     for e in messages_with_events.collect().rows(named=True):
         event_type = e['event_type']
         assert len([x for x in event_type_messages[event_type] if x['lat'] == e['lat'] and x['lon'] == e['lon'] and x['date_time_utc'] == e['date_time_utc']]) == 1
+
+
+# --- input_metadata/output_metadata/validate_record --------------------------------------
+
+class _StepOne(PipelineElement):
+    """First step of a chained pipeline: requires only 'alpha'."""
+    @damast.core.input({"alpha": {"representation_type": int}})
+    @damast.core.output({"alpha_doubled": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+class _StepTwo(PipelineElement):
+    """
+    Second step: consumes step one's output ('alpha_doubled'), but also requires 'beta' -
+    a column step one never asked for, so it must come straight from the datasource.
+    """
+    @damast.core.input({
+        "alpha_doubled": {"representation_type": int},
+        "beta": {"representation_type": int},
+    })
+    @damast.core.output({"gamma": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+def _chained_pipeline(tmp_path):
+    return DataProcessingPipeline(name="chained", base_dir=tmp_path) \
+        .add("step-one", _StepOne()) \
+        .add("step-two", _StepTwo())
+
+
+def test_input_metadata_accumulates_requirements_across_chained_steps(tmp_path):
+    metadata = _chained_pipeline(tmp_path).input_metadata()
+    assert {c.name for c in metadata.columns} == {"alpha", "beta"}
+
+
+def test_input_metadata_unknown_datasource_raises(tmp_path):
+    pipeline = DataProcessingPipeline(name="single", base_dir=tmp_path).add("step-one", _StepOne())
+    with pytest.raises(ValueError, match="unknown datasource"):
+        pipeline.input_metadata(datasource="does-not-exist")
+
+
+def test_output_metadata_reflects_full_chain_without_prepare(tmp_path):
+    # 'alpha' itself is still guaranteed too: @output only ever adds columns, so once a column
+    # is known present it stays present downstream, even though only 'alpha_doubled' is
+    # declared as newly added output.
+    metadata = _chained_pipeline(tmp_path).output_metadata()
+    assert {c.name for c in metadata.columns} == {"alpha", "alpha_doubled", "beta", "gamma"}
+
+
+def test_describe_reports_columns_required_by_later_steps_too(tmp_path):
+    interface_section = _chained_pipeline(tmp_path).describe().split("Interface:")[1].split("Steps:")[0]
+    assert re.search(r"\balpha\b", interface_section)
+    assert re.search(r"\bbeta\b", interface_section)
+
+
+def test_validate_record_accepts_conformant_record(tmp_path):
+    record = _chained_pipeline(tmp_path).validate_record({"alpha": 1, "beta": 2})
+    assert record.alpha == 1
+    assert record.beta == 2
+
+
+def test_validate_record_rejects_missing_required_field(tmp_path):
+    with pytest.raises(pydantic.ValidationError):
+        _chained_pipeline(tmp_path).validate_record({"alpha": 1})
+
+
+def test_validate_record_rejects_wrong_type(tmp_path):
+    with pytest.raises(pydantic.ValidationError):
+        _chained_pipeline(tmp_path).validate_record({"alpha": "not-an-int", "beta": 2})
+
+
+class _JoinStep(PipelineElement):
+    @damast.core.input({"key": {"representation_type": int}})
+    @damast.core.input({"key": {"representation_type": int}}, label="other")
+    @damast.core.output({"joined": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+class _PostJoinStep(PipelineElement):
+    """Requires a column neither branch of the preceding join declares - can't be statically
+    attributed to either side's datasource."""
+    @damast.core.input({"extra": {"representation_type": int}})
+    @damast.core.output({"result": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+def test_input_metadata_raises_for_ambiguous_post_join_requirement(tmp_path):
+    pipeline = DataProcessingPipeline(name="joined", base_dir=tmp_path) \
+        .join("other", _JoinStep(), name_mappings={"df": {}, "other": {}}) \
+        .add("post-join", _PostJoinStep())
+
+    with pytest.raises(RuntimeError, match="cannot be statically attributed"):
+        pipeline.input_metadata()
 
 

@@ -9,7 +9,7 @@ import polars.testing
 import pytest
 
 from damast.core.annotations import Annotation
-from damast.core.data_description import MinMax
+from damast.core.data_description import ListOfValues, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import (
     DataCategory,
@@ -304,6 +304,86 @@ def test_force_range_allow_missing():
           )
 
     assert XDataFrame(adf.lazyframe).equals(XDataFrame(df_filtered))
+
+
+def test_list_of_values_rejects_invalid_category_not_at_extremes():
+    """
+    Regression: READONLY validation of a ListOfValues range used to reuse the MinMax
+    check, i.e. only compare the lexicographically smallest/largest value against the
+    allowed list - an invalid category sorting between two valid ones silently passed.
+    """
+    df = polars.DataFrame({"category": ["a", "x", "c"]}).lazy()
+    column_spec = DataSpecification(name="category", value_range=ListOfValues(["a", "b", "c"]))
+    metadata = MetaData([column_spec])
+
+    with pytest.raises(ValueError, match="lie outside"):
+        metadata.apply(df=df, validation_mode=ValidationMode.READONLY)
+
+
+def test_list_of_values_accepts_all_valid_categories():
+    df = polars.DataFrame({"category": ["a", "b", "c", "a"]}).lazy()
+    column_spec = DataSpecification(name="category", value_range=ListOfValues(["a", "b", "c"]))
+    metadata = MetaData([column_spec])
+
+    # Should not raise
+    metadata.apply(df=df, validation_mode=ValidationMode.READONLY)
+
+
+def test_list_of_values_allows_null_when_listed():
+    df = polars.DataFrame({"category": ["a", None, "b"]}).lazy()
+    column_spec = DataSpecification(name="category", value_range=ListOfValues(["a", "b", None]))
+    metadata = MetaData([column_spec])
+
+    # Should not raise
+    metadata.apply(df=df, validation_mode=ValidationMode.READONLY)
+
+
+def test_readonly_validation_batches_minmax_into_single_collect(monkeypatch):
+    """
+    Regression: MetaData.apply() used to call DataSpecification.apply() once per
+    column, and each call independently collect()-ed its own min/max - N columns
+    meant N separate query executions. Validation should now precompute all MinMax
+    aggregates in a single collect() up front.
+    """
+    df = polars.DataFrame({
+        "a": [0, 1, 2],
+        "b": [10, 11, 12],
+        "c": [100, 101, 102],
+    }).lazy()
+
+    column_specs = [
+        DataSpecification(name="a", value_range=MinMax(min=0, max=2)),
+        DataSpecification(name="b", value_range=MinMax(min=10, max=12)),
+        DataSpecification(name="c", value_range=MinMax(min=100, max=102)),
+    ]
+    metadata = MetaData(column_specs)
+
+    original_collect = polars.LazyFrame.collect
+    call_count = 0
+
+    def counting_collect(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_collect(self, *args, **kwargs)
+
+    monkeypatch.setattr(polars.LazyFrame, "collect", counting_collect)
+
+    metadata.apply(df=df, validation_mode=ValidationMode.READONLY)
+
+    assert call_count == 1
+
+
+def test_xdataframe_minmax_cache_invalidated_on_lazyframe_reassignment():
+    xdf = XDataFrame(polars.DataFrame({"a": [0, 1, 2], "b": [10, 11, 12]}).lazy())
+
+    xdf.precompute_minmax(["a", "b"])
+    assert xdf.minmax("a") == (0, 2)
+    assert xdf.minmax("b") == (10, 12)
+
+    # Reassigning the lazyframe must drop the stale cache
+    xdf.lazyframe = polars.DataFrame({"a": [5, 6, 7], "b": [10, 11, 12]}).lazy()
+    assert xdf.minmax("a") == (5, 7)
+
 
 def test_convert_csv_to_adf(tmp_path):
     output_filename =  tmp_path / "test-convert-csv.pq"

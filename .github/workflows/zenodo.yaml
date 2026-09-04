@@ -1,0 +1,24 @@
+name: Publish to Zenodo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  zenodo-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Archive repository
+        run: git archive --format=zip HEAD -o release.zip
+
+      - name: Upload to Zenodo
+        uses: zenodraft/action@v0.13.3
+        with:
+          zenodo-token: ${{ secrets.ZENODO_TOKEN }}
+          files: release.zip
+          publish: false
+          upsert-doi: false
+          upsert-location: doi

@@ -334,6 +334,30 @@ def test_data_specification_fulfillment(dataspec, other_dataspec, error_type):
         assert f.status[error_type]["status"] == Status.FAIL
 
 
+def test_data_specification_fulfillment_unit_conversion():
+    expected = DataSpecification(name="dist", unit=units.km)
+
+    # Equivalent but different unit - fulfilled, and flagged as convertible so a
+    # caller (e.g. the @input() decorator) can rescale the data.
+    equivalent = DataSpecification(name="dist", unit=units.m)
+    f = expected.get_fulfillment(equivalent)
+    assert f.is_met()
+    assert f.status['unit']["convert_from"] == units.m
+    assert f.status['unit']["convert_to"] == units.km
+
+    # Exact match - fulfilled, no conversion needed/flagged.
+    exact = DataSpecification(name="dist", unit=units.km)
+    f = expected.get_fulfillment(exact)
+    assert f.is_met()
+    assert "convert_from" not in f.status['unit']
+
+    # Incompatible dimension - still a hard failure, not a conversion.
+    incompatible = DataSpecification(name="dist", unit=units.K)
+    f = expected.get_fulfillment(incompatible)
+    assert not f.is_met()
+    assert f.status['unit']["status"] == Status.FAIL
+
+
 def test_change():
     title = "new-change"
     description = "elaborate description of change"
