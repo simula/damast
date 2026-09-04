@@ -66,7 +66,7 @@ class DataProcessingPipeline(PipelineElement):
 
     #: Base path (which is forwarded to transformers, when calling
     #: transform)
-    base_dir: Path
+    _base_dir: Path
 
     #: The output specs - as specified by decorators
     _output_specs: List[DataSpecification]
@@ -95,7 +95,7 @@ class DataProcessingPipeline(PipelineElement):
 
         self.name = name
         self.description = description
-        self.base_dir = Path(base_dir)
+        self._base_dir = Path(base_dir)
 
         self._output_specs = []
         self._inplace_transformation = inplace_transformation
@@ -144,6 +144,17 @@ class DataProcessingPipeline(PipelineElement):
             self._meta = {
                 'damast_version': damast.version.__version__
             }
+
+    @property
+    def base_dir(self):
+        return self._base_dir
+
+    @base_dir.setter
+    def base_dir(self, value):
+        if type(value) is Path:
+            self._base_dir = value
+        else:
+            self._base_dir = Path(value)
 
     @property
     def processing_stats(self) -> Dict[str, Dict[str, Any]]:
