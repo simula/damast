@@ -3,6 +3,7 @@ import os
 import sys
 
 import numpy as np
+from pathlib import Path
 import polars
 import pytest
 
@@ -197,11 +198,12 @@ def test_list_plugins_discovers_entry_points(monkeypatch):
 
     monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
 
-    assert PipelineElement.list_plugins() == {"AcmeTransformer": "acme_pkg.transformers:AcmeTransformer"}
+    assert "AcmeTransformer" in PipelineElement.list_plugins()
+    assert PipelineElement.list_plugins()["AcmeTransformer"] == "acme_pkg.transformers:AcmeTransformer"
 
 
 def test_list_plugins_empty_by_default():
-    assert PipelineElement.list_plugins() == {}
+    assert "AcmeTransformer" not in PipelineElement.list_plugins()
 
 
 def test_local_plugin_path_discovered_via_list_plugins(local_plugin_path):
@@ -316,5 +318,10 @@ def test_create_new_missing_local_module_error_mentions_plugin_path(monkeypatch)
 def test_plugin_manager_is_a_separate_instantiable_class():
     manager = PluginManager()
     assert manager is not plugin_manager
-    assert manager.list_plugins() == {}
-    assert manager.local_files == {}
+
+    # Note: acount for unknown plugins in the current environment, otherwise
+    # one could check for an empty list
+    assert "AcmeTransformer" not in manager.list_plugins()
+    package_dir = str(Path(__file__).parent.parent)
+    local_files = {x: y for x,y in manager.local_files.items() if str(y).startswith(package_dir)}
+    assert local_files  == {}
