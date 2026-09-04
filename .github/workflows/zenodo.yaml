@@ -15,7 +15,7 @@ jobs:
         run: git archive --format=zip HEAD -o release.zip
 
       - name: Upload to Zenodo
-        uses: zenodraft/action@v0.13.3
+        uses: zenodraft/action@0.13.3
         with:
           zenodo-token: ${{ secrets.ZENODO_TOKEN }}
           files: release.zip
