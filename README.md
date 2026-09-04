@@ -1,3 +1,4 @@
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22312820-blue.svg)](https://doi.org/10.5281/zenodo.22312820)
 [![Supported Python Versions](https://img.shields.io/pypi/pyversions/damast)](https://pypi.org/project/damast/)
 ![test workflow](https://github.com/simula/damast/actions/workflows/test.yml/badge.svg)
 ![docs workflow](https://github.com/simula/damast/actions/workflows/gh-pages.yml/badge.svg)
