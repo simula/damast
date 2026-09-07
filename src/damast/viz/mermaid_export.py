@@ -62,14 +62,14 @@ _HTML_TEMPLATE = """<!doctype html>
   h1 {{ font-size: 1.25rem; }}
   .mermaid {{ margin-top: 1.5rem; }}
 </style>
+<script>
+  mermaid.initialize({{ startOnLoad: true, securityLevel: 'loose' }});
+</script>
 </head>
 <body>
 <h1>{title}</h1>
 <pre class="mermaid">
 {diagram}</pre>
-<script>
-  mermaid.initialize({{ startOnLoad: true }});
-</script>
 </body>
 </html>
 """
@@ -211,8 +211,12 @@ class MermaidExporter(PipelineExporter):
         for i, column in enumerate(columns):
             label = escape(column.name)
             if column.unit is not None:
-                label += f" [unit: {escape(column.unit)}]"
-            tooltip = escape(column.description) if column.description else None
+                label += f"\n[unit: {escape(column.unit)}]"
+            if column.description:
+                tooltip = escape(column.description)
+                label += "  🛈"
+            else:
+                tooltip = None
             nodes.append(MermaidExporter.LeafNode(
                 id=f"{prefix}{i}", shape=shape, label=label, style_class=style_class, tooltip=tooltip
             ))
@@ -365,7 +369,7 @@ class MermaidExporter(PipelineExporter):
             if isinstance(element, self.ProcessingElement):
                 class_lines.append(f"class {element.id} processingElementStyle")
                 if element.tooltip:
-                    click_lines.append(f'click {element.id} "javascript:void(0)" "{element.tooltip}"')
+                    click_lines.append(f'click {element.id}_TRANSFORM "javascript:void(0)" "{element.tooltip}"')
                 for input_block in element.input_blocks:
                     add_block(input_block)
                 add_block(element.output_block)
