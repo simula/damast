@@ -1,4 +1,5 @@
 import re
+import shutil
 import sys
 
 import pytest
@@ -110,6 +111,99 @@ def test_process_describe_single_datasource(simple_pipeline_path, script_runner)
     assert re.search(r"df:\s*\n\s*mmsi", result.stdout)
     assert "Steps:" in result.stdout
     assert "DropMissingOrNan" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("dot") is None, reason="graphviz 'dot' executable not installed")
+def test_process_export_svg_single_datasource(simple_pipeline_path, tmp_path, script_runner):
+    output_svg = tmp_path / "pipeline.svg"
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--export", "svg",
+        "--output-file", str(output_svg),
+    ])
+
+    assert result.returncode == 0, result.stdout
+    assert output_svg.exists()
+    assert "<svg" in output_svg.read_text()
+    assert "mmsi" in output_svg.read_text()
+
+
+def test_process_export_html_single_datasource(simple_pipeline_path, tmp_path, script_runner):
+    output_html = tmp_path / "pipeline.html"
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--export", "html",
+        "--output-file", str(output_html),
+    ])
+
+    assert result.returncode == 0, result.stdout
+    assert output_html.exists()
+    assert "flowchart TB" in output_html.read_text()
+    assert "mmsi" in output_html.read_text()
+
+
+def test_process_export_mermaid_single_datasource(simple_pipeline_path, tmp_path, script_runner):
+    output_mmd = tmp_path / "pipeline.mmd"
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--export", "mermaid",
+        "--output-file", str(output_mmd),
+    ])
+
+    assert result.returncode == 0, result.stdout
+    assert output_mmd.exists()
+    text = output_mmd.read_text()
+    assert text.startswith("flowchart TB")
+    assert "<!doctype html>" not in text
+
+
+def test_process_export_default_output_path(simple_pipeline_path, tmp_path, script_runner):
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--base-dir", str(tmp_path),
+        "--export", "mermaid",
+    ])
+
+    assert result.returncode == 0, result.stdout
+    assert (tmp_path / "simple.mmd").exists()
+
+
+def test_process_export_html_with_custom_mermaid_templates(simple_pipeline_path, tmp_path, script_runner):
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "datasource_block.j2").write_text(
+        'subgraph {{ block.id }} ["CUSTOM: {{ block.title }}"]\n'
+        "    direction TB\n"
+        "end\n"
+        "class {{ block.id }} {{ block.style_class }}\n"
+    )
+    output_html = tmp_path / "pipeline.html"
+
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--export", "html",
+        "--output-file", str(output_html),
+        "--mermaid-templates", str(templates_dir),
+    ])
+
+    assert result.returncode == 0, result.stdout
+    assert "CUSTOM: Input (DataSource)" in output_html.read_text()
+
+
+def test_process_mermaid_templates_without_export_fails(simple_pipeline_path, tmp_path, script_runner):
+    result = script_runner.run([
+        "damast", "process",
+        "--pipeline", str(simple_pipeline_path),
+        "--mermaid-templates", str(tmp_path),
+    ])
+
+    assert result.returncode != 0
+    assert "--mermaid-templates has no effect without --export html/mermaid" in result.stdout
 
 
 # --- end-to-end: multi-datasource (join) pipeline ------------------------------------------

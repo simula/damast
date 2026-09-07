@@ -6,6 +6,11 @@ from damast.core.constants import DAMAST_DEFAULT_DATASOURCE
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DAMAST_PIPELINE_SUFFIX, DataProcessingPipeline
 from damast.utils.io import Archive
+from damast.viz.mermaid_export import MermaidExporter
+from damast.viz.svg_export import SvgExporter
+
+#: Default file extension per `--export` format
+_EXPORT_EXTENSIONS = {"svg": ".svg", "html": ".html", "mermaid": ".mmd"}
 
 
 def resolve_input_data(raw_groups: list[list[str]] | None, datasource_names: list[str]) -> dict[str, list[str]]:
@@ -22,8 +27,8 @@ def resolve_input_data(raw_groups: list[list[str]] | None, datasource_names: lis
     """
     if not raw_groups:
         raise RuntimeError(
-            "--input-data is required (unless --describe is given) - this pipeline requires"
-            f" input for datasource(s): {', '.join(datasource_names)}"
+            "--input-data is required (unless --describe or --export is given) - this pipeline"
+            f" requires input for datasource(s): {', '.join(datasource_names)}"
         )
 
     # backward-compatible bare form: a single-datasource pipeline, no occurrence uses 'name=' -
@@ -114,6 +119,24 @@ class DataProcessingParser(BaseParser):
                         action="store_true",
                         default=False)
 
+        parser.add_argument("--export",
+                        type=str,
+                        help="Render the pipeline's steps, dataflow and interfaces to the given"
+                             " format and exit - no --input-data needed. Written to"
+                             " --output-file, or '<base-dir>/<pipeline-name>' with the format's"
+                             " default extension if that's not given. 'svg' requires the"
+                             " Graphviz 'dot' executable; 'html'/'mermaid' need no external tool",
+                        choices=sorted(_EXPORT_EXTENSIONS),
+                        default=None)
+
+        parser.add_argument("--mermaid-templates",
+                        help="Directory of .j2 templates overriding the default Mermaid"
+                             " rendering for '--export html'/'--export mermaid' - only the"
+                             " files present there are overridden (e.g. a single"
+                             " 'datasource_block.j2'), everything else keeps using the shipped"
+                             " default",
+                        required=False)
+
     def execute(self, args):
         super().execute(args)
 
@@ -131,6 +154,22 @@ class DataProcessingParser(BaseParser):
         if args.describe:
             print(pipeline.describe())
             return
+
+        if args.export:
+            output_path = Path(args.output_file) if args.output_file \
+                else Path(pipeline.base_dir) / f"{pipeline.name}{_EXPORT_EXTENSIONS[args.export]}"
+
+            if args.export == "svg":
+                written_path = SvgExporter(pipeline).export_svg(output_path)
+            elif args.export == "html":
+                written_path = MermaidExporter(pipeline, template_dir=args.mermaid_templates).export_html(output_path)
+            else:
+                written_path = MermaidExporter(pipeline, template_dir=args.mermaid_templates).export_mermaid(output_path)
+
+            print(f"Wrote pipeline visualization to {written_path}")
+            return
+        elif args.mermaid_templates:
+            raise RuntimeError("--mermaid-templates has no effect without --export html/mermaid")
 
         datasource_names = [n.name for n in pipeline.processing_graph.datasource_nodes()]
         input_data = resolve_input_data(args.input_data, datasource_names)
