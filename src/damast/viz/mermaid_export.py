@@ -8,12 +8,12 @@ render time. `to_mermaid`/`export_mermaid` produce the diagram source alone (e.g
 Markdown file, or a page that already loads Mermaid); `to_html`/`export_html` wrap it into a
 self-contained HTML page that loads Mermaid from a CDN.
 
-Each processing element is drawn as a cluster of its own: an "Input (min required)" block
-(one lean trapezoid per required column), the `transform` call, and an "Output (guaranteed)"
+Each processing element is drawn as a cluster of its own: an "Input" block
+(one lean trapezoid per required column), the `transform` call, and an "Output"
 block - built from `PipelineExporter.datasource_facts`/`step_facts`/`output_columns`, which in
 turn read the same sources `DataProcessingPipeline.describe`/`SvgExporter` already do (a step's
 declared ``@input``/``@output`` decorators, plus `input_metadata`/`output_metadata` for a
-datasource's requirement and the pipeline's own guaranteed output), so the diagram cannot drift
+datasource's requirement and the pipeline's own output), so the diagram cannot drift
 from the text description.
 
 Rendering is Jinja-templated (`src/damast/viz/templates/mermaid/*.j2`, one small file per
@@ -95,11 +95,11 @@ class MermaidExporter(PipelineExporter):
 
     @dataclass
     class LeafNode:
-        """One column - a required input or a guaranteed output - drawn as a lean trapezoid
+        """One column - a input or a output - drawn as a lean trapezoid
         (pointing right for an input flowing in, left for an output flowing out)."""
         #: Mermaid node id (must be unique within the diagram)
         id: str
-        #: ``"lean-r"`` for a required input, ``"lean-l"`` for a guaranteed output
+        #: ``"lean-r"`` for input, ``"lean-l"`` for output
         shape: str
         #: Already-escaped column label, e.g. ``"lat [unit: m]"``
         label: str
@@ -120,10 +120,10 @@ class MermaidExporter(PipelineExporter):
     @dataclass
     class ColumnBlock:
         """A titled cluster of `LeafNode` columns - a processing element's input or output
-        block, or the pipeline's overall guaranteed output."""
+        block, or the pipeline's overall output."""
         #: Mermaid subgraph id (must be unique within the diagram)
         id: str
-        #: Cluster title, e.g. ``"Input (min required)"``
+        #: Cluster title, e.g. ``"Input"``
         title: str
         #: ``"inputsBlockStyle"`` or ``"outputsBlockStyle"``
         style_class: str
@@ -137,7 +137,7 @@ class MermaidExporter(PipelineExporter):
         blocks nested inside a `ProcessingElement`."""
         #: Mermaid subgraph id (must be unique within the diagram)
         id: str
-        #: Cluster title, e.g. ``"Input (DataSource)"``
+        #: Cluster title, e.g. ``"DataSource"``
         title: str
         #: The required columns, in render order
         columns: List["MermaidExporter.LeafNode"]
@@ -157,7 +157,7 @@ class MermaidExporter(PipelineExporter):
         input_blocks: List["MermaidExporter.ColumnBlock"]
         #: The step's ``transform`` call
         transform: "MermaidExporter.TransformNode"
-        #: The step's guaranteed output columns
+        #: The step's output columns
         output_block: "MermaidExporter.ColumnBlock"
         #: The step's ``@describe`` text, if any - shown as a click-tooltip on the cluster
         tooltip: Optional[str] = None
@@ -234,8 +234,8 @@ class MermaidExporter(PipelineExporter):
         return self.DataSourceBlock(id=pe_id, title=f"⎆ {class_name}", columns=columns)
 
     def _processing_element(self, node_id: str, facts: StepFacts) -> "MermaidExporter.ProcessingElement":
-        """Build the top-level cluster for a processing step: one "Input (min required)" block
-        per input slot, its `transform` call, and one "Output (guaranteed)" block."""
+        """Build the top-level cluster for a processing step: one "Input" block
+        per input slot, its `transform` call, and one "Output" block."""
         pe_id = self._safe_id(node_id)
         class_name = escape(facts.class_name)
         multi_slot = len(facts.input_slots) > 1
@@ -323,7 +323,7 @@ class MermaidExporter(PipelineExporter):
                 prefix="PIPELINE_OUTPUT_",
             )
             output_element = self.ColumnBlock(
-                id="PIPELINE_OUTPUT", title="Output (guaranteed)",
+                id="PIPELINE_OUTPUT", title="Output",
                 style_class="outputsBlockStyle", columns=output_columns,
             )
             top_level.append(output_element)
