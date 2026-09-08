@@ -24,7 +24,7 @@ that overrides just the files it cares about.
 """
 from __future__ import annotations
 
-import math
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Union
@@ -39,8 +39,9 @@ __all__ = ["MermaidExporter"]
 
 #: Mermaid build loaded by the HTML page `to_html`/`export_html` produce - pinned to the v11
 #: line since the ``id@{ shape: ..., label: ... }`` node syntax used for the lean-trapezoid
-#: input/output nodes needs Mermaid >= 11.3
-_MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
+#: input/output nodes needs Mermaid >= 11.3, and the collapsible-subgraph
+#: ``id@{ view: collapsed }`` metadata `to_html`'s click-to-collapse relies on needs >= 11.17
+_MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11.17/dist/mermaid.min.js"
 
 #: Package directory holding the default ``.j2`` templates, one per element kind
 _DEFAULT_TEMPLATES_DIR = "templates/mermaid"
@@ -60,16 +61,70 @@ _HTML_TEMPLATE = """<!doctype html>
 <style>
   body {{ font-family: system-ui, sans-serif; margin: 2rem; }}
   h1 {{ font-size: 1.25rem; }}
-  .mermaid {{ margin-top: 1.5rem; }}
+  #graph {{ margin-top: 1.5rem; }}
 </style>
-<script>
-  mermaid.initialize({{ startOnLoad: true, securityLevel: 'loose' }});
-</script>
 </head>
 <body>
 <h1>{title}</h1>
-<pre class="mermaid">
-{diagram}</pre>
+<div id="graph"></div>
+<script>
+  // securityLevel 'loose' is required for the per-column description tooltips (a plain
+  // 'click id "..."' binding) to work - collapsing itself no longer goes through Mermaid's
+  // click mechanism at all, see wireCollapseClicks below
+  mermaid.initialize({{ startOnLoad: false, securityLevel: 'loose' }});
+
+  // must match the id passed to mermaid.render() below - used again to strip its prefix off
+  // rendered element ids in wireCollapseClicks
+  const RENDER_ID = "graph-svg";
+
+  // the plain diagram source, with no 'view: collapsed' lines - collapsed state lives only in
+  // this page's `collapsed` set below, appended back in before every (re-)render
+  const baseDiagram = {diagram_json};
+  const collapsed = new Set();
+
+  async function renderDiagram() {{
+    const overrides = [...collapsed].map((id) => `${{id}}@{{ view: collapsed }}`).join("\\n");
+    const source = overrides ? `${{baseDiagram}}\\n${{overrides}}` : baseDiagram;
+    const {{ svg, bindFunctions }} = await mermaid.render(RENDER_ID, source);
+    const container = document.getElementById("graph");
+    container.innerHTML = svg;
+    // mermaid.render() does not wire up 'click' bindings itself (unlike its startOnLoad path) -
+    // bindFunctions attaches the tooltip clicks to the SVG just inserted
+    if (bindFunctions) {{
+      bindFunctions(container);
+    }}
+    wireCollapseClicks(container);
+  }}
+
+  // Mermaid does not fire 'click' bindings on a subgraph's own id at all, expanded or
+  // collapsed (mermaid-js/mermaid#5428) - so instead of relying on Mermaid's click mechanism,
+  // find every element carrying the 'collapsible' class ourselves (ColumnBlock/DataSourceBlock/
+  // ProcessingElement all get it, from MermaidExporter._style_and_click_lines) - matches the
+  // cluster while expanded and, once collapsed, the single node Mermaid replaces it with -
+  // and attach a real click listener directly
+  function wireCollapseClicks(container) {{
+    const prefix = RENDER_ID + "-";
+    container.querySelectorAll("g.collapsible").forEach((el) => {{
+      if (!el.id.startsWith(prefix)) {{
+        return;
+      }}
+      const id = el.id.slice(prefix.length);
+      el.addEventListener("click", (event) => {{
+        // stop a click on a nested block (e.g. a step's "Input" block) from also toggling
+        // every ancestor subgraph it sits inside (e.g. the step itself)
+        event.stopPropagation();
+        if (collapsed.has(id)) {{
+          collapsed.delete(id);
+        }} else {{
+          collapsed.add(id);
+        }}
+        renderDiagram();
+      }});
+    }});
+  }}
+
+  renderDiagram();
+</script>
 </body>
 </html>
 """
@@ -345,12 +400,32 @@ class MermaidExporter(PipelineExporter):
             self,
             top_level: List[Union["MermaidExporter.DataSourceBlock", "MermaidExporter.ProcessingElement",
                                    "MermaidExporter.ColumnBlock"]],
+            *,
+            interactive: bool,
     ) -> tuple[List[str], List[str]]:
         """
         Collect every ``class``/``click`` statement for ``top_level``, to emit as one block at
         the end of the document - Mermaid only renders classes/clicks correctly when they come
         after the ``classDef`` declarations and after the nodes/subgraphs they refer to, not
         interleaved inside a ``subgraph ... end``.
+
+        If ``interactive``, every subgraph (`DataSourceBlock`, `ColumnBlock`,
+        `ProcessingElement`) also gets the ``collapsible`` marker class. Nothing in the Mermaid
+        source binds a click to it: Mermaid does not fire ``click`` bindings on a subgraph's own
+        id at all, expanded or collapsed (github.com/mermaid-js/mermaid/issues/5428) - so
+        `to_html`'s JS instead renders the SVG, queries it for ``g.collapsible`` elements itself
+        (both the expanded cluster and, once collapsed, the single node Mermaid replaces it
+        with carry this class) and attaches a real click listener to each, deriving which id to
+        toggle from the element's own DOM id.
+
+        A subgraph's `class` assignment is dropped once collapsed unless some edge references
+        its id (verified against a real Mermaid render) - every collapsible element here already
+        has one from the pipeline's own dataflow (a `ColumnBlock` connects to its
+        `ProcessingElement`'s `transform`; every top-level element sits on the edges `to_elements`
+        already draws between steps), so no extra edge needs adding just for this.
+
+        `to_mermaid`/`export_mermaid` pass ``interactive=False``: a portable ``.mmd`` file has no
+        page-side JS to match ``collapsible`` elements, so it must not depend on one.
         """
         class_lines: List[str] = []
         click_lines: List[str] = []
@@ -360,14 +435,20 @@ class MermaidExporter(PipelineExporter):
             if leaf.tooltip:
                 click_lines.append(f'click {leaf.id} "javascript:void(0)" "{leaf.tooltip}"')
 
+        def mark_collapsible(subgraph_id: str) -> None:
+            if interactive:
+                class_lines.append(f"class {subgraph_id} collapsible")
+
         def add_block(block: Union["MermaidExporter.ColumnBlock", "MermaidExporter.DataSourceBlock"]) -> None:
             class_lines.append(f"class {block.id} {block.style_class}")
+            mark_collapsible(block.id)
             for leaf in block.columns:
                 add_leaf(leaf)
 
         for element in top_level:
             if isinstance(element, self.ProcessingElement):
                 class_lines.append(f"class {element.id} processingElementStyle")
+                mark_collapsible(element.id)
                 if element.tooltip:
                     click_lines.append(f'click {element.id}_TRANSFORM "javascript:void(0)" "{element.tooltip}"')
                 for input_block in element.input_blocks:
@@ -379,10 +460,31 @@ class MermaidExporter(PipelineExporter):
 
         return class_lines, click_lines
 
+    def _render(self, *, interactive: bool) -> str:
+        """Shared implementation of `to_mermaid` (``interactive=False``) and `to_html`
+        (``interactive=True``, adding the ``collapsible`` marker class `to_html`'s JS matches
+        against to wire up click-to-collapse)."""
+        top_level, edges = self.to_elements()
+
+        body_parts = [self._render_top_level(element) for element in top_level]
+        body_parts += [self._env.get_template("edge.j2").render(edge=edge) for edge in edges]
+
+        class_lines, click_lines = self._style_and_click_lines(top_level, interactive=interactive)
+
+        return self._env.get_template("document.j2").render(
+            class_defs=self._env.get_template("class_defs.j2").render(),
+            body="\n".join(body_parts),
+            class_lines="\n".join(class_lines),
+            click_lines="\n".join(click_lines),
+        )
+
     def to_mermaid(self) -> str:
         """
         Render this exporter's pipeline to Mermaid flowchart source, via the Jinja templates in
         `templates/mermaid/` (or `template_dir`, for any overridden ones).
+
+        Portable, plain diagram source - unlike `to_html`, its subgraphs carry no ``collapsible``
+        marker class, since matching against one depends on JS only the HTML page defines.
 
         Example:
 
@@ -397,19 +499,7 @@ class MermaidExporter(PipelineExporter):
         Raises:
             jinja2.UndefinedError: If an overridden template references an undefined variable
         """
-        top_level, edges = self.to_elements()
-
-        body_parts = [self._render_top_level(element) for element in top_level]
-        body_parts += [self._env.get_template("edge.j2").render(edge=edge) for edge in edges]
-
-        class_lines, click_lines = self._style_and_click_lines(top_level)
-
-        return self._env.get_template("document.j2").render(
-            class_defs=self._env.get_template("class_defs.j2").render(),
-            body="\n".join(body_parts),
-            class_lines="\n".join(class_lines),
-            click_lines="\n".join(click_lines),
-        )
+        return self._render(interactive=False)
 
     def export_mermaid(self, path: Union[str, Path]) -> Path:
         """
@@ -452,12 +542,20 @@ class MermaidExporter(PipelineExporter):
             title: Page title - defaults to ``"<pipeline.name> - pipeline flowchart"``
 
         Returns:
-            The rendered HTML document
+            The rendered HTML document - every subgraph is clickable, toggling it between
+            Mermaid's ``view: collapsed``/``view: expanded`` states client-side
+
+        Raises:
+            RuntimeError: See `DataProcessingPipeline._declared_interface`
         """
         return _HTML_TEMPLATE.format(
             title=escape(title or f"{self._pipeline.name} - pipeline flowchart"),
             cdn=_MERMAID_CDN,
-            diagram=self.to_mermaid(),
+            # JSON-encoded, not embedded as a JS template literal, so a column name/description
+            # containing a quote, backslash or backtick can't break out of the JS source
+            # ensure_ascii=False: the page is UTF-8, and labels/titles use real Unicode glyphs
+            # (e.g. "⚙") - keep them literal in the page source rather than \uXXXX-escaped
+            diagram_json=json.dumps(self._render(interactive=True), ensure_ascii=False),
         )
 
     def export_html(self, path: Union[str, Path], title: Optional[str] = None) -> Path:

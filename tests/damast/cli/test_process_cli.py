@@ -140,8 +140,12 @@ def test_process_export_html_single_datasource(simple_pipeline_path, tmp_path, s
 
     assert result.returncode == 0, result.stdout
     assert output_html.exists()
-    assert "flowchart TB" in output_html.read_text()
-    assert "mmsi" in output_html.read_text()
+    text = output_html.read_text()
+    assert "flowchart TB" in text
+    assert "mmsi" in text
+    # every subgraph is click-to-collapse in the HTML export
+    assert "wireCollapseClicks" in text
+    assert "class " in text and " collapsible" in text
 
 
 def test_process_export_mermaid_single_datasource(simple_pipeline_path, tmp_path, script_runner):
@@ -156,8 +160,11 @@ def test_process_export_mermaid_single_datasource(simple_pipeline_path, tmp_path
     assert result.returncode == 0, result.stdout
     assert output_mmd.exists()
     text = output_mmd.read_text()
-    assert text.startswith("flowchart TB")
+    assert "flowchart TB" in text
     assert "<!doctype html>" not in text
+    # the portable .mmd source has nothing assigned the 'collapsible' marker class - matching
+    # against it depends on JS only the HTML page defines
+    assert not re.search(r"^class \S+ collapsible$", text, re.MULTILINE)
 
 
 def test_process_export_default_output_path(simple_pipeline_path, tmp_path, script_runner):
@@ -192,7 +199,9 @@ def test_process_export_html_with_custom_mermaid_templates(simple_pipeline_path,
     ])
 
     assert result.returncode == 0, result.stdout
-    assert "CUSTOM: Input (DataSource)" in output_html.read_text()
+    # the datasource's title is always "<marker> DataSource" - the class name of the
+    # DataSource marker transformer, independent of the pipeline under test
+    assert "CUSTOM: ⎆ DataSource" in output_html.read_text()
 
 
 def test_process_mermaid_templates_without_export_fails(simple_pipeline_path, tmp_path, script_runner):

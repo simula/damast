@@ -1,7 +1,9 @@
+import re
+
 import jinja2
 import pytest
 
-from damast.viz.mermaid_export import MermaidExporter
+from damast.viz.mermaid_export import _MERMAID_CDN, MermaidExporter
 
 
 def _find(elements, predicate):
@@ -19,11 +21,14 @@ def test_datasource_block_shows_required_columns(chained_pipeline):
     top_level, _ = MermaidExporter(chained_pipeline).to_elements()
     datasource = _find(top_level, lambda e: isinstance(e, MermaidExporter.DataSourceBlock))
 
-    assert datasource.title == "Input (DataSource)"
     assert datasource.style_class == "dataSourceNodeStyle"
-    labels = {leaf.label for leaf in datasource.columns}
-    assert labels == {"alpha [unit: m]", "beta"}
+    names = {leaf.label.split("\n")[0] for leaf in datasource.columns}
+    assert names == {"alpha", "beta"}
     assert all(leaf.shape == "lean-r" and leaf.style_class == "inputsStyle" for leaf in datasource.columns)
+    # "alpha" carries a unit and a description (see conftest) - both show up on its label
+    alpha = _find(datasource.columns, lambda c: c.label.startswith("alpha"))
+    assert "[unit: m]" in alpha.label
+    assert alpha.tooltip == "raw reading"
 
 
 def test_processing_element_nests_input_transform_output(chained_pipeline):
@@ -34,11 +39,9 @@ def test_processing_element_nests_input_transform_output(chained_pipeline):
     assert step_one.tooltip == "doubles alpha"
 
     (input_block,) = step_one.input_blocks
-    assert input_block.title == "Input (min required)"
-    assert [leaf.label for leaf in input_block.columns] == ["alpha [unit: m]"]
+    assert [leaf.label.split("\n")[0] for leaf in input_block.columns] == ["alpha"]
     assert input_block.columns[0].tooltip == "raw reading"
 
-    assert step_one.transform.label == "transform"
     assert [leaf.label for leaf in step_one.output_block.columns] == ["alpha_doubled"]
 
 
@@ -48,8 +51,8 @@ def test_pipeline_output_block_accumulates_across_the_chain(chained_pipeline):
 
     assert isinstance(output, MermaidExporter.ColumnBlock)
     assert output.style_class == "outputsBlockStyle"
-    labels = {leaf.label for leaf in output.columns}
-    assert labels == {"alpha [unit: m]", "alpha_doubled", "beta", "gamma"}
+    names = {leaf.label.split("\n")[0] for leaf in output.columns}
+    assert names == {"alpha", "alpha_doubled", "beta", "gamma"}
     assert all(leaf.shape == "lean-l" and leaf.style_class == "outputsStyle" for leaf in output.columns)
 
     step_two = _find(top_level, lambda e: isinstance(e, MermaidExporter.ProcessingElement)
@@ -62,9 +65,7 @@ def test_join_pipeline_gets_one_input_block_per_slot(join_pipeline):
     join_step = _find(top_level, lambda e: isinstance(e, MermaidExporter.ProcessingElement)
                        and e.class_name == "_JoinStep")
 
-    assert {block.title for block in join_step.input_blocks} == {
-        "Input (df) (min required)", "Input (other) (min required)",
-    }
+    assert {block.title for block in join_step.input_blocks} == {"Input (df)", "Input (other)"}
 
     slot_labels = {e.label for e in edges if e.label}
     assert slot_labels == {"df", "other"}
@@ -76,15 +77,36 @@ def test_supported_filetypes(chained_pipeline):
 
 def test_to_mermaid_contains_class_defs_and_assignments(chained_pipeline):
     diagram = MermaidExporter(chained_pipeline).to_mermaid()
-    assert diagram.startswith("flowchart TB\n")
+    assert "flowchart TB" in diagram
     assert "classDef dataSourceNodeStyle" in diagram
     assert "classDef processingElementStyle" in diagram
-    assert 'shape: lean-r, label: "alpha [unit: m]"' in diagram
+    assert 'label: "alpha' in diagram and "[unit: m]" in diagram
     assert 'shape: lean-l, label: "gamma"' in diagram
-    assert '("transform")' in diagram
+    assert '"⚙ transform")' in diagram
     assert "class " in diagram and " inputsStyle" in diagram
     assert 'click' in diagram and 'raw reading' in diagram
     assert 'click' in diagram and 'doubles alpha' in diagram
+
+
+def test_to_mermaid_has_no_synthetic_layout_nodes(chained_pipeline):
+    # an earlier design added an invisible sibling node to every collapsible subgraph (needed
+    # to keep its class alive once collapsed) - dagre's layout counted it when centering each
+    # rank, throwing the whole top-level chain visibly off a shared vertical axis. Every
+    # collapsible element already sits on a real edge from the pipeline's own dataflow (a
+    # ColumnBlock connects to its ProcessingElement's transform; every top-level element sits on
+    # the edges between steps), so that requirement is met for free - no synthetic node needed
+    diagram = MermaidExporter(chained_pipeline).to_mermaid()
+    assert "_anchor" not in diagram
+
+
+def test_to_mermaid_has_no_collapse_bindings(chained_pipeline):
+    # to_mermaid()/export_mermaid() are portable, plain diagram source - no element is ever
+    # actually assigned the 'collapsible' marker class (the classDef declaration itself is
+    # harmless boilerplate and stays either way), since matching against it depends on JS only
+    # the HTML page defines
+    diagram = MermaidExporter(chained_pipeline).to_mermaid()
+    assert not re.search(r"^class \S+ collapsible$", diagram, re.MULTILINE)
+    assert "view: collapsed" not in diagram
 
 
 def test_to_mermaid_puts_class_defs_and_assignments_after_the_diagram_body(chained_pipeline):
@@ -114,16 +136,41 @@ def test_export_mermaid_writes_raw_diagram_source(chained_pipeline, tmp_path):
     path = MermaidExporter(chained_pipeline).export_mermaid(path=tmp_path / "pipeline.mmd")
     assert path.exists()
     text = path.read_text()
-    assert text.startswith("flowchart TB\n")
+    assert "flowchart TB" in text
     assert "<!doctype html>" not in text
+    assert not re.search(r"^class \S+ collapsible$", text, re.MULTILINE)
 
 
 def test_to_html_embeds_diagram_and_mermaid_cdn(chained_pipeline):
     html = MermaidExporter(chained_pipeline).to_html()
-    assert "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js\"></script>" in html
+    assert f'<script src="{_MERMAID_CDN}"></script>' in html
     assert "flowchart TB" in html
-    assert "mermaid.initialize" in html
     assert "chained - pipeline flowchart" in html
+
+
+def test_to_html_wires_up_click_to_collapse_per_subgraph(chained_pipeline):
+    # Mermaid does not fire 'click' bindings on a subgraph's own id at all, expanded or
+    # collapsed (mermaid-js/mermaid#5428), so collapsing does not go through Mermaid's click
+    # mechanism: the page renders the SVG itself, then finds every 'collapsible'-classed
+    # element (verified against a real Mermaid render to also match the single node a subgraph
+    # becomes once collapsed) and attaches a real click listener directly - see
+    # MermaidExporter._style_and_click_lines and the renderDiagram/wireCollapseClicks pair below
+    html = MermaidExporter(chained_pipeline).to_html()
+    top_level, _ = MermaidExporter(chained_pipeline).to_elements()
+
+    assert "startOnLoad: false" in html
+    assert "securityLevel: 'loose'" in html
+    assert "async function renderDiagram" in html
+    assert "function wireCollapseClicks" in html
+    assert "bindFunctions(container)" in html  # needed for the (unrelated) tooltip clicks
+    assert 'querySelectorAll("g.collapsible")' in html
+    assert "event.stopPropagation()" in html  # a nested block's click must not also toggle its parent
+
+    datasource = _find(top_level, lambda e: isinstance(e, MermaidExporter.DataSourceBlock))
+    step = _find(top_level, lambda e: isinstance(e, MermaidExporter.ProcessingElement))
+    output = _find(top_level, lambda e: e.id == "PIPELINE_OUTPUT")
+    for element in (datasource, step, output):
+        assert f"class {element.id} collapsible" in html
 
 
 def test_export_html_writes_file(chained_pipeline, tmp_path):
@@ -140,16 +187,18 @@ def test_template_dir_overrides_only_the_files_it_provides(chained_pipeline, tmp
         "class {{ block.id }} {{ block.style_class }}\n"
     )
 
+    top_level, _ = MermaidExporter(chained_pipeline).to_elements()
+    datasource = _find(top_level, lambda e: isinstance(e, MermaidExporter.DataSourceBlock))
     diagram = MermaidExporter(chained_pipeline, template_dir=tmp_path).to_mermaid()
 
-    assert "CUSTOM: Input (DataSource)" in diagram
+    assert f"CUSTOM: {datasource.title}" in diagram
     # everything else still resolves to the shipped default
-    assert "Input (min required)" in diagram
-    assert "Output (guaranteed)" in diagram
+    assert "_StepOne" in diagram
+    assert "gamma" in diagram
 
 
 def test_template_dir_typo_raises_instead_of_rendering_blank(chained_pipeline, tmp_path):
-    (tmp_path / "leaf.j2").write_text('{{ node.this_attribute_does_not_exist }}\n')
+    (tmp_path / "column_block.j2").write_text('{{ block.this_attribute_does_not_exist }}\n')
 
     with pytest.raises(jinja2.UndefinedError):
         MermaidExporter(chained_pipeline, template_dir=tmp_path).to_mermaid()
