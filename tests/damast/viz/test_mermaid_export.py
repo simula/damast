@@ -29,6 +29,9 @@ def test_datasource_block_shows_required_columns(chained_pipeline):
     alpha = _find(datasource.columns, lambda c: c.label.startswith("alpha"))
     assert "[unit: m]" in alpha.label
     assert alpha.tooltip == "raw reading"
+    # the bare, unescaped name - not the label with its unit/tooltip glyph baked in - so
+    # to_html's hover-highlight can group same-named columns across the diagram by it
+    assert alpha.name == "alpha"
 
 
 def test_processing_element_nests_input_transform_output(chained_pipeline):
@@ -50,7 +53,7 @@ def test_pipeline_output_block_accumulates_across_the_chain(chained_pipeline):
     output = _find(top_level, lambda e: e.id == "PIPELINE_OUTPUT")
 
     assert isinstance(output, MermaidExporter.ColumnBlock)
-    assert output.style_class == "outputsBlockStyle"
+    assert output.style_class == "pipelineOutputsBlockStyle"
     names = {leaf.label.split("\n")[0] for leaf in output.columns}
     assert names == {"alpha", "alpha_doubled", "beta", "gamma"}
     assert all(leaf.shape == "lean-l" and leaf.style_class == "outputsStyle" for leaf in output.columns)
@@ -171,6 +174,21 @@ def test_to_html_wires_up_click_to_collapse_per_subgraph(chained_pipeline):
     output = _find(top_level, lambda e: e.id == "PIPELINE_OUTPUT")
     for element in (datasource, step, output):
         assert f"class {element.id} collapsible" in html
+
+
+def test_to_html_wires_up_hover_highlight_for_same_named_columns(chained_pipeline):
+    # "alpha" is required by the datasource, consumed as _StepOne's input, and re-appears in the
+    # pipeline's overall output - hovering any one of those three should highlight all of them,
+    # see MermaidExporter._style_and_click_lines and wireHoverHighlight below
+    html = MermaidExporter(chained_pipeline).to_html()
+
+    assert "function wireHoverHighlight" in html
+    assert "const columnNames = " in html
+
+    top_level, _ = MermaidExporter(chained_pipeline).to_elements()
+    datasource = _find(top_level, lambda e: isinstance(e, MermaidExporter.DataSourceBlock))
+    alpha = _find(datasource.columns, lambda c: c.label.startswith("alpha"))
+    assert f'"{alpha.id}": "alpha"' in html
 
 
 def test_export_html_writes_file(chained_pipeline, tmp_path):

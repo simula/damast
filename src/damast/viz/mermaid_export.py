@@ -62,6 +62,11 @@ _HTML_TEMPLATE = """<!doctype html>
   body {{ font-family: system-ui, sans-serif; margin: 2rem; }}
   h1 {{ font-size: 1.25rem; }}
   #graph {{ margin-top: 1.5rem; }}
+  /* every occurrence of a hovered column, see wireHoverHighlight */
+  .col-highlight path, .col-highlight rect, .col-highlight polygon {{
+    stroke: #ff5722 !important;
+    stroke-width: 3px !important;
+  }}
 </style>
 </head>
 <body>
@@ -80,6 +85,9 @@ _HTML_TEMPLATE = """<!doctype html>
   // the plain diagram source, with no 'view: collapsed' lines - collapsed state lives only in
   // this page's `collapsed` set below, appended back in before every (re-)render
   const baseDiagram = {diagram_json};
+  // {{leaf node id: column name}}, for wireHoverHighlight - kept out of the Mermaid source
+  // itself so a column name never needs sanitizing into a Mermaid class identifier
+  const columnNames = {column_names_json};
   const collapsed = new Set();
 
   async function renderDiagram() {{
@@ -94,6 +102,63 @@ _HTML_TEMPLATE = """<!doctype html>
       bindFunctions(container);
     }}
     wireCollapseClicks(container);
+    wireHoverHighlight(container);
+  }}
+
+  // the same column shows up under several ids (required by a datasource, a step's
+  // input/output, the pipeline's overall output) - group this render's leaf nodes by column
+  // name (via the columnNames map built server-side) and highlight every occurrence together
+  // on hover, so a column's path through the pipeline is easy to trace visually
+  function wireHoverHighlight(container) {{
+    const nodePrefix = RENDER_ID + "-flowchart-";
+    const elementsByName = new Map();
+    container.querySelectorAll("g.node[id]").forEach((el) => {{
+      if (!el.id.startsWith(nodePrefix)) {{
+        return;
+      }}
+      // mermaid renders a node's id as "<nodePrefix><ourId>-<counter>" - our own ids never
+      // end in "-<digits>" (they use underscores), so this only strips mermaid's own suffix
+      const id = el.id.slice(nodePrefix.length).replace(/-\\d+$/, "");
+      const name = columnNames[id];
+      if (!name) {{
+        return;
+      }}
+      if (!elementsByName.has(name)) {{
+        elementsByName.set(name, []);
+      }}
+      elementsByName.get(name).push(el);
+    }});
+    elementsByName.forEach((elements) => {{
+      if (elements.length < 2) {{
+        return;
+      }}
+      // a leaf node's own shape (the "label-container" polygon/path/rect) carries an inline
+      // style="...!important" from its inputsStyle/outputsStyle classDef, which beats the
+      // .col-highlight stylesheet rule even though that rule also uses !important - so besides
+      // toggling the class (for any shape with no inline style), overwrite every occurrence's
+      // inline style directly on hover, restoring each one's original on mouseleave
+      const shapes = elements.map((el) => el.querySelector(".label-container") || el.querySelector("polygon, path, rect"));
+      const originalStyles = shapes.map((shape) => (shape ? shape.getAttribute("style") : null));
+      elements.forEach((el) => {{
+        el.addEventListener("mouseenter", () => {{
+          elements.forEach((e) => e.classList.add("col-highlight"));
+          shapes.forEach((shape) => {{
+            if (shape) {{
+              shape.style.setProperty("stroke", "#ff5722", "important");
+              shape.style.setProperty("stroke-width", "3px", "important");
+            }}
+          }});
+        }});
+        el.addEventListener("mouseleave", () => {{
+          elements.forEach((e) => e.classList.remove("col-highlight"));
+          shapes.forEach((shape, i) => {{
+            if (shape) {{
+              shape.setAttribute("style", originalStyles[i] || "");
+            }}
+          }});
+        }});
+      }});
+    }});
   }}
 
   // Mermaid does not fire 'click' bindings on a subgraph's own id at all, expanded or
@@ -160,6 +225,10 @@ class MermaidExporter(PipelineExporter):
         label: str
         #: ``"inputsStyle"`` or ``"outputsStyle"``
         style_class: str
+        #: The bare column name (unescaped) - the same column shows up under several ids
+        #: (required by a datasource, a step's input/output, the pipeline's overall output);
+        #: `to_html`'s JS uses this to highlight every occurrence of one column on hover
+        name: str
         #: The column's description, if any - shown as a click-tooltip
         tooltip: Optional[str] = None
 
@@ -273,7 +342,8 @@ class MermaidExporter(PipelineExporter):
             else:
                 tooltip = None
             nodes.append(MermaidExporter.LeafNode(
-                id=f"{prefix}{i}", shape=shape, label=label, style_class=style_class, tooltip=tooltip
+                id=f"{prefix}{i}", shape=shape, label=label, style_class=style_class,
+                name=column.name, tooltip=tooltip,
             ))
         return nodes
 
@@ -402,12 +472,14 @@ class MermaidExporter(PipelineExporter):
                                    "MermaidExporter.ColumnBlock"]],
             *,
             interactive: bool,
-    ) -> tuple[List[str], List[str]]:
+    ) -> tuple[List[str], List[str], dict[str, str]]:
         """
         Collect every ``class``/``click`` statement for ``top_level``, to emit as one block at
         the end of the document - Mermaid only renders classes/clicks correctly when they come
         after the ``classDef`` declarations and after the nodes/subgraphs they refer to, not
-        interleaved inside a ``subgraph ... end``.
+        interleaved inside a ``subgraph ... end`` - plus a ``{leaf id: column name}`` map for
+        every `LeafNode`, so `to_html`'s JS can highlight every occurrence of one column on
+        hover without sanitizing column names into Mermaid class identifiers itself.
 
         If ``interactive``, every subgraph (`DataSourceBlock`, `ColumnBlock`,
         `ProcessingElement`) also gets the ``collapsible`` marker class. Nothing in the Mermaid
@@ -429,11 +501,13 @@ class MermaidExporter(PipelineExporter):
         """
         class_lines: List[str] = []
         click_lines: List[str] = []
+        column_names: dict[str, str] = {}
 
         def add_leaf(leaf: "MermaidExporter.LeafNode") -> None:
             class_lines.append(f"class {leaf.id} {leaf.style_class}")
             if leaf.tooltip:
                 click_lines.append(f'click {leaf.id} "javascript:void(0)" "{leaf.tooltip}"')
+            column_names[leaf.id] = leaf.name
 
         def mark_collapsible(subgraph_id: str) -> None:
             if interactive:
@@ -458,25 +532,27 @@ class MermaidExporter(PipelineExporter):
                 # DataSourceBlock and the top-level pipeline-output ColumnBlock
                 add_block(element)
 
-        return class_lines, click_lines
+        return class_lines, click_lines, column_names
 
-    def _render(self, *, interactive: bool) -> str:
+    def _render(self, *, interactive: bool) -> tuple[str, dict[str, str]]:
         """Shared implementation of `to_mermaid` (``interactive=False``) and `to_html`
         (``interactive=True``, adding the ``collapsible`` marker class `to_html`'s JS matches
-        against to wire up click-to-collapse)."""
+        against to wire up click-to-collapse). Returns ``(diagram, column_names)`` - the
+        ``{leaf id: column name}`` map `to_html` embeds separately for its hover-highlight."""
         top_level, edges = self.to_elements()
 
         body_parts = [self._render_top_level(element) for element in top_level]
         body_parts += [self._env.get_template("edge.j2").render(edge=edge) for edge in edges]
 
-        class_lines, click_lines = self._style_and_click_lines(top_level, interactive=interactive)
+        class_lines, click_lines, column_names = self._style_and_click_lines(top_level, interactive=interactive)
 
-        return self._env.get_template("document.j2").render(
+        diagram = self._env.get_template("document.j2").render(
             class_defs=self._env.get_template("class_defs.j2").render(),
             body="\n".join(body_parts),
             class_lines="\n".join(class_lines),
             click_lines="\n".join(click_lines),
         )
+        return diagram, column_names
 
     def to_mermaid(self) -> str:
         """
@@ -499,7 +575,8 @@ class MermaidExporter(PipelineExporter):
         Raises:
             jinja2.UndefinedError: If an overridden template references an undefined variable
         """
-        return self._render(interactive=False)
+        diagram, _ = self._render(interactive=False)
+        return diagram
 
     def export_mermaid(self, path: Union[str, Path]) -> Path:
         """
@@ -543,11 +620,13 @@ class MermaidExporter(PipelineExporter):
 
         Returns:
             The rendered HTML document - every subgraph is clickable, toggling it between
-            Mermaid's ``view: collapsed``/``view: expanded`` states client-side
+            Mermaid's ``view: collapsed``/``view: expanded`` states client-side, and hovering a
+            column highlights every other occurrence of that same column
 
         Raises:
             RuntimeError: See `DataProcessingPipeline._declared_interface`
         """
+        diagram, column_names = self._render(interactive=True)
         return _HTML_TEMPLATE.format(
             title=escape(title or f"{self._pipeline.name} - pipeline flowchart"),
             cdn=_MERMAID_CDN,
@@ -555,7 +634,8 @@ class MermaidExporter(PipelineExporter):
             # containing a quote, backslash or backtick can't break out of the JS source
             # ensure_ascii=False: the page is UTF-8, and labels/titles use real Unicode glyphs
             # (e.g. "⚙") - keep them literal in the page source rather than \uXXXX-escaped
-            diagram_json=json.dumps(self._render(interactive=True), ensure_ascii=False),
+            diagram_json=json.dumps(diagram, ensure_ascii=False),
+            column_names_json=json.dumps(column_names, ensure_ascii=False),
         )
 
     def export_html(self, path: Union[str, Path], title: Optional[str] = None) -> Path:
