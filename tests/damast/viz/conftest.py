@@ -4,8 +4,8 @@ which also needs a column straight from the datasource) and a join pipeline, use
 `test_graph_model.py`, `test_svg_export.py`, and `test_mermaid_export.py` so every renderer's
 tests exercise the same pipeline shapes.
 """
-from astropy import units
 import pytest
+from astropy import units
 
 import damast
 from damast.core.dataframe import AnnotatedDataFrame

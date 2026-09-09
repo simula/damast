@@ -151,6 +151,11 @@ def test_to_html_embeds_diagram_and_mermaid_cdn(chained_pipeline):
     assert "chained - pipeline flowchart" in html
 
 
+def test_to_html_matches_tooltip_font_size_to_block_titles(chained_pipeline):
+    html = MermaidExporter(chained_pipeline).to_html()
+    assert re.search(r".mermaidTooltip {\n\s+font-size: [12][0-9]px !important", ''.join(html))
+
+
 def test_to_html_wires_up_click_to_collapse_per_subgraph(chained_pipeline):
     # Mermaid does not fire 'click' bindings on a subgraph's own id at all, expanded or
     # collapsed (mermaid-js/mermaid#5428), so collapsing does not go through Mermaid's click

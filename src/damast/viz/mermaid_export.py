@@ -33,7 +33,12 @@ from xml.sax.saxutils import escape
 import jinja2
 
 from damast.core.dataprocessing import DataProcessingPipeline
-from damast.viz.pipeline_exporter import ColumnInfo, DataSourceFacts, PipelineExporter, StepFacts
+from damast.viz.pipeline_exporter import (
+    ColumnInfo,
+    DataSourceFacts,
+    PipelineExporter,
+    StepFacts,
+    )
 
 __all__ = ["MermaidExporter"]
 
@@ -66,6 +71,15 @@ _HTML_TEMPLATE = """<!doctype html>
   .col-highlight path, .col-highlight rect, .col-highlight polygon {{
     stroke: #ff5722 !important;
     stroke-width: 3px !important;
+  }}
+  /* Mermaid sets its click-tooltip's font-size as a plain (non-!important) inline style -
+     match it to the Input/Output block title size (inputsBlockStyle/outputsBlockStyle) */
+  .mermaidTooltip {{
+    border-radius: 15px;
+    font-family: sans-serif;
+    font-size: 18px !important;
+    background-color: #cceec8 !important;
+    max-width: 400px !important;
   }}
 </style>
 </head>
@@ -335,12 +349,16 @@ class MermaidExporter(PipelineExporter):
         for i, column in enumerate(columns):
             label = escape(column.name)
             if column.unit is not None:
-                label += f"\n[unit: {escape(column.unit)}]"
+                label += f"\nunit: {escape(column.unit)}"
+
+            tooltip = ""
+            if column.representation_type:
+                tooltip += f"type: {escape(column.representation_type)}"
             if column.description:
-                tooltip = escape(column.description)
-                label += "  🛈"
-            else:
-                tooltip = None
+                if tooltip != "":
+                    tooltip += "<br/>---<br/>"
+                tooltip += f"{escape(column.description)}"
+
             nodes.append(MermaidExporter.LeafNode(
                 id=f"{prefix}{i}", shape=shape, label=label, style_class=style_class,
                 name=column.name, tooltip=tooltip,

@@ -38,6 +38,7 @@ class ColumnInfo:
     name: str
     unit: str | None = None
     description: str | None = None
+    representation_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,12 +79,13 @@ class PipelineExporter:
         """The file extensions (including the leading dot) this exporter can write, e.g. ``[".svg"]``."""
         raise NotImplementedError(f"{self.__class__.__name__}.supported_filetypes has not been implemented")
 
-    @classmethod 
+    @classmethod
     def _column_info(cls, spec: DataSpecification) -> ColumnInfo:
         """Extract the renderer-relevant, already-display-ready facts from one `DataSpecification`."""
         return ColumnInfo(
             name=spec.name,
             unit=spec.unit.to_string() if spec.unit is not None else None,
+            representation_type=str(spec.representation_type) if spec.representation_type is not None else "undefined",
             description=spec.description or None,
         )
 

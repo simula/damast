@@ -21,7 +21,12 @@ from xml.sax.saxutils import escape
 
 import pydot
 
-from damast.viz.pipeline_exporter import ColumnInfo, DataSourceFacts, PipelineExporter, StepFacts
+from damast.viz.pipeline_exporter import (
+    ColumnInfo,
+    DataSourceFacts,
+    PipelineExporter,
+    StepFacts,
+    )
 
 __all__ = ["SvgExporter"]
 
