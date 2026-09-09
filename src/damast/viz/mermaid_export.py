@@ -379,7 +379,7 @@ class MermaidExporter(PipelineExporter):
             )
             output_element = self.ColumnBlock(
                 id="PIPELINE_OUTPUT", title="Output",
-                style_class="outputsBlockStyle", columns=output_columns,
+                style_class="pipelineOutputsBlockStyle", columns=output_columns,
             )
             top_level.append(output_element)
             edges.append(self.Edge(source=element_id[sink.uuid], target=output_element.id))
