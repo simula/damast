@@ -1,8 +1,7 @@
 from astropy import units
 
 from damast.core.annotations import Annotation
-from damast.core.data_description import MinMax
-from damast.core.data_description import NumericValueStats
+from damast.core.data_description import MinMax, NumericValueStats
 from damast.core.metadata import DataSpecification, MetaData
 from damast.integrations.tracking import flatten_metadata, flatten_step_stats
 

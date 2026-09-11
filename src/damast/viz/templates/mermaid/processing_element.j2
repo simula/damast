@@ -1,0 +1,12 @@
+subgraph {{ element.id }} ["{{ element.class_name }}"]
+    direction LR
+{% for block in element.input_blocks %}
+    {% include "column_block.j2" %}
+    {{ block.id }} --> {{ element.transform.id }}
+{% endfor %}
+    {% set node = element.transform %}
+    {% include "transform.j2" %}
+    {{ element.transform.id }} --> {{ element.output_block.id }}
+    {% set block = element.output_block %}
+    {% include "column_block.j2" %}
+end

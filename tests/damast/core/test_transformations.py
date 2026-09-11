@@ -1,9 +1,9 @@
 import importlib.metadata
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
-from pathlib import Path
 import polars
 import pytest
 

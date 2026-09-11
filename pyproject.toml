@@ -42,6 +42,7 @@ dependencies = [
     "astropy",
     "cloudpickle",
     "iso8601;python_version<'3.11'",
+    "jinja2",
     "matplotlib",
     "networkx",
     "numba",
@@ -118,6 +119,9 @@ damast = "damast.cli.main:run"
 
 [tool.setuptools.dynamic]
 version = {attr = "damast.version.__version__"}
+
+[tool.setuptools.package-data]
+"damast.viz" = ["templates/mermaid/*.j2"]
 
 [tool.mypy]
 ignore_missing_imports = true

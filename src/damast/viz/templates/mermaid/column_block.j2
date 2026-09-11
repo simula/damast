@@ -1,0 +1,12 @@
+subgraph {{ block.id }} ["{{ block.title }}"]
+    direction RL
+{% for node in block.columns %}
+    {{ node.id }}@{ shape: {{ node.shape }}, label: "{{ node.label }}" }
+    {% if loop.last %}
+    {% elif loop.index % max_columns_per_row != 0 %}
+        {{ node.id }} ~~~ {{ block.columns[loop.index0 + 1].id }}
+    {% else %}
+
+    {% endif %}
+{% endfor %}
+end
