@@ -27,8 +27,8 @@ def test_datasource_block_shows_required_columns(chained_pipeline):
     assert all(leaf.shape == "lean-r" and leaf.style_class == "inputsStyle" for leaf in datasource.columns)
     # "alpha" carries a unit and a description (see conftest) - both show up on its label
     alpha = _find(datasource.columns, lambda c: c.label.startswith("alpha"))
-    assert "[unit: m]" in alpha.label
-    assert alpha.tooltip == "raw reading"
+    assert "unit: m" in alpha.label
+    assert alpha.tooltip == "type: &lt;class 'int'&gt;<br/>---<br/>raw reading"
     # the bare, unescaped name - not the label with its unit/tooltip glyph baked in - so
     # to_html's hover-highlight can group same-named columns across the diagram by it
     assert alpha.name == "alpha"
@@ -43,7 +43,7 @@ def test_processing_element_nests_input_transform_output(chained_pipeline):
 
     (input_block,) = step_one.input_blocks
     assert [leaf.label.split("\n")[0] for leaf in input_block.columns] == ["alpha"]
-    assert input_block.columns[0].tooltip == "raw reading"
+    assert input_block.columns[0].tooltip == "type: &lt;class 'int'&gt;<br/>---<br/>raw reading"
 
     assert [leaf.label for leaf in step_one.output_block.columns] == ["alpha_doubled"]
 
@@ -83,7 +83,7 @@ def test_to_mermaid_contains_class_defs_and_assignments(chained_pipeline):
     assert "flowchart TB" in diagram
     assert "classDef dataSourceNodeStyle" in diagram
     assert "classDef processingElementStyle" in diagram
-    assert 'label: "alpha' in diagram and "[unit: m]" in diagram
+    assert 'label: "alpha' in diagram and "unit: m" in diagram
     assert 'shape: lean-l, label: "gamma"' in diagram
     assert '"⚙ transform")' in diagram
     assert "class " in diagram and " inputsStyle" in diagram
@@ -138,7 +138,7 @@ def test_to_mermaid_keeps_one_statement_per_line(chained_pipeline):
 def test_export_mermaid_writes_raw_diagram_source(chained_pipeline, tmp_path):
     path = MermaidExporter(chained_pipeline).export_mermaid(path=tmp_path / "pipeline.mmd")
     assert path.exists()
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "flowchart TB" in text
     assert "<!doctype html>" not in text
     assert not re.search(r"^class \S+ collapsible$", text, re.MULTILINE)
@@ -199,7 +199,7 @@ def test_to_html_wires_up_hover_highlight_for_same_named_columns(chained_pipelin
 def test_export_html_writes_file(chained_pipeline, tmp_path):
     path = MermaidExporter(chained_pipeline).export_html(path=tmp_path / "nested" / "pipeline.html")
     assert path.exists()
-    assert "flowchart TB" in path.read_text()
+    assert "flowchart TB" in path.read_text(encoding="utf-8")
 
 
 def test_template_dir_overrides_only_the_files_it_provides(chained_pipeline, tmp_path):

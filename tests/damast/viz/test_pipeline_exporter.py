@@ -16,7 +16,7 @@ def test_datasource_facts_has_required_columns(chained_pipeline):
     assert isinstance(facts, DataSourceFacts)
     assert {c.name for c in facts.required_columns} == {"alpha", "beta"}
     alpha = next(c for c in facts.required_columns if c.name == "alpha")
-    assert alpha == ColumnInfo(name="alpha", unit="m", description="raw reading")
+    assert alpha == ColumnInfo(name="alpha", unit="m", description="raw reading", representation_type="<class 'int'>")
 
 
 def test_step_facts_has_description_input_slots_and_output_columns(chained_pipeline):
@@ -27,12 +27,12 @@ def test_step_facts_has_description_input_slots_and_output_columns(chained_pipel
     assert step_one.class_name == "_StepOne"
     assert step_one.description == "doubles alpha"
     assert list(step_one.input_slots.keys()) == ["df"]
-    assert step_one.input_slots["df"] == [ColumnInfo(name="alpha", unit="m", description="raw reading")]
-    assert step_one.output_columns == [ColumnInfo(name="alpha_doubled")]
+    assert step_one.input_slots["df"] == [ColumnInfo(name="alpha", unit="m", description="raw reading", representation_type="<class 'int'>")]
+    assert step_one.output_columns == [ColumnInfo(name="alpha_doubled", representation_type="<class 'int'>")]
 
     assert step_two.description == "adds beta"
     assert {c.name for c in step_two.input_slots["df"]} == {"alpha_doubled", "beta"}
-    assert step_two.output_columns == [ColumnInfo(name="gamma")]
+    assert step_two.output_columns == [ColumnInfo(name="gamma", representation_type="<class 'int'>")]
 
 
 def test_step_facts_gets_one_input_slot_per_side_of_a_join(join_pipeline):

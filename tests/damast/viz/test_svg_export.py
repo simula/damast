@@ -61,7 +61,7 @@ def test_to_svg_renders_an_svg_document(chained_pipeline):
 def test_export_svg_writes_file(chained_pipeline, tmp_path):
     path = SvgExporter(chained_pipeline).export_svg(path=tmp_path / "nested" / "pipeline.svg")
     assert path.exists()
-    assert "<svg" in path.read_text()
+    assert "<svg" in path.read_text(encoding="utf-8")
 
 
 def test_to_svg_reports_missing_graphviz_clearly(chained_pipeline, monkeypatch):

@@ -38,7 +38,7 @@ from damast.viz.pipeline_exporter import (
     DataSourceFacts,
     PipelineExporter,
     StepFacts,
-    )
+)
 
 __all__ = ["MermaidExporter"]
 
@@ -75,11 +75,11 @@ _HTML_TEMPLATE = """<!doctype html>
   /* Mermaid sets its click-tooltip's font-size as a plain (non-!important) inline style -
      match it to the Input/Output block title size (inputsBlockStyle/outputsBlockStyle) */
   .mermaidTooltip {{
-    border-radius: 15px;
-    font-family: sans-serif;
     font-size: 18px !important;
+    font-family: sans-serif;
     background-color: #cceec8 !important;
     max-width: 400px !important;
+    border-radius: 15px;
   }}
 </style>
 </head>
@@ -618,7 +618,7 @@ class MermaidExporter(PipelineExporter):
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(diagram)
+        path.write_text(diagram, encoding="utf-8")
         return path
 
     def to_html(self, title: Optional[str] = None) -> str:
@@ -679,5 +679,5 @@ class MermaidExporter(PipelineExporter):
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(html)
+        path.write_text(html, encoding="utf-8")
         return path

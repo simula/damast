@@ -26,7 +26,7 @@ from damast.viz.pipeline_exporter import (
     DataSourceFacts,
     PipelineExporter,
     StepFacts,
-    )
+)
 
 __all__ = ["SvgExporter"]
 
@@ -188,5 +188,5 @@ class SvgExporter(PipelineExporter):
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(svg)
+        path.write_text(svg, encoding="utf-8")
         return path
