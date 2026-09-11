@@ -282,7 +282,7 @@ def artifacts(requirements: dict[str, any]):
                 )
             except RuntimeError as e:
                 raise RuntimeError(
-                    f"artifacts: {func} is expected to generate an artifact. "
+                    f"artifacts: {func} is expected to generate an artifact: {e}"
                     f" Pipeline element ran as part of pipeline: '{instance.parent_pipeline.name}'"
                 ) from e
 

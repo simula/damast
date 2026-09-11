@@ -76,7 +76,7 @@ class WatchJob(BaseModel):
     @classmethod
     def expand_envvars(cls, txt: str) -> str:
             resolved_txt = txt
-            # Handle home explicitely to keep config skip platform agnostic
+            # Handle home explicitly to keep config skip platform agnostic
             # WIN does not have HOME but uses USERPROFILE
             #
             # repl is a plain string, not a callable - re.sub always parses it as a template,

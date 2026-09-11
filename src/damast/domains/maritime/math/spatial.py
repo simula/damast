@@ -11,6 +11,7 @@ from numba import njit
 
 __all__ = ["angle_sat_c",
            "great_circle_distance",
+           "haversine_distance",
            "bearing",
            "reverse_bearing",
            "decdeg2dms",
@@ -156,6 +157,10 @@ def great_circle_distance(lat_1: npt.NDArray[np.float64],
     return 2 * earth_radius_in_km * np.arcsin(np.sqrt(np.power(np.sin((lat_1 - lat_2) / 2), 2)
                                                 + np.cos(lat_1) * np.cos(lat_2) * np.power(np.sin((lon_1 - lon_2) / 2),
                                                                                            2)))
+
+
+# Alias under the formula's common name - identical to great_circle_distance.
+haversine_distance = great_circle_distance
 
 
 def chord_distance(d: npt.NDArray[np.float64], earth_radius_in_km: float = EARTH_RADIUS_IN_KM) -> npt.NDArray[np.float64]:

@@ -105,7 +105,7 @@ class Speed(PipelineElement):
         "delta_distance": {"unit": "km"},
         "delta_time": {"unit": "s"}}
     )
-    @damast.core.output({"speed": {"description": "speed of object", "unit": "km / h"}})
+    @damast.core.output({"speed": {"representation_type": float, "description": "speed of object", "unit": "km / h"}})
     def transform(self,
                   df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         """
