@@ -143,7 +143,7 @@ class DataInspectParser(BaseParser):
                             lhs = self.expand_filter_arg(adf, lhs)
 
                             new_filter = ""
-                            if rhs in ["null", "None"]:
+                            if rhs.lower() in ["null", "none"]:
                                 if op == "==":
                                     new_filter = f"{lhs}.is_null()"
                                 elif op == "!=":
@@ -151,6 +151,16 @@ class DataInspectParser(BaseParser):
                                 else:
                                     logger.warning("Filter expression invalid: operator must be either '==' or '!='")
                                     continue
+                            elif rhs.lower() in ["true"]:
+                                if op == "==":
+                                    new_filter = lhs
+                                elif op == "!=":
+                                    new_filter = f"{lhs}.not_()"
+                            elif rhs.lower() in ["false"]:
+                                if op == "==":
+                                    new_filter = f"{lhs}.not_()"
+                                elif op == "!=":
+                                    new_filter = lhs
                             elif op == "=~":
                                 new_filter = f"{lhs}.str.contains(r'{rhs}')"
                             else:
