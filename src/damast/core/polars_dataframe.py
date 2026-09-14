@@ -115,18 +115,19 @@ class PolarsDataFrame(metaclass=Meta):
     @classmethod
     def _resolve_parameterized_type(cls, type_txt: str):
         """
-        Parse a constructor-call-style dtype repr (e.g. "Datetime(time_unit='us')") back into a
-        `polars.datatypes.DataType` instance, or return None if `type_txt` isn't of that shape.
+        Parse a constructor-call-style dtype repr (e.g. "Datetime(time_unit='us')" or
+        "List(Float64)") back into a `polars.datatypes.DataType` instance, or return None if
+        `type_txt` isn't of that shape.
 
-        Uses `ast` rather than `eval` to only ever construct a known polars dtype class with
-        keyword arguments parsed as literals - never arbitrary code.
+        Uses `ast` rather than `eval` to only ever construct a known polars dtype class, with
+        arguments parsed as literals or (recursively) nested dtypes - never arbitrary code.
         """
         try:
             node = ast.parse(type_txt, mode="eval").body
         except SyntaxError:
             return None
 
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.args:
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
             return None
 
         dtype_class = cls.types().get(node.func.id)
@@ -134,11 +135,39 @@ class PolarsDataFrame(metaclass=Meta):
             return None
 
         try:
-            kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
-            return dtype_class(**kwargs)
+            args = [cls._resolve_arg(arg) for arg in node.args]
+            kwargs = {kw.arg: cls._resolve_arg(kw.value) for kw in node.keywords}
+            return dtype_class(*args, **kwargs)
         except (ValueError, TypeError):
             return None
 
+    @classmethod
+    def _resolve_arg(cls, node: ast.expr):
+        """
+        Resolve a single argument node of a parameterized dtype repr: a bare dtype name (e.g.
+        "Float64"), a nested parameterized dtype (e.g. "Datetime(time_unit='us')" or
+        "List(Float64)"), a dict/list/tuple of such (e.g. "Struct({'a': List(String)})"), or a
+        plain literal (str, int, ...).
+        """
+        if isinstance(node, ast.Name) and node.id in cls.types():
+            return cls.types()[node.id]
+
+        if isinstance(node, ast.Call):
+            resolved = cls._resolve_parameterized_type(ast.unparse(node))
+            if resolved is not None:
+                return resolved
+
+        if isinstance(node, ast.Dict):
+            return {
+                ast.literal_eval(key): cls._resolve_arg(value)
+                for key, value in zip(node.keys, node.values)
+            }
+
+        if isinstance(node, (ast.List, ast.Tuple)):
+            elements = [cls._resolve_arg(elt) for elt in node.elts]
+            return elements if isinstance(node, ast.List) else tuple(elements)
+
+        return ast.literal_eval(node)
 
     @property
     def dataframe(self) -> PolarsDataFrame:

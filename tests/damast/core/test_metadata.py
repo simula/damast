@@ -137,14 +137,19 @@ def test_data_specification_read_write(name, category, is_optional,
     polars.Datetime(time_unit="ns"),
     polars.Duration(time_unit="ms"),
     polars.Decimal(precision=10, scale=2),
+    polars.List(polars.Float64),
+    polars.List(polars.Datetime(time_unit="us")),
+    polars.Struct({"mpa": polars.List(polars.String), "eez": polars.List(polars.String)}),
 ])
 def test_data_specification_read_write_parameterized_representation_type(representation_type, tmp_path):
     """
     Regression test: a parameterized polars dtype instance (e.g. as returned by
     LazyFrame.collect_schema().dtypes()) is exported via str() - e.g.
-    "Datetime(time_unit='us', time_zone='UTC')" - but PolarsDataFrame.resolve_type() only ever
-    looked up plain type *names* in a dict, so reloading such a spec raised a TypeError/ValueError
-    instead of reconstructing the same parameterized instance.
+    "Datetime(time_unit='us', time_zone='UTC')", "List(Float64)", or
+    "Struct({'a': List(String)})" - but PolarsDataFrame.resolve_type() only ever looked up plain
+    type *names* in a dict (and its parameterized-type fallback only handled keyword arguments,
+    not positional args or dict/list literals containing nested dtypes), so reloading such a spec
+    raised a TypeError/ValueError instead of reconstructing the same parameterized instance.
     """
     ds = DataSpecification(name="timestamp", representation_type=representation_type)
 
