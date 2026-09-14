@@ -108,3 +108,19 @@ def test_metadata_inferred_true_for_a_csv_without_a_spec_file(tmp_path):
     # infer_annotation already computed these - fill_missing_value_stats must still mark them
     assert adf.metadata["height"].value_stats is not None
     assert generated_fields["height"] == {"value_range", "value_stats"}
+
+
+def test_fill_missing_value_stats_computes_bool_stats():
+    is_active_spec = DataSpecification(name="is_active", representation_type=bool)
+    adf = AnnotatedDataFrame(
+        dataframe=polars.DataFrame({"is_active": [True, True, False, None]}),
+        metadata=MetaData(columns=[is_active_spec]),
+    )
+
+    parser = DataInspectParser(parser=ArgumentParser())
+    generated_fields = parser.fill_missing_value_stats(adf)
+
+    assert generated_fields["is_active"] == {"value_stats"}
+    stats = adf.metadata["is_active"].value_stats
+    assert (stats.true_count, stats.false_count, stats.null_count) == (2, 1, 1)
+    assert adf.metadata["is_active"].value_range is None

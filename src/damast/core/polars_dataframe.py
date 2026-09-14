@@ -171,6 +171,9 @@ class PolarsDataFrame(metaclass=Meta):
     def is_datetime(self, column_name: str) -> bool:
         return type(self.dtype(column_name)) is polars.Datetime
 
+    def is_bool(self, column_name: str) -> bool:
+        return type(self.dtype(column_name)) is polars.Boolean
+
     def is_date(self, column_name: str) -> bool:
         return type(self.dtype(column_name)) is polars.Date
 
@@ -339,6 +342,9 @@ class PolarsDataFrame(metaclass=Meta):
                 fields.extend([
                     polars.col(column).mean().alias(f"{column}_mean"),
                     polars.col(column).std().alias(f"{column}_stddev"),
+                    polars.col(column).median().alias(f"{column}_median"),
+                    polars.col(column).quantile(0.25, interpolation="linear").alias(f"{column}_lower_quantile"),
+                    polars.col(column).quantile(0.75, interpolation="linear").alias(f"{column}_upper_quantile"),
                 ])
 
         result = self.lazyframe.select(
@@ -353,6 +359,11 @@ class PolarsDataFrame(metaclass=Meta):
                 stats = NumericValueStats(
                     mean=result[f"{column}_mean"][0],
                     stddev=result[f"{column}_stddev"][0],
+                    # Not computed for datetime columns (see the is_datetime() branch above) -
+                    # default to None there, same as an undefined stddev
+                    median=result[f"{column}_median"][0] if f"{column}_median" in result.columns else None,
+                    lower_quantile=result[f"{column}_lower_quantile"][0] if f"{column}_lower_quantile" in result.columns else None,
+                    upper_quantile=result[f"{column}_upper_quantile"][0] if f"{column}_upper_quantile" in result.columns else None,
                     total_count=result[f"{column}_total_count"][0],
                     null_count=result[f"{column}_null_count"][0],
                 )
@@ -376,6 +387,9 @@ class PolarsDataFrame(metaclass=Meta):
         result = self.lazyframe.select([
             polars.col(column_name).mean().alias("mean"),
             polars.col(column_name).std().alias("stddev"),
+            polars.col(column_name).median().alias("median"),
+            polars.col(column_name).quantile(0.25, interpolation="linear").alias("lower_quantile"),
+            polars.col(column_name).quantile(0.75, interpolation="linear").alias("upper_quantile"),
             polars.col(column_name).count().alias("total_count"),
             polars.col(column_name).null_count().alias("null_count")
         ]).collect()
@@ -383,6 +397,9 @@ class PolarsDataFrame(metaclass=Meta):
         return NumericValueStats(
                 mean=result['mean'][0],
                 stddev=result['stddev'][0],
+                median=result['median'][0],
+                lower_quantile=result['lower_quantile'][0],
+                upper_quantile=result['upper_quantile'][0],
                 total_count=result['total_count'][0],
                 null_count=result['null_count'][0]
         )

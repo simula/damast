@@ -21,6 +21,7 @@ import yaml
 from .annotations import Annotation, History
 from .constants import DAMAST_HDF5_COLUMNS, DAMAST_HDF5_ROOT, DAMAST_SPEC_SUFFIX
 from .data_description import (
+    BooleanValueStats,
     DataElement,
     DataRange,
     ListOfValues,
@@ -270,7 +271,7 @@ class DataSpecification:
         unit: Optional[Unit] = None,
         precision: Any = None,
         value_range: Optional[DataRange] = None,
-        value_stats: Optional[NumericValueStats] = None,
+        value_stats: Optional[Union[NumericValueStats, BooleanValueStats]] = None,
         value_meanings: Optional[Dict[Any, str]] = None,
     ):
         """
@@ -527,7 +528,9 @@ class DataSpecification:
         # no value_range could be computed for it. Must not be nested under the value_range
         # check above, or it silently gets dropped on reload whenever value_range is unset.
         if cls.Key.value_stats.value in data:
-            if not str(spec.representation_type).lower().startswith("str"):
+            if spec.representation_type is bool:
+                spec.value_stats = BooleanValueStats(**data[cls.Key.value_stats.value])
+            elif not str(spec.representation_type).lower().startswith("str"):
                 spec.value_stats = NumericValueStats(**data[cls.Key.value_stats.value])
 
         return spec
@@ -699,6 +702,17 @@ class DataSpecification:
                     self.value_stats = results[column_name]["stats"]
             except ValueError as e:
                 logger.debug(f"Metadata.update_datarange_and_stats: could not update datarange and stats '{column_name}' -- {e}")
+        elif df.compat.is_bool(column_name):
+            # No value_range here - a min/max of True/False adds nothing representation_type=bool
+            # doesn't already say
+            logger.debug(f"Setting value stats for {column_name}")
+            result = df.select(
+                (pl.col(column_name) == True).sum().alias("true_count"),  # noqa: E712
+                (pl.col(column_name) == False).sum().alias("false_count"),  # noqa: E712
+                pl.col(column_name).count().alias("total_count"),
+                pl.col(column_name).null_count().alias("null_count"),
+            ).collect()
+            self.value_stats = BooleanValueStats(**result.row(0, named=True))
 
         return xdf.lazyframe
 
@@ -1123,6 +1137,39 @@ class MetaData:
         Returns:
             The rendered metadata
         """
+        def format_nulls(total_count: int, null_count: int) -> str:
+            total_rows = total_count + null_count
+            if total_rows == 0:
+                return f"{null_count}/0"
+            return f"{null_count}/{total_rows} ({null_count / total_rows * 100.0:.2f}%)"
+
+        def format_value_range(value: dict) -> str:
+            # Only MinMax gets a friendlier rendering here - ListOfValues (categories) and
+            # anything else keep today's plain dict rendering
+            if "MinMax" in value:
+                min_max = value["MinMax"]
+                return f"[{min_max['min']}, {min_max['max']}]"
+            return str(value)
+
+        def format_value_stats(value: dict) -> str:
+            if "true_count" in value:  # BooleanValueStats
+                nulls = format_nulls(value["total_count"], value["null_count"])
+                return f"true={value['true_count']}, false={value['false_count']}, nulls={nulls}"
+
+            # NumericValueStats
+            stddev = "n/a" if value["stddev"] is None else f"{value['stddev']:.2f}"
+            nulls = format_nulls(value["total_count"], value["null_count"])
+            txt = f"mean={value['mean']:.2f}, stddev={stddev}, nulls={nulls}"
+
+            median = value.get("median")
+            lower_quantile = value.get("lower_quantile")
+            upper_quantile = value.get("upper_quantile")
+            if median is not None:
+                txt += f", median={median:.2f}"
+            if lower_quantile is not None and upper_quantile is not None:
+                txt += f", iqr={upper_quantile - lower_quantile:.2f} [{lower_quantile:.2f}, {upper_quantile:.2f}]"
+            return txt
+
         generated_fields = generated_fields or {}
         hspace = " " * indent
         txt_repr = [f"{hspace}Annotations:"]
@@ -1140,6 +1187,10 @@ class MetaData:
                 if field_name == "name":
                     continue
                 marker = "*" if field_name in column_generated_fields else ""
+                if field_name == "value_range" and isinstance(value, dict):
+                    value = format_value_range(value)
+                elif field_name == "value_stats" and isinstance(value, dict):
+                    value = format_value_stats(value)
                 txt_repr.append(
                     hspace + default_indent + default_indent + f"{field_name}{marker}: {value}"
                 )

@@ -383,7 +383,10 @@ class CyclicMinMax(MinMax):
 
 class NumericValueStats(BaseModel):
     mean: float = 0.0
-    stddev: float = 0.0
+    stddev: float | None = None
+    median: float | None = None
+    lower_quantile: float | None = None  #: Q1 (25th percentile)
+    upper_quantile: float | None = None  #: Q3 (75th percentile)
     total_count: int  = 0
     null_count: int = 0
 
@@ -395,17 +398,46 @@ class NumericValueStats(BaseModel):
                     self.total_count
                     +other.total_count
                 )
-        a = (self.total_count-1)*self.stddev**2+(other.total_count-1)*other.stddev**2
-        b = self.total_count*other.total_count/(self.total_count + other.total_count)
-        c = b*(self.mean - other.mean)**2
-        d = self.total_count + other.total_count -1
-        combined_stddev = math.sqrt((a + c)/d)
+        # stddev is undefined (None) for a side with <=1 non-null value - can't recombine a
+        # variance that was never computed, so the merged stddev is undefined too
+        if self.stddev is None or other.stddev is None:
+            combined_stddev = None
+        else:
+            a = (self.total_count-1)*self.stddev**2+(other.total_count-1)*other.stddev**2
+            b = self.total_count*other.total_count/(self.total_count + other.total_count)
+            c = b*(self.mean - other.mean)**2
+            d = self.total_count + other.total_count -1
+            combined_stddev = math.sqrt((a + c)/d)
 
         return NumericValueStats(
             mean=combined_mean,
             stddev=combined_stddev,
+            # median/quantiles are not recoverable from each side's own median/quantiles alone
+            # (unlike mean/stddev, they are not sufficient statistics) - left undefined rather
+            # than silently approximated
+            median=None,
+            lower_quantile=None,
+            upper_quantile=None,
             total_count=self.total_count+other.total_count,
             null_count=self.null_count+other.null_count
+        )
+
+
+class BooleanValueStats(BaseModel):
+    """Value counts for a boolean column - mean/stddev (NumericValueStats) don't read naturally
+    for True/False, so this is its own shape rather than reusing that model."""
+
+    true_count: int = 0
+    false_count: int = 0
+    total_count: int = 0  #: true_count + false_count (non-null), matches NumericValueStats' convention
+    null_count: int = 0
+
+    def merge(self, other: BooleanValueStats) -> BooleanValueStats:
+        return BooleanValueStats(
+            true_count=self.true_count + other.true_count,
+            false_count=self.false_count + other.false_count,
+            total_count=self.total_count + other.total_count,
+            null_count=self.null_count + other.null_count,
         )
 
 

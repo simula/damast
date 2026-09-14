@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from damast.core.annotations import Annotation, Change, History
-from damast.core.data_description import CyclicMinMax, MinMax, NumericValueStats
+from damast.core.data_description import BooleanValueStats, CyclicMinMax, MinMax, NumericValueStats
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,
@@ -214,7 +214,99 @@ def test_metadata_to_str_marks_generated_fields():
     range_line = next(line for line in lines if line.strip().startswith("value_range"))
     assert range_line.strip().startswith("value_range:")
 
-    assert "computed on the fly" in marked
+
+def test_update_datarange_and_stats_for_bool_column():
+    spec = DataSpecification(name="is_active", representation_type=bool)
+    df = polars.LazyFrame({"is_active": [True, True, False, None, True]})
+
+    spec.update_datarange_and_stats(df, "is_active")
+
+    assert spec.value_range is None
+    assert isinstance(spec.value_stats, BooleanValueStats)
+    assert spec.value_stats.true_count == 3
+    assert spec.value_stats.false_count == 1
+    assert spec.value_stats.total_count == 4
+    assert spec.value_stats.null_count == 1
+
+
+def test_bool_value_stats_survives_read_write():
+    spec = DataSpecification(
+        name="is_active",
+        representation_type=bool,
+        value_stats=BooleanValueStats(true_count=3, false_count=1, total_count=4, null_count=1),
+    )
+
+    spec_loaded = DataSpecification.from_dict(data=dict(spec))
+
+    assert isinstance(spec_loaded.value_stats, BooleanValueStats)
+    assert spec_loaded.value_stats.true_count == 3
+    assert spec_loaded.value_stats.false_count == 1
+
+
+def test_update_datarange_and_stats_for_single_value_int_column_keeps_mean_and_counts():
+    """Regression test: a column with <=1 non-null value has an undefined (None) sample
+    stddev in polars - NumericValueStats used to require a float there, so constructing it
+    raised and the whole stats block (mean, counts too) was silently discarded."""
+    spec = DataSpecification(name="x", representation_type=int)
+    df = polars.LazyFrame({"x": [42]})
+
+    spec.update_datarange_and_stats(df, "x")
+
+    assert spec.value_stats is not None
+    assert spec.value_stats.mean == 42.0
+    assert spec.value_stats.stddev is None
+    assert spec.value_stats.total_count == 1
+    assert spec.value_stats.null_count == 0
+
+
+def test_update_datarange_and_stats_for_int_column_computes_median_and_iqr():
+    spec = DataSpecification(name="x", representation_type=int)
+    df = polars.LazyFrame({"x": list(range(1, 11))})  # 1..10
+
+    spec.update_datarange_and_stats(df, "x")
+
+    assert spec.value_stats.median == 5.5
+    assert spec.value_stats.lower_quantile == 3.25
+    assert spec.value_stats.upper_quantile == 7.75
+
+
+def test_numeric_value_stats_merge_drops_median_and_quantiles():
+    """median/quantiles aren't sufficient statistics - they can't be recomputed from each
+    side's own median/quantiles alone, so merging must not silently approximate them."""
+    a = NumericValueStats(mean=1.0, stddev=0.5, median=1.0, lower_quantile=0.5,
+                           upper_quantile=1.5, total_count=10)
+    b = NumericValueStats(mean=2.0, stddev=0.5, median=2.0, lower_quantile=1.5,
+                           upper_quantile=2.5, total_count=10)
+
+    merged = a.merge(b)
+
+    assert merged.median is None
+    assert merged.lower_quantile is None
+    assert merged.upper_quantile is None
+
+
+def test_to_str_renders_numeric_and_bool_stats_without_raw_dicts():
+    x_spec = DataSpecification(
+        name="x",
+        value_range=MinMax(0, 1200),
+        value_stats=NumericValueStats(mean=12.345, stddev=3.2109, median=11.0,
+                                       lower_quantile=9.0, upper_quantile=13.0,
+                                       total_count=1000, null_count=3),
+    )
+    y_spec = DataSpecification(
+        name="is_active",
+        value_stats=BooleanValueStats(true_count=421, false_count=576, total_count=997, null_count=3),
+    )
+    metadata = MetaData([x_spec, y_spec])
+
+    rendered = metadata.to_str()
+
+    assert "MinMax" not in rendered
+    assert "'mean'" not in rendered
+    assert "value_range: [0, 1200]" in rendered
+    assert ("value_stats: mean=12.35, stddev=3.21, nulls=3/1003 (0.30%), median=11.00,"
+            " iqr=4.00 [9.00, 13.00]") in rendered
+    assert "value_stats: true=421, false=576, nulls=3/1000 (0.30%)" in rendered
 
 
 @pytest.mark.parametrize(["dataspec", "other_dataspec", "merge_strategy", "error_msg"],
