@@ -55,6 +55,12 @@ class DataInspectParser(BaseParser):
                             choices=[x.value.lower() for x in ValidationMode],
                             help="Define the validation mode")
 
+        parser.add_argument("-save-as",
+                            type=str,
+                            default=None,
+                            help="If filters are being used, it will save the result in the given file (all columns being used)"
+        )
+
     def fill_missing_value_stats(self, adf: AnnotatedDataFrame) -> dict[str, set[str]]:
         """
         Compute a column's 'value_range'/'value_stats' on the fly wherever the loaded
@@ -197,6 +203,11 @@ class DataInspectParser(BaseParser):
                 with pl.Config(tbl_rows=args.tail, tbl_cols=args.column_count, fmt_str_lengths=args.column_width):
                     print(df.tail(n=args.tail).collect())
 
+                if args.save_as:
+                    if not args.filter:
+                        logger.warning("--save-as is only active with --filter")
+                    else:
+                        adf.export(args.save_as)
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)
