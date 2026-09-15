@@ -700,17 +700,26 @@ class DataProcessingPipeline(PipelineElement):
                     print(f"Preview step #{idx} {node} (1 row)")
                     print(f"{node.result.head(1).collect()}")
             except Exception as e:
-                msg = ''.join(tc.format_exception(e)[-2:])
+                # Keep the full original traceback - truncating to the last frames only
+                # hides exactly where in the pipeline element (not in damast internals) the
+                # error actually originated.
+                msg = ''.join(tc.format_exception(e))
                 for slot, df in self.processing_graph.get_current_inputs(node).items():
-                    msg += "{slot=} "
-                    msg += "     {df.head(1).collect)}"
+                    msg += f"\ninput '{slot}': "
+                    if df is None:
+                        msg += "<not available>"
+                    else:
+                        try:
+                            msg += f"\n{df.head(1).collect()}"
+                        except Exception as preview_error:
+                            msg += f"<failed to preview: {preview_error}>"
 
                 if 'DAMAST_INTERACTIVE' in os.environ:
                     if str(os.environ['DAMAST_INTERACTIVE']).lower() == "true":
                         breakpoint()
 
                 raise RuntimeError(f"Step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}\n\
-                        {msg}")
+                        {msg}") from e
         return node.result
 
 
