@@ -7,11 +7,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
-from typing import Any, Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars
 
-__all__ = ["PartitionStrategy", "ByColumn", "ByTime", "ByExpr"]
+if TYPE_CHECKING:
+    from .dataframe import AnnotatedDataFrame
+
+__all__ = ["PartitionStrategy", "ByColumn", "ByTime", "ByExpr", "SaveAs"]
 
 
 class PartitionStrategy(ABC):
@@ -145,3 +149,160 @@ class ByExpr(PartitionStrategy):
 
     def filename(self, key: Any) -> str:
         return self._filename_fn(key)
+
+
+#: Friendly names for common `polars.Expr.dt.truncate` intervals, accepted by `SaveAs.parse`
+#: alongside any raw interval string (e.g. `"3h"`) it doesn't recognize.
+_INTERVAL_ALIASES = {
+    "hourly": "1h",
+    "daily": "1d",
+    "weekly": "1w",
+    "monthly": "1mo",
+}
+
+#: `<strategy>:` prefixes `SaveAs.parse` recognizes - anything else is a plain output path.
+_SAVE_AS_STRATEGIES = ("time+column", "time", "column")
+
+
+class SaveAs:
+    """
+    A parsed ``--save-as``-style string: either a plain output path (:attr:`strategy` is
+    `None`), or a base directory plus `PartitionStrategy` - see :meth:`parse` and
+    :meth:`export`.
+    """
+
+    def __init__(self, path: Path, strategy: PartitionStrategy | None = None):
+        """
+        :param path: Plain output file path, or the base directory for a partitioned export
+        :param strategy: `None` for a plain single-file export
+        """
+        self.path = path
+        self.strategy = strategy
+
+    @classmethod
+    def parse(cls, value: str) -> SaveAs:
+        """
+        Parse a `--save-as`-style string, so a single CLI-facing argument can select
+        :meth:`AnnotatedDataFrame.export_partitioned` over the default single-file
+        :meth:`AnnotatedDataFrame.export` - see :meth:`export`.
+
+        Without a recognized `<strategy>:` prefix, `value` is a plain output file path, exactly
+        as before - ``SaveAs(Path(value))``.
+
+        With a `<strategy>:<spec>:<template>` prefix, `value` selects partitioned export.
+        `template` is the filename stem for every partition (no extension - `.parquet` is added
+        automatically by `export_partitioned`) and may contain:
+
+        - any `strftime` code (``%Y``, ``%m``, ``%d``, ``%H``, ...) - the truncated timestamp
+        - ``{<column>}`` - the literal value of that column for this partition (curly braces,
+          not a `%` code, so it never collides with a `strftime` code)
+
+        plus arbitrary literal text, including ``/`` for a nested output directory - missing
+        parent directories are created automatically.
+
+        Supported strategies:
+
+        - ``time:<timestamp_column>+<interval>:<template>`` - one file per time bucket
+        - ``column:<column>:<template>`` - one file per distinct value of ``<column>``
+        - ``time+column:<timestamp_column>+<interval>+<column>:<template>`` - one file per
+          (time bucket, column value) pair
+
+        ``<interval>`` is one of ``hourly``, ``daily``, ``weekly``, ``monthly``, or any raw
+        `polars.Expr.dt.truncate` interval (e.g. ``"3h"``, ``"15m"``).
+
+        Example:
+
+        .. code-block:: python
+
+            SaveAs.parse("out/result.parquet")
+            # -> SaveAs(Path("out/result.parquet"), strategy=None)
+
+            SaveAs.parse("time:timestamp+daily:out/AIS_%Y_%m_%d")
+            # -> SaveAs(Path("."), ByExpr(...))  # one file per day
+
+            SaveAs.parse("column:mmsi:out/vessel_{mmsi}")
+            # -> SaveAs(Path("."), ByExpr(...))  # one file per mmsi
+
+            SaveAs.parse("time+column:timestamp+daily+mmsi:out/{mmsi}/AIS_%Y_%m_%d")
+            # -> SaveAs(Path("."), ByExpr(...))  # one file per (day, mmsi) pair
+
+        :param value: A plain output path, or a `<strategy>:<spec>:<template>` partitioning string
+        :raise ValueError: If a recognized `<strategy>:` prefix is used with a malformed spec
+        """
+        for strategy_name in _SAVE_AS_STRATEGIES:
+            prefix = f"{strategy_name}:"
+            if value.startswith(prefix):
+                spec, _, template = value[len(prefix) :].partition(":")
+                if not template:
+                    raise ValueError(
+                        f"SaveAs.parse: '{strategy_name}:' requires '{strategy_name}:<spec>:<template>',"
+                        f" but got {value!r}"
+                    )
+                return cls(
+                    Path("."), cls._build_strategy(strategy_name, spec, template, value)
+                )
+
+        return cls(Path(value))
+
+    def export(self, adf: AnnotatedDataFrame) -> Path | list[Path]:
+        """
+        Export `adf` per this spec: a single file via :meth:`AnnotatedDataFrame.save` for a
+        plain path (parquet with a sidecar `.spec.yaml`, or hdf5), or one file per partition
+        via :meth:`AnnotatedDataFrame.export_partitioned` otherwise.
+
+        :param adf: The dataframe to export
+        :return: The single written path, or the list of per-partition paths
+        """
+        if self.strategy is None:
+            adf.save(filename=self.path)
+            return self.path
+
+        return adf.export_partitioned(self.path, self.strategy)
+
+    @classmethod
+    def _build_strategy(cls,
+        strategy_name: str, spec: str, template: str, value: str
+    ) -> PartitionStrategy:
+        if strategy_name == "column":
+            column = spec
+            if not column:
+                raise ValueError(
+                    f"SaveAs.parse: 'column:' requires 'column:<column>:<template>', but got {value!r}"
+                )
+            return ByExpr(
+                polars.col(column), filename_fn=lambda key: template.format(**{column: key})
+            )
+
+        if strategy_name == "time":
+            timestamp_column, _, interval = spec.partition("+")
+            if not timestamp_column or not interval:
+                raise ValueError(
+                    f"SaveAs.parse: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
+                    f" but got {value!r}"
+                )
+            interval = _INTERVAL_ALIASES.get(interval, interval)
+            key_expr = polars.col(timestamp_column).dt.truncate(interval)
+            return ByExpr(key_expr, filename_fn=lambda key: key.strftime(template))
+
+        # "time+column"
+        timestamp_column, _, rest = spec.partition("+")
+        interval, _, column = rest.partition("+")
+        if not timestamp_column or not interval or not column:
+            raise ValueError(
+                "SaveAs.parse: 'time+column:' requires"
+                f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
+            )
+        interval = _INTERVAL_ALIASES.get(interval, interval)
+        time_field, column_field = "__time", column
+        key_expr = polars.struct(
+            [
+                polars.col(timestamp_column).dt.truncate(interval).alias(time_field),
+                polars.col(column).alias(column_field),
+            ]
+        )
+
+        def filename_fn(key: dict) -> str:
+            substituted = template.format(**{column_field: key[column_field]})
+            return key[time_field].strftime(substituted)
+
+        return ByExpr(key_expr, filename_fn=filename_fn)

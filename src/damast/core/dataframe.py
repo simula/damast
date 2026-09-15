@@ -262,16 +262,23 @@ class AnnotatedDataFrame(XDataFrame):
         collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
 
         written: list[Path] = []
-        partitions = collected.partition_by(key_col, as_dict=True, include_key=False)
-        for (key,), part in partitions.items():
-            filename = directory / f"{strategy.filename(key)}.parquet"
-            filename.parent.mkdir(parents=True, exist_ok=True)
-            part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
-            if save_spec:
-                part_adf.save(filename=filename)
-            else:
-                part_adf.export(filename)
-            written.append(filename)
+        # as_dict=False + re-deriving the key from the partition itself (rather than
+        # as_dict=True, which needs the key as a dict key) also works for a struct-valued
+        # key_expr() (e.g. a composite of several columns) - a dict isn't hashable.
+        partitions = collected.partition_by(key_col, as_dict=False, include_key=True, maintain_order=True)
+        with tqdm(partitions, unit="partition") as pbar:
+            for part in pbar:
+                key = part[key_col][0]
+                part = part.drop(key_col)
+                filename = directory / f"{strategy.filename(key)}.parquet"
+                pbar.set_description(f"Exporting {filename}")
+                filename.parent.mkdir(parents=True, exist_ok=True)
+                part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
+                if save_spec:
+                    part_adf.save(filename=filename)
+                else:
+                    part_adf.export(filename)
+                written.append(filename)
 
         return written
 
@@ -446,7 +453,7 @@ class AnnotatedDataFrame(XDataFrame):
         column_specs: list[DataSpecification] = []
 
         numeric_columns: list[str] = []
-        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata"):
+        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata", unit="column"):
             data = {'name': column,
                     'is_optional': False,
                     'representation_type': df.compat.dtype(column)
@@ -474,7 +481,7 @@ class AnnotatedDataFrame(XDataFrame):
         if numeric_columns:
             # To allow polars to optimize the query, process all numeric columns at once
             results = df.compat.minmax_stats(numeric_columns)
-            for column in tqdm(numeric_columns, desc="Extract numeric column metadata"):
+            for column in tqdm(numeric_columns, desc="Extract numeric column metadata", unit="column"):
                 data = {'name': column,
                         'is_optional': False,
                         'representation_type': df.compat.dtype(column)

@@ -10,6 +10,7 @@ import damast  # noqa
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import ValidationMode
+from damast.core.partitioning import SaveAs
 from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,11 @@ class DataInspectParser(BaseParser):
         parser.add_argument("-save-as",
                             type=str,
                             default=None,
-                            help="If filters are being used, it will save the result in the given file (all columns being used)"
+                            help="If filters are being used, it will save the result in the given file"
+                                 " (all columns being used). A plain path saves one file; use"
+                                 " 'time:<column>+<interval>:<template>', 'column:<column>:<template>',"
+                                 " or 'time+column:<column>+<interval>+<column>:<template>' to instead save"
+                                 " one file per partition - see damast.core.partitioning.SaveAs.parse"
         )
 
     def fill_missing_value_stats(self, adf: AnnotatedDataFrame) -> dict[str, set[str]]:
@@ -207,7 +212,7 @@ class DataInspectParser(BaseParser):
                     if not args.filter:
                         logger.warning("--save-as is only active with --filter")
                     else:
-                        adf.export(args.save_as)
+                        SaveAs.parse(args.save_as).export(adf)
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)
