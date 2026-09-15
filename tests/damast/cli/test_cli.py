@@ -18,6 +18,7 @@ from damast.cli.data_watch import DataWatchParser
 from damast.cli.experiment import ExperimentParser
 from damast.cli.plugins import PluginsParser
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
+from damast.core.transformations import PluginManager
 from damast.domains.maritime.ais.data_generator import AISTestData
 
 
@@ -322,7 +323,7 @@ def test_annotate_representation_type(tmp_path, script_runner):
     assert result.returncode == 0
 
 
-def test_plugins_none_registered(script_runner):
+def test_plugins_none_registered(isolate_plugins, script_runner):
     result = script_runner.run(['damast', 'plugins'])
     assert result.returncode == 0
     assert re.search("No transformer plugins registered", result.stdout) is not None
@@ -330,8 +331,6 @@ def test_plugins_none_registered(script_runner):
 
 def test_plugins_lists_registered_entry_point(capsys, monkeypatch):
     import importlib.metadata as importlib_metadata
-
-    from damast.core.transformations import PluginManager
 
     class FakeEntryPoint:
         name = "AcmeTransformer"
