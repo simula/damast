@@ -175,6 +175,37 @@ For instance to extract:
 
 .. highlight:: none
 
+``--save-as`` (only active together with ``--filter``) saves the filtered result. A plain path saves it as a single file:
+
+.. highlight:: python
+
+::
+
+    damast inspect -f 1.zip --filter 'mmsi == 335990004' -save-as filtered.parquet
+
+.. highlight:: none
+
+To instead save one file per partition, use a ``<strategy>:<spec>:<template>`` string -
+``time:<timestamp_column>+<interval>:<template>`` (one file per time bucket, ``<interval>`` is
+``hourly``/``daily``/``weekly``/``monthly`` or any raw ``polars.Expr.dt.truncate`` interval, e.g.
+``"3h"``), ``column:<column>:<template>`` (one file per distinct value of ``<column>``), or
+``time+column:<timestamp_column>+<interval>+<column>:<template>`` (one file per (time bucket,
+column value) pair). ``<template>`` is the filename stem, combining literal text - including
+``/`` for a nested output directory - with ``strftime`` codes (``%Y``, ``%m``, ...) and
+``{<column>}`` placeholders:
+
+.. highlight:: python
+
+::
+
+    damast inspect -f 1.zip --filter 'reception_date >= dt.datetime.fromisoformat("2020-11-19 00:00:00")' -save-as "time:reception_date+daily:export/AIS_%Y_%m_%d"
+    damast inspect -f 1.zip --filter 'mmsi > 0' -save-as "column:mmsi:export/vessel_{mmsi}"
+    damast inspect -f 1.zip --filter 'mmsi > 0' -save-as "time+column:reception_date+daily+mmsi:export/{mmsi}/AIS_%Y_%m_%d"
+
+.. highlight:: none
+
+See ``damast.core.partitioning.SaveAs.parse`` for the full grammar.
+
 
 Convert
 --------
@@ -203,6 +234,19 @@ Examples
 ::
 
     damast convert -f 1.zip --output-file data-1.parquet --output-type .parquet
+
+.. highlight:: none
+
+- combine one or more files and split the result into partitions (N:M), instead of
+  ``--output-file``/``--output-dir`` - see ``damast.core.partitioning.SaveAs.parse`` for the
+  full ``<strategy>:<spec>:<template>`` grammar:
+
+.. highlight:: python
+
+::
+
+    damast convert -f 1.zip -save-as "time:reception_date+daily:export/AIS_%Y_%m_%d"
+    damast convert -f 1.zip -save-as "column:mmsi:export/vessel_{mmsi}"
 
 .. highlight:: none
 

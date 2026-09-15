@@ -7,9 +7,24 @@ from tqdm import tqdm
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import MetaData, ValidationMode
+from damast.core.partitioning import SaveAs
 from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
+
+
+def stem_output_file(file: str | Path, *, directory: Path | None, suffix: str) -> Path:
+    """
+    Output filename schema for one-file-in/one-file-out conversion: the input file's own
+    stem, under `directory` (or the current directory if `None`), with `suffix`.
+
+    :param file: The input file whose stem to reuse
+    :param directory: Output directory, or `None` for the current directory
+    :param suffix: Output file extension, e.g. ``.parquet``
+    """
+    directory = directory if directory is not None else Path(".")
+    return directory / f"{Path(file).stem}{suffix}"
+
 
 class DataConvertParser(BaseParser):
     """
@@ -34,11 +49,11 @@ class DataConvertParser(BaseParser):
                             required=False
                             )
         parser.add_argument("-o", "--output-file",
-                            help="The output file either: .parquet, .hdf5",
+                            help="The output file either: .parquet, .hdf5 DEPRECATED: use --save-as instead",
                             required=False
                             )
         parser.add_argument("--output-dir",
-                            help="The output directory",
+                            help="The output directory. DEPRECATED: use --save-as instead",
                             required=False,
                             )
         parser.add_argument("--output-type",
@@ -46,6 +61,18 @@ class DataConvertParser(BaseParser):
                             default=".parquet",
                             required=False,
                             )
+        parser.add_argument("-save-as",
+                            type=str,
+                            default=None,
+                            required=False,
+                            help="Combine all input files and save the result according to this"
+                                 " spec, instead of --output-file/--output-dir. A plain path saves"
+                                 " one file; use 'time:<column>+<interval>:<template>',"
+                                 " 'column:<column>:<template>', or"
+                                 " 'time+column:<column>+<interval>+<column>:<template>' to instead"
+                                 " save one file per partition - see"
+                                 " damast.core.partitioning.SaveAs.parse"
+        )
         parser.add_argument("--validation-mode",
                             default="update_data",
                             choices=[x.value.lower() for x in ValidationMode],
@@ -82,8 +109,8 @@ class DataConvertParser(BaseParser):
         files_stats = self.get_files_stats(args.files)
         print(f"Loading dataframe ({files_stats.number_of_files} files) of total size: {files_stats.total_size} MB")
 
-        if args.output_dir and args.output_file:
-            raise ValueError("--output-dir and --output-file cannot be used together")
+        if sum(bool(x) for x in (args.output_dir, args.output_file, args.save_as)) > 1:
+            raise ValueError("--output-dir, --output-file and --save-as cannot be used together")
 
         with Archive(filenames=args.files) as input_files:
             files = [x for x in input_files if AnnotatedDataFrame.get_supported_format(Path(x).suffix)]
@@ -91,8 +118,11 @@ class DataConvertParser(BaseParser):
                 raise RuntimeError(f"Conversion is not supported for input files: {input_files=}")
 
             created_files = []
-            if args.output_file:
-                output_file = Path(args.output_file)
+            if args.save_as or args.output_file:
+                # --output-file is a plain path, never the -save-as partitioning DSL -
+                # construct SaveAs directly rather than through SaveAs.parse().
+                save_as = SaveAs.parse(args.save_as) if args.save_as else SaveAs(Path(args.output_file))
+
                 adf = AnnotatedDataFrame.from_files(
                         files=files,
                         metadata_required=False,
@@ -100,18 +130,15 @@ class DataConvertParser(BaseParser):
 
                 self.validate(adf, args)
 
-                adf.save(filename=output_file)
-                created_files.append(output_file)
+                written = save_as.export(adf)
+                created_files = written if isinstance(written, list) else [written]
 
-
-                print(f"Filename: {output_file.resolve()}")
                 print(adf.head(10).collect())
-
                 print(f"Written: {created_files}")
             else:
-                if args.output_dir:
+                output_dir = Path(args.output_dir) if args.output_dir else None
+                if output_dir:
                     # Create multiple output files
-                    output_dir = Path(args.output_dir)
                     output_dir.mkdir(parents=True, exist_ok=True)
 
                 for file in tqdm(files, desc="Files"):
@@ -120,11 +147,10 @@ class DataConvertParser(BaseParser):
                             metadata_required=False,
                         )
 
-                    if args.output_dir:
-                        output_file = output_dir / f"{Path(file).stem}{args.output_type}"
-                    else:
-                        # Use current directory as output dir
-                        output_file = Path(Path(file).with_suffix(args.output_type).name)
+                    # One output file per input file, named by that file's own stem - not a
+                    # PartitionStrategy: there is only ever one row-group here (the whole file
+                    # loaded on its own), so there is nothing to split by row value.
+                    output_file = stem_output_file(file, directory=output_dir, suffix=args.output_type)
 
                     self.validate(adf, args)
 

@@ -5,7 +5,7 @@ import pytest
 
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import DataSpecification, MetaData
-from damast.core.partitioning import ByColumn, ByExpr, ByTime
+from damast.core.partitioning import ByColumn, ByExpr, ByTime, SaveAs
 
 
 @pytest.fixture()
@@ -160,3 +160,105 @@ def test_export_partitioned_creates_missing_directory(timeseries_adf, tmp_path):
 
     assert target.is_dir()
     assert all(p.parent == target for p in written)
+
+
+def test_save_as_parse_plain_path_is_unaffected():
+    from pathlib import Path
+
+    save_as = SaveAs.parse("out/result.parquet")
+
+    assert save_as.path == Path("out/result.parquet")
+    assert save_as.strategy is None
+
+
+def test_save_as_parse_windows_drive_letter_is_not_mistaken_for_a_strategy():
+    # "C:" must not be parsed as a (nonexistent) "C" strategy prefix.
+    save_as = SaveAs.parse(r"C:\Users\me\out.parquet")
+
+    assert save_as.strategy is None
+    assert str(save_as.path) == r"C:\Users\me\out.parquet"
+
+
+def test_save_as_export_writes_a_single_file_for_a_plain_path(timeseries_adf, tmp_path):
+    output_file = tmp_path / "result.parquet"
+
+    written = SaveAs.parse(str(output_file)).export(timeseries_adf)
+
+    assert written == output_file
+    assert output_file.exists()
+    # SaveAs.export goes through AnnotatedDataFrame.save (like export_partitioned's per-
+    # partition files), not the lower-level export - so a plain path also gets its sidecar.
+    assert output_file.with_suffix(".spec.yaml").exists()
+    loaded = AnnotatedDataFrame.from_files([str(output_file)])
+    assert loaded.dataframe.collected().height == 5
+
+
+def test_save_as_export_supports_hdf5_for_a_plain_path(timeseries_adf, tmp_path):
+    output_file = tmp_path / "result.hdf5"
+
+    written = SaveAs.parse(str(output_file)).export(timeseries_adf)
+
+    assert written == output_file
+    assert output_file.exists()
+
+
+def test_save_as_export_time_strategy(timeseries_adf, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    written = SaveAs.parse("time:timestamp+daily:out/AIS_%Y_%m_%d").export(
+        timeseries_adf
+    )
+
+    # .as_posix(), not str(): a relative path's separator is OS-native ("\\" on Windows),
+    # but the template's own "/" is always a forward slash.
+    assert sorted(p.as_posix() for p in written) == [
+        "out/AIS_2026_01_01.parquet",
+        "out/AIS_2026_01_02.parquet",
+        "out/AIS_2026_01_03.parquet",
+    ]
+
+
+def test_save_as_export_column_strategy(timeseries_adf, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    written = SaveAs.parse("column:mmsi:out/vessel_{mmsi}").export(timeseries_adf)
+
+    assert sorted(p.as_posix() for p in written) == [
+        "out/vessel_1.parquet",
+        "out/vessel_2.parquet",
+        "out/vessel_3.parquet",
+    ]
+
+
+def test_save_as_export_time_plus_column_strategy(
+    timeseries_adf, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    written = SaveAs.parse(
+        "time+column:timestamp+daily+mmsi:out/{mmsi}/AIS_%Y_%m_%d"
+    ).export(timeseries_adf)
+
+    assert sorted(p.as_posix() for p in written) == [
+        "out/1/AIS_2026_01_01.parquet",
+        "out/2/AIS_2026_01_02.parquet",
+        "out/3/AIS_2026_01_03.parquet",
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "time:timestamp:out/AIS_%Y",  # missing "+<interval>"
+        "time+column:timestamp+daily:out/AIS",  # missing "+<column>"
+        "column::out/x",  # empty <column>
+        "time:+daily:out/x",  # empty <timestamp_column>
+        "time:timestamp+:out/x",  # empty <interval>
+        "time+column:+daily+mmsi:out/x",  # empty <timestamp_column>
+        "time+column:timestamp++mmsi:out/x",  # empty <interval>
+        "time+column:timestamp+daily+:out/x",  # empty <column>
+    ],
+)
+def test_save_as_parse_rejects_malformed_spec(value):
+    with pytest.raises(ValueError, match="SaveAs.parse"):
+        SaveAs.parse(value)

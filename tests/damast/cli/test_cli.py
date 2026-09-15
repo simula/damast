@@ -90,6 +90,42 @@ def test_inspect_regex(data_path, filename, script_runner):
     result = script_runner.run(['damast', 'inspect', '-f', str(data_path / filename), "--filter", "date_time_utc =~ 2022-09-01 11:??:??"])
     assert re.search(r"shape:\s+\(2,\s+[0-9]+\)", result.stdout) is not None, "Show dataframe with only 2 rows"
 
+
+@pytest.mark.parametrize("filename", [
+    "test_ais.parquet",
+])
+def test_inspect_save_as_plain_path(data_path, filename, tmp_path, script_runner):
+    output_file = tmp_path / "filtered.parquet"
+    result = script_runner.run([
+        'damast', 'inspect', '-f', str(data_path / filename),
+        '--filter', 'date_time_utc =~ 2022-09-01 11:??:??',
+        '-save-as', str(output_file),
+    ])
+
+    assert result.returncode == 0
+    assert output_file.exists()
+    loaded = AnnotatedDataFrame.from_files([str(output_file)])
+    assert loaded.dataframe.collected().height == 2
+
+
+@pytest.mark.parametrize("filename", [
+    "test_ais.parquet",
+])
+def test_inspect_save_as_partitioned_by_column(data_path, filename, tmp_path, script_runner):
+    result = script_runner.run([
+        'damast', 'inspect', '-f', str(data_path / filename),
+        '--filter', 'cog > 0',
+        '-save-as', f"column:mmsi:{tmp_path}/vessel_{{mmsi}}",
+    ])
+
+    assert result.returncode == 0
+    written = sorted(tmp_path.glob("vessel_*.parquet"))
+    assert len(written) == 5
+
+    loaded = AnnotatedDataFrame.from_files([str(p) for p in written])
+    assert loaded.dataframe.collected().height == 13
+
+
 @pytest.mark.parametrize("filename, spec_filename", [
     ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
 ])
@@ -173,6 +209,50 @@ def test_convert(data_path, filename, spec_filename, tmp_path, script_runner):
 
     result = script_runner.run(['damast', 'convert', '-f', spec_filename, '--output-dir', tmp_path])
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert_save_as_plain_path(data_path, filename, spec_filename, tmp_path, script_runner):
+    output_file = tmp_path / "combined.parquet"
+    result = script_runner.run(['damast', 'convert', '-f', str(data_path / filename), '-save-as', str(output_file)])
+
+    assert result.returncode == 0
+    assert output_file.exists()
+    loaded = AnnotatedDataFrame.from_files([str(output_file)])
+    assert loaded.dataframe.collected().height == 13
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert_save_as_partitioned_by_column(data_path, filename, spec_filename, tmp_path, script_runner):
+    result = script_runner.run([
+        'damast', 'convert', '-f', str(data_path / filename),
+        '-save-as', f"column:mmsi:{tmp_path}/vessel_{{mmsi}}",
+    ])
+
+    assert result.returncode == 0
+    written = sorted(tmp_path.glob("vessel_*.parquet"))
+    assert len(written) == 5
+    loaded = AnnotatedDataFrame.from_files([str(p) for p in written])
+    assert loaded.dataframe.collected().height == 13
+
+
+@pytest.mark.parametrize("filename, spec_filename", [
+    ["test_ais.csv", f"test_ais{DAMAST_SPEC_SUFFIX}"]
+])
+def test_convert_save_as_conflicts_with_output_file(data_path, filename, spec_filename, tmp_path, script_runner):
+    result = script_runner.run([
+        'damast', 'convert', '-f', str(data_path / filename),
+        '-save-as', str(tmp_path / "a.parquet"),
+        '--output-file', str(tmp_path / "b.parquet"),
+    ])
+
+    assert result.returncode != 0
+    assert re.search("cannot be used together", result.stdout)
+
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="ratarmount does not (easily) run on windows")
 @pytest.mark.parametrize("filename, spec_filename", [
