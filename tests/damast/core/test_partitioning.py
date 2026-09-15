@@ -113,7 +113,9 @@ def test_by_time_format_with_nested_path_creates_parent_directories(
         tmp_path, ByTime("timestamp", every="1d", format="%Y/%m/%d")
     )
 
-    assert sorted(str(p.relative_to(tmp_path)) for p in written) == [
+    # .as_posix(), not str(): a relative path's separator is OS-native ("\\" on Windows),
+    # but the "%Y/%m/%d" format always produces forward slashes.
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in written) == [
         "2026/01/01.parquet",
         "2026/01/02.parquet",
         "2026/01/03.parquet",
