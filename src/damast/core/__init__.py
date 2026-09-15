@@ -23,11 +23,15 @@ from .metadata import (
     MetaData,
     ValidationMode,
 )
+from .partitioning import ByColumn, ByExpr, ByTime, PartitionStrategy
 
 __all__ = [
     "AnnotatedDataFrame",
     "Annotation",
     "ArtifactSpecification",
+    "ByColumn",
+    "ByExpr",
+    "ByTime",
     "DECORATED_ARTIFACT_SPECS",
     "DECORATED_DESCRIPTION",
     "DECORATED_INPUT_SPECS",
@@ -38,6 +42,7 @@ __all__ = [
     "History",
     "MetaData",
     "MinMax",
+    "PartitionStrategy",
     "ValidationMode",
     "artifacts",
     "describe",

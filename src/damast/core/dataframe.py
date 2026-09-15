@@ -23,6 +23,7 @@ from .constants import (
 )
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
+from .partitioning import PartitionStrategy
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
@@ -221,6 +222,58 @@ class AnnotatedDataFrame(XDataFrame):
         new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
         arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
         pq.write_table(arrow_table, filename)
+
+    def export_partitioned(
+        self,
+        directory: str | Path,
+        strategy: PartitionStrategy,
+        *,
+        save_spec: bool = True,
+    ) -> list[Path]:
+        """
+        Export this dataframe as one file per partition, as determined by `strategy`.
+
+        Each partition is written via :meth:`save`/:meth:`export`, so the result round-trips
+        through :meth:`from_files` exactly like any other multi-file dataset.
+
+        .. note::
+            This collects the full dataframe before splitting it (`polars.DataFrame.partition_by`
+            requires an eager dataframe) - not suited for data too large to fit in memory.
+
+        :param directory: Directory to write partition files into (created if missing)
+        :param strategy: Determines the per-row partition key and its filename
+        :param save_spec: Also write a sibling `.spec.yaml` per partition file (see :meth:`save`)
+        :return: Paths of the written data files, one per partition
+
+        Example:
+
+        .. code-block:: python
+
+            adf.export_partitioned("out/", ByColumn("mmsi"))
+            adf.export_partitioned("out/", ByTime("timestamp", every="1d"))
+        """
+        if self.lazyframe is None:
+            raise ValueError(f"{self.__class__.__name__}.export_partitioned: no dataframe to export")
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        key_col = "__damast_partition_key__"
+        collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
+
+        written: list[Path] = []
+        partitions = collected.partition_by(key_col, as_dict=True, include_key=False)
+        for (key,), part in partitions.items():
+            filename = directory / f"{strategy.filename(key)}.parquet"
+            filename.parent.mkdir(parents=True, exist_ok=True)
+            part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
+            if save_spec:
+                part_adf.save(filename=filename)
+            else:
+                part_adf.export(filename)
+            written.append(filename)
+
+        return written
 
     @classmethod
     def get_supported_format(cls, suffix: str) -> str | None:
