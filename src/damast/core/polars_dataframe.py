@@ -42,7 +42,7 @@ POLARS_TYPE_DICT = {
 POLARS_TYPE_DICT["DataType"] = polars.DataType
 
 class Meta(type):
-    _base_impl: ClassVar["str"] = "polars"
+    _base_impl: ClassVar[str] = "polars"
 
     def __getattr__(cls, attr_name):
         if cls._base_impl == 'polars':

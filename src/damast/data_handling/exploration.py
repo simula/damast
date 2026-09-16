@@ -2,16 +2,16 @@
 Module containing the functionality to explore and visualise data
 """
 from pathlib import Path
-from typing import List, Optional
 
 from matplotlib import pyplot as plt
 
 from damast.core.types import DataFrame
 
-__all__ = ["plot_histograms",
-           "plot_lat_lon",
-           "PLOT_DPI"
-           ]
+__all__ = [
+    "PLOT_DPI",
+    "plot_histograms",
+    "plot_lat_lon"
+]
 
 #: Default DPI when plotting figures
 PLOT_DPI: int = 300
@@ -62,7 +62,7 @@ def plot_histograms(*,
                     df: DataFrame,
                     output_dir: Path,
                     filename_prefix: str,
-                    columns: Optional[List[str]] = None,
+                    columns: list[str] | None = None,
                     dpi: int = PLOT_DPI) -> Path:
     """
     Plot histograms for the current data frame in to directory defined through get_plot_dir()

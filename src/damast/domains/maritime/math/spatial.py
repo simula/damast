@@ -9,15 +9,17 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit
 
-__all__ = ["angle_sat_c",
-           "great_circle_distance",
-           "haversine_distance",
-           "bearing",
-           "reverse_bearing",
-           "decdeg2dms",
-           "dms2decdeg",
-           "distance_sat_vessel",
-           "chord_distance"]
+__all__ = [
+    "angle_sat_c",
+    "bearing",
+    "chord_distance",
+    "decdeg2dms",
+    "distance_sat_vessel",
+    "dms2decdeg",
+    "great_circle_distance",
+    "haversine_distance",
+    "reverse_bearing",
+]
 
 
 # The International Union of Geodesy and Geophysics (IUGG) defines the official mean radius ($R_1$) as 6,371.0 km.

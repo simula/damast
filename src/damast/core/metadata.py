@@ -13,7 +13,7 @@ import warnings
 from difflib import SequenceMatcher
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import polars as pl
 import yaml
@@ -76,9 +76,9 @@ class ArtifactSpecification:
     """
 
     #: Dictionary mapping an artifact description to a file glob pattern
-    artifacts: Dict[str, str]
+    artifacts: dict[str, str]
 
-    def __init__(self, requirements: Dict[str, Any]) -> None:
+    def __init__(self, requirements: dict[str, Any]) -> None:
         self.artifacts = requirements
 
     def validate(self, base_dir: Path):
@@ -165,7 +165,7 @@ class DataSpecification:
         """
 
         # Would use Key here, but the concept for that is not yet ironed out in Python
-        status: Dict[Enum, Dict[str, Union[Status, str]]]
+        status: dict[Enum, dict[str, Status | str]]
 
         def __init__(self):
             self.status = {}
@@ -206,9 +206,9 @@ class DataSpecification:
         """
 
         missing_column: str
-        known_columns: List[str]
+        known_columns: list[str]
 
-        def __init__(self, missing_column: str, known_columns: List[str]):
+        def __init__(self, missing_column: str, known_columns: list[str]):
             super().__init__()
 
             self.missing_column = missing_column
@@ -235,12 +235,12 @@ class DataSpecification:
     #: Name associated
     name: str
     #: Description of the data
-    description: Optional[str] = None
+    description: str | None = None
     #: Category of data
-    category: Optional[DataCategory] = None
+    category: DataCategory | None = None
     #: Whether this data element needs to be present
-    is_optional: Optional[bool] = None
-    abbreviation: Optional[str] = None
+    is_optional: bool | None = None
+    abbreviation: str | None = None
 
     #: The underlying representation type for this data element
     representation_type: Any = None
@@ -248,31 +248,31 @@ class DataSpecification:
     missing_value: Any = None
 
     #: The unit of this data element
-    _unit: Optional[Unit] = None
+    _unit: Unit | None = None
     #: The precision of this data element
     # FIXME: The input to precision could be a `List[float]`, but this is not currently handled
-    precision: Optional[float] = None
+    precision: float | None = None
 
     #: The allowed data range, which remains None when being unrestricted
-    value_range: Optional[DataRange] = None
+    value_range: DataRange | None = None
     #: An explanation - str-based descriptor for the range, if this is a dictionary then it must provide
     #: a mapping from the value to a human-readable descriptor
-    value_meanings: Optional[Dict[Any, str]] = None
+    value_meanings: dict[Any, str] | None = None
 
     def __init__(
         self,
         name: str,
-        description: Optional[str] = None,
-        category: Optional[Union[str, DataCategory]] = None,
+        description: str | None = None,
+        category: str | DataCategory | None = None,
         is_optional: bool = False,
-        abbreviation: Optional[str] = None,
+        abbreviation: str | None = None,
         representation_type: Any = None,
         missing_value: Any = None,
-        unit: Optional[Unit] = None,
+        unit: Unit | None = None,
         precision: Any = None,
-        value_range: Optional[DataRange] = None,
-        value_stats: Optional[Union[NumericValueStats, BooleanValueStats]] = None,
-        value_meanings: Optional[Dict[Any, str]] = None,
+        value_range: DataRange | None = None,
+        value_stats: NumericValueStats | BooleanValueStats | None = None,
+        value_meanings: dict[Any, str] | None = None,
     ):
         """
         Constructor
@@ -367,7 +367,7 @@ class DataSpecification:
         :return: Instance of the type object
         :raise ValueError: Raises if ``type_name`` cannot be resolved to a known type (in builtins or :mod:`polars`)
         """
-        exceptions: List[Any] = []
+        exceptions: list[Any] = []
         try:
             if type_name.lower() in ["string", "str"]:
                 dtype = str
@@ -433,7 +433,7 @@ class DataSpecification:
             yield "description", self.description
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> DataSpecification:
+    def from_dict(cls, data: dict[str, Any]) -> DataSpecification:
         """
         Load the data specification from a given dictionary.
 
@@ -536,7 +536,7 @@ class DataSpecification:
         return spec
 
     @classmethod
-    def to_str(cls, specs: List[DataSpecification], indent_level=0):
+    def to_str(cls, specs: list[DataSpecification], indent_level=0):
         """
         Generate string representation for list of specs
 
@@ -707,8 +707,8 @@ class DataSpecification:
             # doesn't already say
             logger.debug(f"Setting value stats for {column_name}")
             result = df.select(
-                (pl.col(column_name) == True).sum().alias("true_count"),  # noqa: E712
-                (pl.col(column_name) == False).sum().alias("false_count"),  # noqa: E712
+                pl.col(column_name).sum().alias("true_count"),
+                (~pl.col(column_name)).sum().alias("false_count"),
                 pl.col(column_name).count().alias("total_count"),
                 pl.col(column_name).null_count().alias("null_count"),
             ).collect()
@@ -816,7 +816,7 @@ class DataSpecification:
         return fulfillment
 
     @classmethod
-    def from_requirements(cls, requirements: Dict[str, Any]) -> List[DataSpecification]:
+    def from_requirements(cls, requirements: dict[str, Any]) -> list[DataSpecification]:
         """
         Get the list of DataSpecification from dictionary (keyword argument) based representation.
 
@@ -922,9 +922,9 @@ class DataSpecification:
 
     @classmethod
     def merge_lists(
-        cls, a_specs: List[DataSpecification], b_specs: List[DataSpecification],
+        cls, a_specs: list[DataSpecification], b_specs: list[DataSpecification],
         strategy: MergeStrategy | None = None
-    ) -> List[DataSpecification]:
+    ) -> list[DataSpecification]:
         """
         Merge two lists of data-specifications into a single list.
 
@@ -941,7 +941,7 @@ class DataSpecification:
         if type(b_specs) is not list:
             raise TypeError(f"{cls.__name__}.merge_lists: cannot merge {type(a_specs)} -- needs to be list(DataSpecificiation)")
 
-        result_specs: List[DataSpecification] = []
+        result_specs: list[DataSpecification] = []
 
         b_column_dict = {x.name: x for x in b_specs}
         a_columns_names = []
@@ -997,7 +997,7 @@ class MetaData:
         A fulfillment describes whether a constraint on a column holds or not, added to :class:`MetaData`
         """
 
-        column_fulfillments: Dict[str, DataSpecification.Fulfillment]
+        column_fulfillments: dict[str, DataSpecification.Fulfillment]
 
         def __init__(self):
             self.column_fulfillments = {}
@@ -1039,17 +1039,17 @@ class MetaData:
             return txt
 
     #: Specification of columns in the
-    columns: List[DataSpecification]
+    columns: list[DataSpecification]
 
     # We store the annotations as a dictionary for easy lookup.
     # even if it means duplicating the name of the annotation as a key
     #: Dictionary containing all annotations
-    _annotations: Dict[str, Annotation]
+    _annotations: dict[str, Annotation]
 
     def __init__(
         self,
-        columns: List[DataSpecification],
-        annotations: Optional[List[Annotation]] = None,
+        columns: list[DataSpecification],
+        annotations: list[Annotation] | None = None,
     ):
         assert isinstance(columns, list)
         self.columns = sorted(columns, key=lambda x: x.name)
@@ -1077,7 +1077,7 @@ class MetaData:
         self._annotations[annotation.name] = annotation
 
     @property
-    def annotations(self) -> Dict[str, Annotation]:
+    def annotations(self) -> dict[str, Annotation]:
         """Get dictionary of annotations"""
         return self._annotations
 
@@ -1120,7 +1120,7 @@ class MetaData:
         columns: list[str] | None = None,
         indent: int = 0,
         default_indent: str = " " * 4,
-        generated_fields: Dict[str, set] | None = None,
+        generated_fields: dict[str, set] | None = None,
     ) -> str:
         """
         Render this metadata as a human-readable string.
@@ -1201,7 +1201,7 @@ class MetaData:
         return "\n".join(txt_repr)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> MetaData:
+    def from_dict(cls, data: dict[str, Any]) -> MetaData:
         """
         Create a :class:`MetaData` object by parsing a dictionary
 
@@ -1253,7 +1253,7 @@ class MetaData:
         return cls(columns=data_specs, annotations=annotations)
 
     @classmethod
-    def load_yaml(cls, filename: Union[str, Path]) -> MetaData:
+    def load_yaml(cls, filename: str | Path) -> MetaData:
         """
         Load history from a `yaml` file.
 
@@ -1276,7 +1276,7 @@ class MetaData:
 
         return cls.from_dict(data=md_dict)
 
-    def save_yaml(self, filename: Union[str, Path]):
+    def save_yaml(self, filename: str | Path):
         """
         Save the current object into a file.
 
@@ -1406,7 +1406,7 @@ class MetaData:
             f" - known are {sorted([x.name for x in self.columns])}"
         )
 
-    def get_fulfillment(self, expected_specs: List[DataSpecification]) -> Fulfillment:
+    def get_fulfillment(self, expected_specs: list[DataSpecification]) -> Fulfillment:
         """
         Get the fulfillment of the metadata with represent to the given data specification
 

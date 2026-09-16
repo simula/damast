@@ -1,7 +1,7 @@
+import sys
 from pathlib import Path
 
 import pytest
-import sys
 
 from damast.core.transformations import PluginManager, plugin_manager
 

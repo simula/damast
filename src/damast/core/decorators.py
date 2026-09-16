@@ -139,7 +139,7 @@ def input(requirements: dict[str, any], label: str | None = None):
                     # so the transform can start
                     if label == parameters[-1]:
                         dataframes = _get_dataframes(*args, **kwargs)
-                        getattr(pipeline_element, "parent_pipeline").on_transform_start(pipeline_element, dataframes=dataframes)
+                        pipeline_element.parent_pipeline.on_transform_start(pipeline_element, dataframes=dataframes)
                 return func(*args, **kwargs)
 
             raise RuntimeError(
@@ -205,7 +205,7 @@ def output(requirements: dict[str, any]):
 
             parent_pipeline = None
             if hasattr(pipeline_element, "parent_pipeline"):
-                parent_pipeline = getattr(pipeline_element, "parent_pipeline")
+                parent_pipeline = pipeline_element.parent_pipeline
 
             try:
                 # Ensure that metadata is up to date with the dataframe

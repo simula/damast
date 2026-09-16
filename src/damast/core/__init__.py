@@ -26,16 +26,16 @@ from .metadata import (
 from .partitioning import ByColumn, ByExpr, ByTime, PartitionStrategy, SaveAs
 
 __all__ = [
+    "DECORATED_ARTIFACT_SPECS",
+    "DECORATED_DESCRIPTION",
+    "DECORATED_INPUT_SPECS",
+    "DECORATED_OUTPUT_SPECS",
     "AnnotatedDataFrame",
     "Annotation",
     "ArtifactSpecification",
     "ByColumn",
     "ByExpr",
     "ByTime",
-    "DECORATED_ARTIFACT_SPECS",
-    "DECORATED_DESCRIPTION",
-    "DECORATED_INPUT_SPECS",
-    "DECORATED_OUTPUT_SPECS",
     "DataProcessingPipeline",
     "DataRange",
     "DataSpecification",

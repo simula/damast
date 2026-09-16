@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Union
 
 import polars
 
@@ -27,7 +26,7 @@ adf = AnnotatedDataFrame(dataframe=df,
 class HDF5Export(PipelineElement):
     filename: Path
 
-    def __init__(self, filename: Union[str, Path]):
+    def __init__(self, filename: str | Path):
         self.filename = Path(filename)
 
     @damast.core.input({})

@@ -6,7 +6,7 @@ import logging
 import random
 import sys
 import time
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import keras.utils
 import numpy as np
@@ -64,7 +64,7 @@ class GroupSequenceAccessor:
     def __init__(self,
                  df: DataFrame,
                  group_column: str,
-                 sort_columns: List[str] = None,
+                 sort_columns: list[str] = None,
                  timeout_in_s: int = DEFAULT_TIMEOUT_IN_S):
         self.df = df
 
@@ -78,7 +78,7 @@ class GroupSequenceAccessor:
 
         self.timeout_in_s = timeout_in_s
 
-    def split_random(self, ratios: List[float]) -> List[List[Any]]:
+    def split_random(self, ratios: list[float]) -> list[list[Any]]:
         """
         Create ``N=len(ratios)`` groups of the dataframe, with given ratios, return the corresponding groups.
 
@@ -104,9 +104,9 @@ class GroupSequenceAccessor:
 
         return partitions
 
-    def to_keras_generator(self, features: List[str],
-                           target: List[str] = None,
-                           groups: List[str] = None,
+    def to_keras_generator(self, features: list[str],
+                           target: list[str] = None,
+                           groups: list[str] = None,
                            sequence_length: int = 50,
                            sequence_forecast: int = 0,
                            batch_size: int = 1024,
@@ -203,8 +203,8 @@ class GroupSequenceAccessor:
         if self.sort_columns is not None and shuffle:
             raise RuntimeError(f"{self.__class__.__name__}: Cannot sort and shuffle sequence at the same time")
 
-        def _generator(features: List[str], target: Optional[List[str]],
-                       groups: List[Any],
+        def _generator(features: list[str], target: list[str] | None,
+                       groups: list[Any],
                        sequence_length: int, sequence_forecast: int,
                        chunk_size: int, shuffle: bool, infinite: bool,
                        ):
@@ -334,11 +334,11 @@ class SequenceIterator:
     :param sort_columns: Names of the columns that shall be used for sorting - if None, no sorting will be done
     """
 
-    df: Union[DataFrame, pd.DataFrame]
+    df: DataFrame | pd.DataFrame
 
     def __init__(self,
-                 df: Union[DataFrame, pd.DataFrame],
-                 sort_columns: List[str] = None):
+                 df: DataFrame | pd.DataFrame,
+                 sort_columns: list[str] = None):
         if sort_columns is not None:
             if isinstance(df, DataFrame):
                 df = df.collect()
@@ -441,8 +441,8 @@ class SequenceIterator:
                                f" larger than dataframe of size ({len_sequence})")
 
         def _generator(sequence: pl.dataframe.DataFrame,
-                       features: List[str],
-                       target: Optional[List[str]],
+                       features: list[str],
+                       target: list[str] | None,
                        sequence_length: int,
                        sequence_forecast: int):
             """

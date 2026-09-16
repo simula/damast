@@ -8,12 +8,13 @@ import json
 import select
 import socket
 import tempfile
+from collections.abc import Callable
 from enum import Enum
 from logging import Logger, getLogger
 from pathlib import Path
 from threading import Thread
 from time import sleep
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 PREDICT_FILE_SOCKET = str(Path(tempfile.gettempdir()) / ".damast-predict")
 _log: Logger = getLogger(__name__)
@@ -30,9 +31,9 @@ class Job:
     #: The model that shall be loaded
     model_name: str
     #: The (input) features
-    features: List[str]
+    features: list[str]
     #: The target features that will be predicted
-    target: List[str]
+    target: list[str]
     #: The length of the sequence
     sequence_length: int
     #: The path to the file containing the sequences to run the prediction on
@@ -47,8 +48,8 @@ class Job:
         FAILED = "FAILED"
 
     @classmethod
-    def wait_for_status(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
-                        match_status: Optional[Job.Status] = None,
+    def wait_for_status(cls, status_collector: Callable[[], tuple[list[Job.Response], Job.Status]],
+                        match_status: Job.Status | None = None,
                         timeout_in_s: int = 10):
         for _ in range(timeout_in_s):
             collected_responses, current_status = status_collector()
@@ -60,8 +61,8 @@ class Job:
         raise TimeoutError(f"{cls.__name__}: no status: {match_status} encountered within {timeout_in_s} seconds")
 
     @classmethod
-    def wait_for_responses(cls, status_collector: Callable[[], Tuple[List[Job.Response], Job.Status]],
-                           predicate_responses: Callable[[List[Job.Response]], bool],
+    def wait_for_responses(cls, status_collector: Callable[[], tuple[list[Job.Response], Job.Status]],
+                           predicate_responses: Callable[[list[Job.Response]], bool],
                            timeout_in_s: int = 10):
         for _ in range(timeout_in_s):
             collected_responses, _ = status_collector()
@@ -89,16 +90,16 @@ class Job:
         #: The computed loss for this prediction
         loss: float
         #: The actual input sequence
-        actual_sequence: List[Any]
+        actual_sequence: list[Any]
         #: The predicted sequence or features
-        predicted_sequence: List[Any]
+        predicted_sequence: list[Any]
 
         def __init__(self,
                      id: int,
                      timepoint: int,
                      loss: float,
-                     actual_sequence: List[Any],
-                     predicted_sequence: List[Any]):
+                     actual_sequence: list[Any],
+                     predicted_sequence: list[Any]):
             self.id = id
             self.timepoint = timepoint
             self.loss = loss
@@ -127,12 +128,12 @@ class Job:
 
     def __init__(self,
                  id: int,
-                 experiment_dir: Union[str, Path],
+                 experiment_dir: str | Path,
                  model_name: str,
-                 features: List[str],
-                 target: List[str],
+                 features: list[str],
+                 target: list[str],
                  sequence_length: int,
-                 data_filename: Union[str, Path]):
+                 data_filename: str | Path):
         self.id = id
         self.experiment_dir = str(experiment_dir)
         self.model_name = model_name
@@ -165,9 +166,9 @@ class ResponseCollector:
     job_id: int
 
     sock: socket.socket
-    thread: Optional[Thread]
+    thread: Thread | None
 
-    responses: List[Job.Response]
+    responses: list[Job.Response]
     status: Job.Status
 
     def __init__(self,
@@ -180,7 +181,7 @@ class ResponseCollector:
         self.status = Job.Status.NOT_STARTED
         self.responses = []
 
-    def get_status(self) -> Tuple[List[Job.Response], Job.Status]:
+    def get_status(self) -> tuple[list[Job.Response], Job.Status]:
         return self.responses, self.status
 
     def start(self):
@@ -239,18 +240,18 @@ class JobScheduler:
 
     # region Job Mapping
     #: Mapping of job id to socket
-    _sockets: Dict[int, socket.socket]
+    _sockets: dict[int, socket.socket]
     #: Mapping of job id to job
-    _jobs: Dict[int, Job]
+    _jobs: dict[int, Job]
     #: Mapping of job id to the collecting threads
-    _collectors: Dict[int, ResponseCollector]
+    _collectors: dict[int, ResponseCollector]
 
     # endregion
 
     def __init__(self):
 
         self._job_id = 0
-        self._sockets: Dict[int, socket.socket] = {}
+        self._sockets: dict[int, socket.socket] = {}
 
         self._jobs = {}
         self._collectors = {}
@@ -298,7 +299,7 @@ class JobScheduler:
         # start collection thread at the same time
         self._collect(job.id)
 
-    def get_status(self, job_id) -> Tuple[List[Job.Response], Job.Status]:
+    def get_status(self, job_id) -> tuple[list[Job.Response], Job.Status]:
         """
         Get the current status of the job.
 

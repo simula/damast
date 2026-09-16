@@ -142,7 +142,7 @@ processed_data = AnnotatedDataFrame.from_file(dataset_filename)
 input_adf = pipeline.transform(processed_data)
 
 # creating input features
-from damast.data_handling.accessors import SequenceIterator  # noqa
+from damast.data_handling.accessors import SequenceIterator  # noqa: E402
 
 sta = SequenceIterator(df=input_adf)
 gen_predict = sta.to_keras_generator(features=features, target=features, sequence_length=5)

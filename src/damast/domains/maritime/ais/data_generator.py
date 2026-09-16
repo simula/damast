@@ -2,7 +2,7 @@ import datetime
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from logging import INFO, Logger, getLogger
 from random import choice, randint, random
-from typing import Any, List
+from typing import Any
 
 import pandas as pd
 import polars as pl
@@ -76,7 +76,7 @@ class AISTestData:
         self.dataframe: DataFrame = self._generate_data()
 
     @staticmethod
-    def generate_trajectory(min_size: int, max_size: int) -> List[List[Any]]:
+    def generate_trajectory(min_size: int, max_size: int) -> list[list[Any]]:
         """Generate a trajectory for a single vessel
 
         :param min_size: Minimum size of trajectory
@@ -103,7 +103,7 @@ class AISTestData:
 
         trajectory_length = randint(min_size, max_size)
         trajectory = []
-        for _ in range(0, trajectory_length):
+        for _ in range(trajectory_length):
             lat_start += random() * 0.1 - 0.05
             lon_start += random() * 0.1 - 0.05
 
@@ -143,7 +143,7 @@ class AISTestData:
 
     def _generate_data(self) ->DataFrame:
         df = None
-        for i in range(0, self.number_of_trajectories):
+        for i in range(self.number_of_trajectories):
             trajectory = AISTestData.generate_trajectory(min_size=self.min_length, max_size=self.max_length)
             t_df = pd.DataFrame(trajectory, columns=AIS_DATA_COLUMNS)
             if df is None:

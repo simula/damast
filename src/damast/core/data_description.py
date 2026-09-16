@@ -7,7 +7,7 @@ import datetime as dt
 import logging
 import math
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -107,7 +107,7 @@ class DataRange(ABC):
         raise NotImplementedError(f"{self.__class__.__name__}.__iter__ not implemented")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], dtype: Any = None) -> DataRange:
+    def from_dict(cls, data: dict[str, Any], dtype: Any = None) -> DataRange:
         """
         Load the data range from a plain type description in a dictionary.
 
@@ -138,9 +138,9 @@ class ListOfValues:
     """
 
     #: Values in this list
-    values: List[Any]
+    values: list[Any]
 
-    def __init__(self, values: List[Any]):
+    def __init__(self, values: list[Any]):
         """
         Initialise ListOfValues
 
@@ -182,7 +182,7 @@ class ListOfValues:
         return True
 
     @classmethod
-    def from_data(cls, data: List[Any], dtype: Any) -> ListOfValues:
+    def from_data(cls, data: list[Any], dtype: Any) -> ListOfValues:
         """
         Create an instance from data and given datatype (dtype)
 
@@ -205,7 +205,7 @@ class ListOfValues:
                     )
         return cls(values=data)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary representing this object
 
@@ -286,7 +286,7 @@ class MinMax(DataRange):
         return self.min <= value <= self.max
 
     @classmethod
-    def from_data(cls, data: Dict[str, Any], dtype: Any) -> MinMax:
+    def from_data(cls, data: dict[str, Any], dtype: Any) -> MinMax:
         """
         Load the MinMax range from the given dictionary specification
 
@@ -364,7 +364,7 @@ class MinMax(DataRange):
                 allow_missing=self.allow_missing and other.allow_missing
         )
 
-    def to_dict(self) -> Dict[str, Dict[str, Any]]:
+    def to_dict(self) -> dict[str, dict[str, Any]]:
         """
         Create a dictionary representing this object
 

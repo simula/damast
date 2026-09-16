@@ -61,7 +61,7 @@ _EXACT_POLARS_TYPE_MAP: dict[type, type] = {
 
 #: Python source (module to import, or None; annotation text) for a subset of types that are
 #: not builtins and therefore need an explicit import in generated source
-_PYTHON_TYPE_SOURCE: dict[type, tuple[Optional[str], str]] = {
+_PYTHON_TYPE_SOURCE: dict[type, tuple[str | None, str]] = {
     decimal.Decimal: ("decimal", "decimal.Decimal"),
     datetime.date: ("datetime", "datetime.date"),
     datetime.datetime: ("datetime", "datetime.datetime"),
@@ -81,7 +81,7 @@ def _is_struct_model(py_type: Any) -> bool:
     return isinstance(py_type, type) and issubclass(py_type, pydantic.BaseModel)
 
 
-def _type_source(py_type: type) -> tuple[Optional[str], str]:
+def _type_source(py_type: type) -> tuple[str | None, str]:
     """
     Resolve the (module to import, annotation text) needed to reference ``py_type`` in
     generated source.
@@ -124,13 +124,13 @@ class PydanticExporter:
         py_type: type
         optional: bool
         default: Any
-        literal_values: Optional[list] = None
+        literal_values: list | None = None
         field_kwargs: dict = field(default_factory=dict)
 
     def __init__(self) -> None:
         self._anonymous_struct_count = 0
 
-    def resolve_python_type(self, representation_type: Any, *, name: Optional[str] = None) -> type:
+    def resolve_python_type(self, representation_type: Any, *, name: str | None = None) -> type:
         """
         Resolve a `DataSpecification.representation_type` to a plain Python type suitable
         for a pydantic field annotation.
@@ -200,7 +200,7 @@ class PydanticExporter:
         )
 
     def _resolve_struct_type(
-        self, dtype: polars.Struct, *, name: Optional[str]
+        self, dtype: polars.Struct, *, name: str | None
     ) -> type[pydantic.BaseModel]:
         """Recursively build a type-only nested `pydantic.BaseModel` for a `polars.Struct`
         instance - one field per named struct member, without constraints (polars' ``Field``

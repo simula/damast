@@ -12,7 +12,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import pydantic
 import yaml
@@ -69,7 +69,7 @@ class DataProcessingPipeline(PipelineElement):
     _base_dir: Path
 
     #: The output specs - as specified by decorators
-    _output_specs: List[DataSpecification]
+    _output_specs: list[DataSpecification]
 
     #: Check if the pipeline is ready to be run
     is_ready: bool
@@ -77,19 +77,19 @@ class DataProcessingPipeline(PipelineElement):
     processing_graph: ProcessingGraph
 
     _inplace_transformation: bool
-    _name_mappings: Dict[str, Dict[str, str]]
-    _processing_stats: Dict[str, Dict[str, Any]]
+    _name_mappings: dict[str, dict[str, str]]
+    _processing_stats: dict[str, dict[str, Any]]
 
-    _meta: Dict[str, str]
+    _meta: dict[str, str]
 
     def __init__(self, *,
                  name: str,
                  description: str = "",
-                 base_dir: Union[str, Path] = tempfile.gettempdir(),
-                 processing_graph: List[Tuple[str, Union[Dict[str, Any], PipelineElement]]] | ProcessingGraph = None,
+                 base_dir: str | Path = tempfile.gettempdir(),
+                 processing_graph: list[tuple[str, dict[str, Any] | PipelineElement]] | ProcessingGraph = None,
                  inplace_transformation: bool = False,
-                 name_mappings: Dict[str, Dict[str, str]] = { DAMAST_DEFAULT_DATASOURCE: {}},
-                 meta: Dict[str, str] | None = None,
+                 name_mappings: dict[str, dict[str, str]] = { DAMAST_DEFAULT_DATASOURCE: {}},
+                 meta: dict[str, str] | None = None,
                  ):
         super().__init__()
 
@@ -157,7 +157,7 @@ class DataProcessingPipeline(PipelineElement):
             self._base_dir = Path(value)
 
     @property
-    def processing_stats(self) -> Dict[str, Dict[str, Any]]:
+    def processing_stats(self) -> dict[str, dict[str, Any]]:
         """
         Per-step timing and row-count statistics collected by the last :func:`transform` run.
 
@@ -182,7 +182,7 @@ class DataProcessingPipeline(PipelineElement):
             self,
             name: str,
             transformer: PipelineElement,
-            name_mappings: Optional[Dict[str, str]] = None,
+            name_mappings: dict[str, str] | None = None,
     ) -> DataProcessingPipeline:
         """
         Add a pipeline step
@@ -210,7 +210,7 @@ class DataProcessingPipeline(PipelineElement):
             name: str,
             operator: PipelineElement,
             data_source: DataProcessingPipeline | None = None,
-            name_mappings: Optional[Dict[str, str]] = None,
+            name_mappings: dict[str, str] | None = None,
     ) -> DataProcessingPipeline:
         """
         Add a pipeline step
@@ -235,7 +235,7 @@ class DataProcessingPipeline(PipelineElement):
     @classmethod
     def validate(
             cls, processing_graph: ProcessingGraph, metadata: dict[str, MetaData]
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Validate the existing pipeline and collect the minimal input and output data specification.
 
@@ -306,7 +306,7 @@ class DataProcessingPipeline(PipelineElement):
     @classmethod
     def _declared_interface(
             cls, processing_graph: ProcessingGraph
-    ) -> Tuple[Dict[str, List[DataSpecification]], List[DataSpecification]]:
+    ) -> tuple[dict[str, list[DataSpecification]], list[DataSpecification]]:
         """
         Statically compute the pipeline's minimal input/output contract from the declared
         ``@input``/``@output`` decorators alone - no data required.
@@ -331,11 +331,11 @@ class DataProcessingPipeline(PipelineElement):
             RuntimeError: If a step's input requirement can only be attributed to more than one
                 datasource, because it first surfaces after those datasources have been joined
         """
-        required: Dict[str, List[DataSpecification]] = {
+        required: dict[str, list[DataSpecification]] = {
             ds_node.name: [] for ds_node in processing_graph.datasource_nodes()
         }
-        known: Dict[str, List[DataSpecification]] = {}
-        origin: Dict[str, set] = {}
+        known: dict[str, list[DataSpecification]] = {}
+        origin: dict[str, set] = {}
 
         node = None
         for node in processing_graph.nodes():
@@ -344,7 +344,7 @@ class DataProcessingPipeline(PipelineElement):
                 origin[node.uuid] = {node.name}
                 continue
 
-            merged_known: List[DataSpecification] = []
+            merged_known: list[DataSpecification] = []
             merged_origin: set = set()
             for from_node, _to_node, data in processing_graph._graph.in_edges(node, data=True):
                 slot = data["slot"]
@@ -436,7 +436,7 @@ class DataProcessingPipeline(PipelineElement):
         return MetaData(columns=output_spec, annotations=[])
 
     def validate_record(
-            self, record: Dict[str, Any], datasource: str = DAMAST_DEFAULT_DATASOURCE
+            self, record: dict[str, Any], datasource: str = DAMAST_DEFAULT_DATASOURCE
     ) -> pydantic.BaseModel:
         """
         Validate a single record against this pipeline's declared input contract for
@@ -465,7 +465,7 @@ class DataProcessingPipeline(PipelineElement):
         model = PydanticExporter().to_pydantic_model(self.input_metadata(datasource))
         return model(**record)
 
-    def save(self, dir: Union[str, Path]) -> Path:
+    def save(self, dir: str | Path) -> Path:
         """
         Save the processing pipeline
 
@@ -488,7 +488,7 @@ class DataProcessingPipeline(PipelineElement):
 
     def save_state(self,
                    df: AnnotatedDataFrame,
-                   dir: Union[str, Path]) -> Path:
+                   dir: str | Path) -> Path:
         """
         Save the processing pipeline
 
@@ -500,7 +500,7 @@ class DataProcessingPipeline(PipelineElement):
         return filename
 
     @classmethod
-    def load(cls, path: Union[str, Path], name: str = "*") -> DataProcessingPipeline:
+    def load(cls, path: str | Path, name: str = "*") -> DataProcessingPipeline:
         """
         Load a :class:`DataProcessingPipeline` from file (without suffix :attr:`DAMAST_PIPELINE_SUFFIX`)
 
@@ -536,7 +536,7 @@ class DataProcessingPipeline(PipelineElement):
 
     @classmethod
     def load_state(
-            cls, df: AnnotatedDataFrame, dir: Union[str, Path], name: str = "*"
+            cls, df: AnnotatedDataFrame, dir: str | Path, name: str = "*"
     ) -> AnnotatedDataFrame:
         """
         Load a ``vaex`` state (from file) to a :class:`damast.core.AnnotatedDataFrame`.
@@ -587,9 +587,9 @@ class DataProcessingPipeline(PipelineElement):
         if name_mappings:
             for df_name, df_name_mapping in name_mappings.items():
                 if df_name in pipeline.name_mappings:
-                    pipeline.name_mappings[df_name].update(name_mappings[df_name])
+                    pipeline.name_mappings[df_name].update(df_name_mapping)
                 else:
-                    pipeline.name_mappings[df_name] = name_mappings[df_name]
+                    pipeline.name_mappings[df_name] = df_name_mapping
 
         # At this stage, ensure that the dataframes conforms to their metadata
         metadata = OrderedDict()
@@ -622,7 +622,7 @@ class DataProcessingPipeline(PipelineElement):
                                           metadata=metadata)
 
         pipeline.processing_graph = validation_result["processing_graph"]
-        pipeline._output_specs: List[DataSpecification] = validation_result["output_spec"]
+        pipeline._output_specs: list[DataSpecification] = validation_result["output_spec"]
 
         pipeline.is_ready = True
         return pipeline
@@ -736,7 +736,7 @@ class DataProcessingPipeline(PipelineElement):
 
         logger.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
         start_time = datetime.now(timezone.utc)
-        setattr(step, "transform_start", start_time)
+        step.transform_start = start_time
 
         step_name = self.processing_graph[step.uuid].name
         self._processing_stats[step_name] = {
@@ -755,7 +755,7 @@ class DataProcessingPipeline(PipelineElement):
         if not hasattr(step, "transform_start"):
             return
 
-        start = getattr(step, "transform_start")
+        start = step.transform_start
         end_time = datetime.now(timezone.utc)
         delta = (end_time - start).total_seconds()
         delattr(step, "transform_start")

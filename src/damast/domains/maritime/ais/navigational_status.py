@@ -1,5 +1,4 @@
 from enum import IntEnum
-from typing import List
 
 
 class AISNavigationalStatus(IntEnum):
@@ -8,7 +7,7 @@ class AISNavigationalStatus(IntEnum):
 
     :see https://help.marinetraffic.com/hc/en-us/articles/203990998-What-is-the-significance-of-the-AIS-Navigational-Status-Values-
 
-    """  # noqa: E501
+    """
     UnderWayUsingEngine = 0
     AtAnchor = 1
     NotUnderCommand = 2
@@ -27,5 +26,5 @@ class AISNavigationalStatus(IntEnum):
     Undefined = 15
 
     @classmethod
-    def get_values(cls) -> List[int]:
+    def get_values(cls) -> list[int]:
         return [e.value for e in AISNavigationalStatus]

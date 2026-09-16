@@ -324,7 +324,7 @@ def test_convert_n_to_1(tmp_path, script_runner):
 
     number_of_trajectories = 10
     max_range = 3
-    for i in range(0, max_range):
+    for i in range(max_range):
         input_file = Path(tmp_path) / f"{i}.csv"
         input_files.append(input_file.resolve())
 
@@ -349,7 +349,7 @@ def test_convert_n_to_n(tmp_path, script_runner):
 
     number_of_trajectories = 10
     max_range = 3
-    for i in range(0, max_range):
+    for i in range(max_range):
         input_file = Path(tmp_path) / f"{i}.csv"
         input_files.append(input_file.resolve())
 

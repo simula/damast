@@ -6,9 +6,9 @@ from __future__ import annotations
 import copy
 import json
 import logging
+from collections.abc import Callable
 from logging import INFO, Logger, getLogger
 from pathlib import Path
-from typing import Callable, Union
 
 import polars
 import pyarrow
@@ -180,7 +180,7 @@ class AnnotatedDataFrame(XDataFrame):
                 ]
 
 
-    def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
+    def save(self, *, filename: str | Path) -> AnnotatedDataFrame:
         """
         Save this annotated dataframe in a file.
 
@@ -375,7 +375,7 @@ class AnnotatedDataFrame(XDataFrame):
                         columns=metadata_list[0].columns,
                         annotations=list(metadata_list[0].annotations.values())
                     )
-            for i in range(0, len(metadata_list)-1):
+            for i in range(len(metadata_list)-1):
                 metadata = metadata.merge(metadata_list[i+1], strategy=merge_strategy)
         else:
             for _, m in metadata.items():

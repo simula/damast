@@ -6,16 +6,17 @@ day, per hour, per mmsi group) - see :meth:`AnnotatedDataFrame.export_partitione
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import polars
 
 if TYPE_CHECKING:
     from .dataframe import AnnotatedDataFrame
 
-__all__ = ["PartitionStrategy", "ByColumn", "ByTime", "ByExpr", "SaveAs"]
+__all__ = ["ByColumn", "ByExpr", "ByTime", "PartitionStrategy", "SaveAs"]
 
 
 class PartitionStrategy(ABC):
@@ -318,7 +319,7 @@ class SaveAs:
             column = spec
             if not column:
                 raise ValueError(
-                    f"SaveAs._build_strategy: 'column:' requires 'column:<column>:<template>', but got {value!r}"
+                    f"SaveAs.parse: 'column:' requires 'column:<column>:<template>', but got {value!r}"
                 )
             return ByExpr(
                 polars.col(column), filename_fn=lambda key: template.format(**{column: key})
@@ -328,7 +329,7 @@ class SaveAs:
             timestamp_column, _, interval = spec.partition("+")
             if not timestamp_column or not interval:
                 raise ValueError(
-                    f"SaveAs._build_strategy: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
+                    f"SaveAs.parse: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
                     f" but got {value!r}"
                 )
             interval = _INTERVAL_ALIASES.get(interval, interval)
@@ -340,7 +341,7 @@ class SaveAs:
         interval, _, column = rest.partition("+")
         if not timestamp_column or not interval or not column:
             raise ValueError(
-                "SaveAs._build_strategy: 'time+column:' requires"
+                "SaveAs.parse: 'time+column:' requires"
                 f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
             )
         interval = _INTERVAL_ALIASES.get(interval, interval)
@@ -368,7 +369,7 @@ class SaveAs:
             column = spec
             if not column:
                 raise ValueError(
-                    f"SaveAs._expected_paths_for_strategy: 'column:' requires 'column:<column>:<template>', but got {value!r}"
+                    f"SaveAs.expected_paths: 'column:' requires 'column:<column>:<template>', but got {value!r}"
                 )
             wildcard = template.format(**{column: "*"})
             return [Path(f"{wildcard}.parquet")]
@@ -377,7 +378,7 @@ class SaveAs:
             timestamp_column, _, interval = spec.partition("+")
             if not timestamp_column or not interval:
                 raise ValueError(
-                    f"SaveAs._expected_paths_for_strategy: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
+                    f"SaveAs.expected_paths: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
                     f" but got {value!r}"
                 )
             interval = _INTERVAL_ALIASES.get(interval, interval)
@@ -388,7 +389,7 @@ class SaveAs:
         interval, _, column = rest.partition("+")
         if not timestamp_column or not interval or not column:
             raise ValueError(
-                "SaveAs._expected_paths_for_strategy: 'time+column:' requires"
+                "SaveAs.expected_paths: 'time+column:' requires"
                 f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
             )
         interval = _INTERVAL_ALIASES.get(interval, interval)

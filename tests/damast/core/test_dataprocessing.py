@@ -179,7 +179,6 @@ class JoinSpatioTemporal(PipelineElement):
         self.distance_in_km = distance_in_km
         self.before_time_in_s = before_time_in_s
         self.after_time_in_s = after_time_in_s
-        pass
 
     @damast.core.describe("JoinSpatioTemporal")
     @damast.core.input({

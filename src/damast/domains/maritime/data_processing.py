@@ -6,7 +6,7 @@ Contains AIS-specific pipelines for filtering and augmenting data
 
 
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any
 
 from damast.core import DataProcessingPipeline
 from damast.core.types import XDataFrame
@@ -28,14 +28,14 @@ from .data_specification import ColumnName
 __all__ = ["CleanseAndSanitise", "DataProcessing"]
 
 
-ParamsType = Dict[str, Any]
+ParamsType = dict[str, Any]
 
 
-def get_outputs_dir(workdir: Union[str, Path]) -> Path:
+def get_outputs_dir(workdir: str | Path) -> Path:
     return Path(workdir) / "processed_data"
 
 
-def get_plots_dir(workdir: Union[str, Path]) -> Path:
+def get_plots_dir(workdir: str | Path) -> Path:
     return Path(workdir) / "plots"
 
 
@@ -71,12 +71,12 @@ class CleanseAndSanitise(DataProcessingPipeline):
 
     """
 
-    def __init__(self, message_types: List[int],
-                 columns_default_values: Dict[str, Any],
-                 columns_compress_types: Dict[str, str],
-                 workdir: Union[str, Path],
+    def __init__(self, message_types: list[int],
+                 columns_default_values: dict[str, Any],
+                 columns_compress_types: dict[str, str],
+                 workdir: str | Path,
                  name: str = "Cleanse and sanitise data",
-                 name_mappings: Dict[str, str] = {}):
+                 name_mappings: dict[str, str] = {}):
         super().__init__(name=name,
                          base_dir=workdir,
                          name_mappings=name_mappings)
@@ -143,12 +143,12 @@ class DataProcessing(DataProcessingPipeline):
 
     """
 
-    def __init__(self, workdir: Union[str, Path],
-                 vessel_type_hdf5: Union[str, Path],
-                 fishing_vessel_type_hdf5: Union[str, Path],
-                 anchorages_hdf5: Union[str, Path],
+    def __init__(self, workdir: str | Path,
+                 vessel_type_hdf5: str | Path,
+                 fishing_vessel_type_hdf5: str | Path,
+                 anchorages_hdf5: str | Path,
                  name: str = "AIS-processor",
-                 name_mappings: Dict[str, str] = {}):
+                 name_mappings: dict[str, str] = {}):
 
         super().__init__(name=name,
                          base_dir=workdir,

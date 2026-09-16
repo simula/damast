@@ -1,9 +1,9 @@
 from argparse import ArgumentParser
 
-import astropy.units as units
 import pandas as pd
 import polars
 import pytest
+from astropy import units
 
 from damast.cli.data_inspect import DataInspectParser
 from damast.core.annotations import Annotation

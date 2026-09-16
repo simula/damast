@@ -1,6 +1,5 @@
 import logging
 import pathlib
-from typing import Tuple
 
 import polars
 import polars as pl
@@ -70,7 +69,7 @@ def ais_test_data() -> AISTestData:
 
 @pytest.fixture()
 def vessel_types_data(ais_test_data: AISTestData,
-                      workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
+                      workdir: pathlib.Path) -> tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_vessel_type_data()
     hdf5_path = workdir / "vessel_types.hdf5"
     XDataFrame.export_hdf5(df, hdf5_path)
@@ -79,7 +78,7 @@ def vessel_types_data(ais_test_data: AISTestData,
 
 @pytest.fixture()
 def fishing_vessel_types_data(ais_test_data: AISTestData,
-                              workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
+                              workdir: pathlib.Path) -> tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_fishing_vessel_type_data()
     hdf5_path = workdir / "fishing_vessel_types.hdf5"
     XDataFrame.export_hdf5(df, hdf5_path)
@@ -88,7 +87,7 @@ def fishing_vessel_types_data(ais_test_data: AISTestData,
 
 @pytest.fixture()
 def anchorages_data(ais_test_data: AISTestData,
-                    workdir: pathlib.Path) -> Tuple[DataFrame, pathlib.Path]:
+                    workdir: pathlib.Path) -> tuple[DataFrame, pathlib.Path]:
     df = ais_test_data.generate_anchorage_type_data()
 
     anchorages_csv = workdir / "anchorages.hdf5"

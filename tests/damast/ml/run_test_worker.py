@@ -1,7 +1,6 @@
 """
 Module to provide a test worker instance, which provides predefined sequence predictions
 """
-from typing import Dict, List
 
 import numpy as np
 
@@ -18,11 +17,11 @@ class MockMLModel:
     def predict(self, input_data, steps, verbose):
         return predicted_sequence
 
-    def loss(self, x, y) -> List[float]:
+    def loss(self, x, y) -> list[float]:
         return [float(i) for i in range(x.shape[0])]
 
 
-def mock_from_directory(dir) -> Dict[str, object]:
+def mock_from_directory(dir) -> dict[str, object]:
     """
     Mock the directory loading for Experiment to link to the Mocked machine learning model
     :param dir:
@@ -31,7 +30,7 @@ def mock_from_directory(dir) -> Dict[str, object]:
     return {"custom_model": MockMLModel()}
 
 
-setattr(Experiment, "from_directory", mock_from_directory)
+Experiment.from_directory = mock_from_directory
 
 if __name__ == "__main__":
     worker = Worker()
