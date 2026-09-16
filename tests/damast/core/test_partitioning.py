@@ -262,3 +262,74 @@ def test_save_as_export_time_plus_column_strategy(
 def test_save_as_parse_rejects_malformed_spec(value):
     with pytest.raises(ValueError, match="SaveAs.parse"):
         SaveAs.parse(value)
+
+
+def test_expected_paths_plain_path_is_unaffected():
+    from pathlib import Path
+
+    assert SaveAs.expected_paths(
+        "out/result.parquet", start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 3)
+    ) == [Path("out/result.parquet")]
+
+
+def test_expected_paths_time_strategy_matches_what_export_writes(timeseries_adf, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    value = "time:timestamp+daily:out/AIS_%Y_%m_%d"
+
+    written = SaveAs.parse(value).export(timeseries_adf)
+    predicted = SaveAs.expected_paths(
+        value, start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 3, 23, 59, 59)
+    )
+
+    assert sorted(str(p) for p in predicted) == sorted(str(p) for p in written)
+
+
+def test_expected_paths_time_strategy_only_covers_the_requested_range(timeseries_adf, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    value = "time:timestamp+daily:out/AIS_%Y_%m_%d"
+
+    predicted = SaveAs.expected_paths(
+        value, start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 2)
+    )
+
+    assert [p.as_posix() for p in predicted] == ["out/AIS_2026_01_01.parquet", "out/AIS_2026_01_02.parquet"]
+
+
+def test_expected_paths_column_strategy_wildcards_the_column(timeseries_adf):
+    from pathlib import Path
+
+    predicted = SaveAs.expected_paths(
+        "column:mmsi:out/vessel_{mmsi}", start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 3)
+    )
+
+    assert predicted == [Path("out/vessel_*.parquet")]
+
+
+def test_expected_paths_time_plus_column_strategy_wildcards_the_column_per_bucket():
+    from pathlib import Path
+
+    predicted = SaveAs.expected_paths(
+        "time+column:timestamp+daily+mmsi:out/{mmsi}/AIS_%Y_%m_%d",
+        start=dt.datetime(2026, 1, 1),
+        end=dt.datetime(2026, 1, 2),
+    )
+
+    assert predicted == [
+        Path("out/*/AIS_2026_01_01.parquet"),
+        Path("out/*/AIS_2026_01_02.parquet"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "time:timestamp:out/AIS_%Y",  # missing "+<interval>"
+        "time+column:timestamp+daily:out/AIS",  # missing "+<column>"
+        "column::out/x",  # empty <column>
+        "time:+daily:out/x",  # empty <timestamp_column>
+        "time:timestamp+:out/x",  # empty <interval>
+    ],
+)
+def test_expected_paths_rejects_malformed_spec(value):
+    with pytest.raises(ValueError, match="SaveAs.expected_paths"):
+        SaveAs.expected_paths(value, start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 2))

@@ -260,14 +260,65 @@ class SaveAs:
         return adf.export_partitioned(self.path, self.strategy)
 
     @classmethod
+    def expected_paths(cls, value: str, *, start: datetime, end: datetime) -> list[Path]:
+        """
+        Enumerate the file paths a ``--save-as``-style spec (see :meth:`parse`) is expected to create for
+        data in ``[start, end]`` - the read-side counterpart to :meth:`export`.
+        Can be used to identify files that already exist rather than write new ones, e.g., selecting
+        the partitions of an existing archive that overlap a time range.
+
+        The following cases are covered:
+        (a) a plain path (no recognized strategy prefix) returns ``[Path(value)]`` unchanged.
+        (b) for a partitioned spec, one path is returned per time bucket touched by ``[start, end]``;
+        (c) any part of the template that cannot be derived from time alone - a ``{column}``
+        placeholder, or the whole template for a ``column:``-only spec - is rendered as a glob
+        wildcard ``*``, so the caller can ``Path(...).glob(...)`` for the files that actually
+        exist there instead of assuming every candidate was written.
+
+        Example:
+
+        .. code-block:: python
+
+            SaveAs.expected_paths("out/result.parquet", start=d1, end=d2)
+            # -> [Path("out/result.parquet")]
+
+            SaveAs.expected_paths("time:timestamp+daily:out/AIS_%Y_%m_%d", start=d1, end=d2)
+            # -> one Path per day in [d1, d2], e.g. [Path("out/AIS_2026-01-01.parquet"), ...]
+
+            SaveAs.expected_paths("column:mmsi:out/vessel_{mmsi}", start=d1, end=d2)
+            # -> [Path("out/vessel_*.parquet")]
+
+        :param value: A plain output path, or a `<strategy>:<spec>:<template>` partitioning string
+        :param start: Start of the time range (inclusive)
+        :param end: End of the time range (inclusive)
+        :return: Candidate paths - exact for a plain path or a purely time-based spec, glob
+            patterns (containing ``*``) wherever a value can't be derived from ``start``/``end`` alone
+        :raise ValueError: If a recognized `<strategy>:` prefix is used with a malformed spec
+        """
+        for strategy_name in _SAVE_AS_STRATEGIES:
+            prefix = f"{strategy_name}:"
+            if not value.startswith(prefix):
+                continue
+            spec, _, template = value[len(prefix) :].partition(":")
+            if not template:
+                raise ValueError(
+                    f"SaveAs.expected_paths: '{strategy_name}:' requires"
+                    f" '{strategy_name}:<spec>:<template>', but got {value!r}"
+                )
+            return cls._expected_paths_for_strategy(strategy_name, spec, template, start, end, value)
+
+        return [Path(value)]
+
+    @classmethod
     def _build_strategy(cls,
         strategy_name: str, spec: str, template: str, value: str
     ) -> PartitionStrategy:
+        """Construct the partition(ing) strategy """
         if strategy_name == "column":
             column = spec
             if not column:
                 raise ValueError(
-                    f"SaveAs.parse: 'column:' requires 'column:<column>:<template>', but got {value!r}"
+                    f"SaveAs._build_strategy: 'column:' requires 'column:<column>:<template>', but got {value!r}"
                 )
             return ByExpr(
                 polars.col(column), filename_fn=lambda key: template.format(**{column: key})
@@ -277,7 +328,7 @@ class SaveAs:
             timestamp_column, _, interval = spec.partition("+")
             if not timestamp_column or not interval:
                 raise ValueError(
-                    f"SaveAs.parse: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
+                    f"SaveAs._build_strategy: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
                     f" but got {value!r}"
                 )
             interval = _INTERVAL_ALIASES.get(interval, interval)
@@ -289,7 +340,7 @@ class SaveAs:
         interval, _, column = rest.partition("+")
         if not timestamp_column or not interval or not column:
             raise ValueError(
-                "SaveAs.parse: 'time+column:' requires"
+                "SaveAs._build_strategy: 'time+column:' requires"
                 f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
             )
         interval = _INTERVAL_ALIASES.get(interval, interval)
@@ -306,3 +357,47 @@ class SaveAs:
             return key[time_field].strftime(substituted)
 
         return ByExpr(key_expr, filename_fn=filename_fn)
+
+
+    @classmethod
+    def _expected_paths_for_strategy(cls,
+        strategy_name: str, spec: str, template: str, start: datetime, end: datetime, value: str
+    ) -> list[Path]:
+        """Read-side counterpart to :meth:`SaveAs._build_strategy`, for :meth:`SaveAs.expected_paths`."""
+        if strategy_name == "column":
+            column = spec
+            if not column:
+                raise ValueError(
+                    f"SaveAs._expected_paths_for_strategy: 'column:' requires 'column:<column>:<template>', but got {value!r}"
+                )
+            wildcard = template.format(**{column: "*"})
+            return [Path(f"{wildcard}.parquet")]
+
+        if strategy_name == "time":
+            timestamp_column, _, interval = spec.partition("+")
+            if not timestamp_column or not interval:
+                raise ValueError(
+                    f"SaveAs._expected_paths_for_strategy: 'time:' requires 'time:<timestamp_column>+<interval>:<template>',"
+                    f" but got {value!r}"
+                )
+            interval = _INTERVAL_ALIASES.get(interval, interval)
+            return [Path(f"{bucket.strftime(template)}.parquet") for bucket in cls._time_buckets(start, end, interval)]
+
+        # "time+column"
+        timestamp_column, _, rest = spec.partition("+")
+        interval, _, column = rest.partition("+")
+        if not timestamp_column or not interval or not column:
+            raise ValueError(
+                "SaveAs._expected_paths_for_strategy: 'time+column:' requires"
+                f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
+            )
+        interval = _INTERVAL_ALIASES.get(interval, interval)
+        wildcard_template = template.format(**{column: "*"})
+        return [Path(f"{bucket.strftime(wildcard_template)}.parquet") for bucket in cls._time_buckets(start, end, interval)]
+
+
+    @classmethod
+    def _time_buckets(cls, start: datetime, end: datetime, interval: str) -> list[datetime]:
+        """Return the sorted, deduplicated `dt.truncate(interval)` bucket starts covering `[start, end]`."""
+        samples = polars.datetime_range(start, end, interval=interval, eager=True)
+        return sorted(samples.dt.truncate(interval).unique().to_list())
