@@ -4,10 +4,10 @@ This module extends the existing units found in ::class::`astropy.units`.
 import astropy.units as _units
 
 __all__ = [
+    "Unit",
     "knots",
-    "units",
     "unit_registry",
-    "Unit"
+    "units"
 ]
 
 units = _units

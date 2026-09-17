@@ -2,7 +2,6 @@
 Module that contains transformers which do not modify data, but serve only data exploration.
 """
 from pathlib import Path
-from typing import Union
 
 from damast.core.units import units
 from damast.data_handling.exploration import PLOT_DPI, plot_histograms, plot_lat_lon
@@ -25,7 +24,7 @@ class BaseVisualiser(PipelineElement):
     dpi: int
 
     def __init__(self,
-                 output_dir: Union[str, Path],
+                 output_dir: str | Path,
                  filename_prefix: str = '',
                  dpi: int = PLOT_DPI):
         self.output_dir = Path(output_dir)
@@ -36,7 +35,7 @@ class BaseVisualiser(PipelineElement):
 
 class PlotHistograms(BaseVisualiser):
     def __init__(self,
-                 output_dir: Union[str, Path],
+                 output_dir: str | Path,
                  filename_prefix: str = "histogram"):
         super().__init__(output_dir=output_dir,
                          filename_prefix=filename_prefix)
@@ -53,7 +52,7 @@ class PlotHistograms(BaseVisualiser):
 
 class PlotLatLon(BaseVisualiser):
     def __init__(self,
-                 output_dir: Union[str, Path],
+                 output_dir: str | Path,
                  filename_prefix: str = "lat-lon"):
         super().__init__(output_dir=output_dir,
                          filename_prefix=filename_prefix)

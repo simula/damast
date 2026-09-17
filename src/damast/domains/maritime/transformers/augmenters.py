@@ -1,17 +1,17 @@
 """
 Module which collects transformers that add / augment the existing data
 """
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Union
 
 import numpy as np
 import numpy.typing as npt
 import polars as pl
 
 import damast.core
-import damast.data_handling.transformers.augmenters as augmenters
 from damast.core.dataprocessing import PipelineElement
 from damast.core.types import DataFrame, XDataFrame
+from damast.data_handling.transformers import augmenters
 from damast.data_handling.transformers.augmenters import BallTreeAugmenter
 from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
@@ -66,7 +66,7 @@ class ComputeClosestAnchorage(PipelineElement):
 
     @classmethod
     def load_data(cls,
-                  filename: Union[str, Path], sep: str) -> DataFrame:
+                  filename: str | Path, sep: str) -> DataFrame:
         """
         Load dataset from file
 
@@ -147,7 +147,7 @@ class AddVesselType(augmenters.JoinDataFrameByColumn):
     def __init__(self,
                  right_on: str,
                  dataset_column: str,
-                 dataset: Union[str, Path, DataFrame]
+                 dataset: str | Path | DataFrame
                  ):
 
         if type(dataset) in [str, Path]:

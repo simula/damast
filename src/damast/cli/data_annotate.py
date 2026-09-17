@@ -1,7 +1,6 @@
 from argparse import Action, ArgumentParser
 from pathlib import Path
 
-from damast.cli.base import BaseParser
 from damast.core.annotations import Annotation
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.core.metadata import (
@@ -11,12 +10,14 @@ from damast.core.metadata import (
     ValidationMode,
 )
 
+from .base import BaseParser
+
 
 class SetTxtFieldAction(Action):
     def __call__(self, parser, namespace, values, option_string=None):
         name = option_string.lstrip('--set-')
         if not hasattr(namespace, "update_metadata"):
-            setattr(namespace, "update_metadata", MetaData(columns=[]))
+            namespace.update_metadata = MetaData(columns=[])
 
         for value in values:
             column, column_value = value.split(":", 1)

@@ -4,10 +4,10 @@ Module containing the worker functionality to perform a learning task
 import datetime as dt
 import select
 import socket
+from collections.abc import Callable
 from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
 from threading import Event, Thread
-from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ _log: Logger = getLogger(__name__)
 
 
 class Worker:
-    threads: Dict[int, Thread]
+    threads: dict[int, Thread]
     stop_event: Event
 
     def __init__(self):
@@ -34,12 +34,12 @@ class Worker:
                 model_name: str,
                 experiment_dir: Path,
                 df: pd.DataFrame,
-                features: List[str],
-                target: List[str],
+                features: list[str],
+                target: list[str],
                 sequence_length: int,
                 connection: socket.socket,
                 stop_event: Event,
-                update_callback: Optional[Callable] = None
+                update_callback: Callable | None = None
                 ):
         models = Experiment.from_directory(experiment_dir)
         current_model = models[model_name]

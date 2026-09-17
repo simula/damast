@@ -1,13 +1,18 @@
 import datetime
 
-import astropy.units as units
 import numpy as np
 import polars
 import pytest
 import yaml
+from astropy import units
 
 from damast.core.annotations import Annotation, Change, History
-from damast.core.data_description import BooleanValueStats, CyclicMinMax, MinMax, NumericValueStats
+from damast.core.data_description import (
+    BooleanValueStats,
+    CyclicMinMax,
+    MinMax,
+    NumericValueStats,
+)
 from damast.core.metadata import (
     DataCategory,
     DataSpecification,

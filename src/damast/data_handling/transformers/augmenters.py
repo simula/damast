@@ -6,7 +6,7 @@ import logging
 from enum import Enum
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -62,7 +62,7 @@ class JoinDataFrameByColumn(PipelineElement):
     dataset: DataFrame | Path
 
     def __init__(self,
-                 dataset: Union[str, Path, XDataFrame],
+                 dataset: str | Path | XDataFrame,
                  right_on: str,
                  dataset_column: str,
                  how: JoinHowType = JoinHowType.LEFT,
@@ -91,7 +91,7 @@ class JoinDataFrameByColumn(PipelineElement):
 
     @classmethod
     def load_data(cls,
-                  filename: Union[str, Path], sep: str) -> DataFrame:
+                  filename: str | Path, sep: str) -> DataFrame:
         """
         Load dataset from file
 
@@ -131,7 +131,7 @@ class JoinDataFrameByColumn(PipelineElement):
         return df
 
 
-class BallTreeAugmenter():
+class BallTreeAugmenter:
     """
     A class for distance computation using BallTree.
 

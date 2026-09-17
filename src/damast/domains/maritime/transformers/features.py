@@ -6,10 +6,10 @@ from damast.core import AnnotatedDataFrame
 from damast.core.dataprocessing import PipelineElement
 
 __all__ = [
+    "AngularVelocity",
     "DeltaDistance",
     "Heading",
-    "Speed",
-    "AngularVelocity"
+    "Speed"
 ]
 
 
@@ -181,7 +181,7 @@ class Heading(PipelineElement):
                 )
 
         dataframe = dataframe.with_columns(
-                        (pl.col(delta_heading) / pl.col("_delta_time")).alias("angular_velocity")
+                        (pl.col(delta_heading) / pl.col("_delta_time")).alias(angular_velocity)
                     ).drop("_delta_time")
 
         df.lazyframe = dataframe.filter(

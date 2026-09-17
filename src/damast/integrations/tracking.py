@@ -10,7 +10,7 @@ import json
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Tuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from damast.core.dataframe import AnnotatedDataFrame
@@ -20,8 +20,8 @@ __all__ = ["ExperimentTracker", "flatten_metadata", "flatten_step_stats"]
 
 
 def flatten_metadata(
-    metadata: "MetaData",
-) -> Tuple[Dict[str, Any], Dict[str, float], Dict[str, str]]:
+    metadata: MetaData,
+) -> tuple[dict[str, Any], dict[str, float], dict[str, str]]:
     """
     Flatten a `MetaData` contract into tracker-agnostic params/metrics/tags.
 
@@ -42,9 +42,9 @@ def flatten_metadata(
     Returns:
         A `(params, metrics, tags)` tuple.
     """
-    params: Dict[str, Any] = {}
-    metrics: Dict[str, float] = {}
-    tags: Dict[str, str] = {}
+    params: dict[str, Any] = {}
+    metrics: dict[str, float] = {}
+    tags: dict[str, str] = {}
 
     for spec in metadata.columns:
         spec_dict = dict(spec)
@@ -69,7 +69,7 @@ def flatten_metadata(
     return params, metrics, tags
 
 
-def flatten_step_stats(processing_stats: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+def flatten_step_stats(processing_stats: dict[str, dict[str, Any]]) -> dict[str, float]:
     """
     Flatten `DataProcessingPipeline.processing_stats` into tracker-agnostic metrics.
 
@@ -80,7 +80,7 @@ def flatten_step_stats(processing_stats: Dict[str, Dict[str, Any]]) -> Dict[str,
     Returns:
         A flat mapping of metric name to numeric value.
     """
-    metrics: Dict[str, float] = {}
+    metrics: dict[str, float] = {}
     for step_name, stats in processing_stats.items():
         for key in ("processing_time_in_s", "output_dataframe_length"):
             if key in stats:
@@ -105,15 +105,15 @@ class ExperimentTracker(ABC):
         """Start a new run."""
 
     @abstractmethod
-    def log_params(self, params: Dict[str, Any]) -> None:
+    def log_params(self, params: dict[str, Any]) -> None:
         """Log a batch of (immutable, contract-like) parameters."""
 
     @abstractmethod
-    def log_metrics(self, metrics: Dict[str, float]) -> None:
+    def log_metrics(self, metrics: dict[str, float]) -> None:
         """Log a batch of numeric metrics."""
 
     @abstractmethod
-    def set_tags(self, tags: Dict[str, str]) -> None:
+    def set_tags(self, tags: dict[str, str]) -> None:
         """Set a batch of free-form tags."""
 
     @abstractmethod
@@ -124,7 +124,7 @@ class ExperimentTracker(ABC):
     def end_run(self, status: str = "FINISHED") -> None:
         """End the current run."""
 
-    def log_result(self, adf: "AnnotatedDataFrame") -> None:
+    def log_result(self, adf: AnnotatedDataFrame) -> None:
         """
         Log an `AnnotatedDataFrame`'s metadata contract to the current run.
 

@@ -3,10 +3,10 @@ from .features import AngularVelocity, DeltaDistance, Heading, Speed
 
 __all__ = [
     "AddMissingAISStatus",
-    "AngularVelocity",
-    "DeltaDistance",
     "AddVesselType",
+    "AngularVelocity",
     "ComputeClosestAnchorage",
+    "DeltaDistance",
     "Heading",
     "Speed"
 ]

@@ -4,7 +4,6 @@ Module to encode the class hierarchy of the global fishing watch
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Union
 
 
 class VesselType:
@@ -12,7 +11,7 @@ class VesselType:
     The base class for all vessel types defined by the global fishing watch.
     """
 
-    _all_types: Optional[List[VesselType]] = None
+    _all_types: list[VesselType] | None = None
 
     @classmethod
     def typename(cls) -> str:
@@ -27,7 +26,7 @@ class VesselType:
         return snake_case_name
 
     @classmethod
-    def get_types(cls) -> List[VesselType]:
+    def get_types(cls) -> list[VesselType]:
         """
         Get all available vessel types.
 
@@ -40,11 +39,11 @@ class VesselType:
         return klasses
 
     @classmethod
-    def get_types_as_str(cls) -> List[VesselType]:
+    def get_types_as_str(cls) -> list[VesselType]:
         return [x.typename() for x in cls.get_types()]
 
     @staticmethod
-    def _subclasses(cls) -> List[VesselType]:
+    def _subclasses(cls) -> list[VesselType]:
         klasses = []
         for subclass in cls.__subclasses__():
             klasses.append(subclass)
@@ -52,14 +51,14 @@ class VesselType:
         return klasses
 
     @classmethod
-    def get_values(cls) -> List[int]:
+    def get_values(cls) -> list[int]:
         """
         Get the int representations for this class
 
         :return: List of values
         """
         cls._initialize_types()
-        values: List[int] = []
+        values: list[int] = []
 
         for klass in cls._all_types:
             values.append(VesselType.to_id(klass=klass))
@@ -80,7 +79,7 @@ class VesselType:
 
     @classmethod
     def to_id(cls, *,
-              klass: Union[str, VesselType] = None) -> int:
+              klass: str | VesselType = None) -> int:
         """
         Get the id for a klass name or class type of VesselType.
 
@@ -127,7 +126,7 @@ class VesselType:
         return cls.to_id(klass=klass)
 
     @classmethod
-    def get_mapping(cls) -> Dict[str, int]:
+    def get_mapping(cls) -> dict[str, int]:
         """
         Compute the mapping from vessel typename to integer
 

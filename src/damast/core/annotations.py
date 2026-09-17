@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import Any, ClassVar
 
 from damast.utils import fromisoformat
 
@@ -43,9 +43,9 @@ class Annotation:
     name: str
 
     #: Value of the annotation
-    value: Optional[Any] = None
+    value: Any | None = None
 
-    def __init__(self, name: Union[str, Key], value: Optional[Any] = None):
+    def __init__(self, name: str | Key, value: Any | None = None):
         self.name = name
         self.value = value
 
@@ -84,7 +84,7 @@ class Annotation:
         yield self.name, self.value
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Annotation:
+    def from_dict(cls, data: dict[str, Any]) -> Annotation:
         """
         Create an instance from a given dictionary.
 
@@ -170,7 +170,7 @@ class Change:
         yield "description", self.description
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]):
+    def from_dict(cls, data: dict[str, Any]):
         """Initialize a change from a dictionary
 
         .. note::
@@ -200,9 +200,9 @@ class History(Annotation):
     :param changes: A list of changes (ordered chronologically)
     """
 
-    changes: List[Change]
+    changes: list[Change]
 
-    def __init__(self, changes: Optional[List[Change]] = None):
+    def __init__(self, changes: list[Change] | None = None):
         super().__init__(name=Annotation.Key.History)
         if changes is None:
             self.changes = []
@@ -233,7 +233,7 @@ class History(Annotation):
         yield Annotation.Key.History.value, [dict(c) for c in self.changes]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]):
+    def from_dict(cls, data: dict[str, Any]):
         """
         Initialize a history from a dictionary
 

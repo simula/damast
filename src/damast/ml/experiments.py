@@ -8,9 +8,10 @@ import importlib
 import os
 import random
 import tempfile
+from collections.abc import Sequence
 from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Union
+from typing import Any, NamedTuple
 
 import numpy as np
 import polars as pl
@@ -59,19 +60,19 @@ class LearningTask:
     """
     label: str
     pipeline: DataProcessingPipeline
-    features: List[str]
-    targets: List[str]
+    features: list[str]
+    targets: list[str]
 
-    models: List[ModelInstanceDescription]
-    training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
+    models: list[ModelInstanceDescription]
+    training_parameters: dict[str, Any] | TrainingParameters = TrainingParameters(),
 
     def __init__(self, *,
                  label: str,
-                 pipeline: Union[Dict[str, Any], DataProcessingPipeline],
-                 features: List[str],
-                 models: List[Union[Dict[str, Any], ModelInstanceDescription]],
-                 targets: Optional[List[str]] = None,
-                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
+                 pipeline: dict[str, Any] | DataProcessingPipeline,
+                 features: list[str],
+                 models: list[dict[str, Any] | ModelInstanceDescription],
+                 targets: list[str] | None = None,
+                 training_parameters: dict[str, Any] | TrainingParameters = TrainingParameters(),
                  ):
 
         self.label = label
@@ -81,7 +82,7 @@ class LearningTask:
         elif isinstance(pipeline, dict):
             self.pipeline = DataProcessingPipeline(**pipeline)
         else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate DataProcessingPipeline"
+            raise TypeError(f"{self.__class__.__name__}.__init__: could not instantiate DataProcessingPipeline"
                              f" from {type(pipeline)}")
 
         self.features = features
@@ -97,7 +98,7 @@ class LearningTask:
             elif isinstance(m, dict):
                 self.models.append(ModelInstanceDescription.from_dict(data=m))
             else:
-                raise ValueError(f"{self.__class__.__name__}.__init__: could not instantiate ModelInstanceDescription"
+                raise TypeError(f"{self.__class__.__name__}.__init__: could not instantiate ModelInstanceDescription"
                                  f" from {type(m)}")
 
         if isinstance(training_parameters, TrainingParameters):
@@ -105,11 +106,11 @@ class LearningTask:
         elif isinstance(training_parameters, dict):
             self.training_parameters = TrainingParameters(**training_parameters)
         else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: training_parameters must be either "
+            raise TypeError(f"{self.__class__.__name__}.__init__: training_parameters must be either "
                              f"dict or TrainingParameters object")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]):
+    def from_dict(cls, data: dict[str, Any]):
         if "module_name" not in data:
             raise KeyError(f"{cls.__name__}.create: missing 'module_name'")
 
@@ -158,14 +159,14 @@ class ForecastTask(LearningTask):
 
     def __init__(self, *,
                  label: str,
-                 pipeline: Union[Dict[str, Any], DataProcessingPipeline],
+                 pipeline: dict[str, Any] | DataProcessingPipeline,
                  group_column: str,
-                 features: List[str],
+                 features: list[str],
                  sequence_length: int,
                  forecast_length: int,
-                 models: List[Union[Dict[str, Any], ModelInstanceDescription]],
-                 targets: Optional[List[str]] = None,
-                 training_parameters: Union[Dict[str, Any], TrainingParameters] = TrainingParameters(),
+                 models: list[dict[str, Any] | ModelInstanceDescription],
+                 targets: list[str] | None = None,
+                 training_parameters: dict[str, Any] | TrainingParameters = TrainingParameters(),
                  ):
         super().__init__(label=label,
                          pipeline=pipeline,
@@ -190,8 +191,7 @@ class ForecastTask(LearningTask):
         return True
 
     def __iter__(self):
-        for x in super().__iter__():
-            yield x
+        yield from super().__iter__()
 
         yield "group_column", self.group_column
         yield "sequence_length", self.sequence_length
@@ -204,28 +204,28 @@ class Experiment:
 
     learning_task: LearningTask
 
-    input_data: Path
+    input_data: list[Path]
     output_directory: Path
     label: str
 
     _batch_size: int
-    _split_data_ratios: List[float]
+    _split_data_ratios: list[float]
 
     _timestamp: datetime.datetime
     _evaluation_steps: int
-    _evaluation_report: Dict[str, Dict[str, Any]]
+    _evaluation_report: dict[str, dict[str, Any]]
 
-    _trained_models: List[BaseModel]
+    _trained_models: list[BaseModel]
 
     def __init__(self,
-                 learning_task: Union[Dict[str, Any], LearningTask],
-                 input_data: Union[str, Path],
-                 output_directory: Union[str, Path] = tempfile.gettempdir(),
+                 learning_task: dict[str, Any] | LearningTask,
+                 input_data: str | Path,
+                 output_directory: str | Path = tempfile.gettempdir(),
                  batch_size: int = 2,
                  evaluation_steps=1,
-                 split_data_ratios: List[float] = [1.6, 0.2, 0.2],
+                 split_data_ratios: list[float] = [1.6, 0.2, 0.2],
                  label: str = "damast-ml-experiment",
-                 timestamp: Union[str, datetime.datetime] = datetime.datetime.now(datetime.timezone.utc),
+                 timestamp: str | datetime.datetime = datetime.datetime.now(datetime.timezone.utc),
                  evaluation={}
                  ):
         """
@@ -246,8 +246,8 @@ class Experiment:
         elif isinstance(learning_task, dict):
             self.learning_task = LearningTask.from_dict(data=learning_task)
         else:
-            raise ValueError(f"{self.__class__.__name__}.__init__: learning_task must be either"
-                             f"dict or LearningTask object")
+            raise TypeError(f"{self.__class__.__name__}.__init__: learning_task must be either "
+                             f"dict or LearningTask object, was {type(learning_task)}")
 
         if type(input_data) is list:
             self.input_data = input_data
@@ -261,7 +261,8 @@ class Experiment:
         self._evaluation_steps = evaluation_steps
         self._split_data_ratios = split_data_ratios
         if isinstance(timestamp, str):
-            timestamp = datetime.datetime.strptime(timestamp, Experiment.TIMESTAMP_FORMAT)
+            timestamp = datetime.datetime.strptime(timestamp, Experiment.TIMESTAMP_FORMAT).replace(
+                tzinfo=datetime.timezone.utc)
 
         self._timestamp = timestamp
         self._evaluation_report = evaluation
@@ -269,7 +270,7 @@ class Experiment:
 
     @classmethod
     def from_file(cls,
-                  filename: Union[str, Path]) -> Experiment:
+                  filename: str | Path) -> Experiment:
         if not Path(filename).exists():
             raise FileNotFoundError(f"{cls.__name__}.from_file: the given experiment description file"
                                     f" does not exist: '{filename}'")
@@ -279,7 +280,7 @@ class Experiment:
             return cls(**data)
 
     def save(self,
-             filename: Union[str, Path]):
+             filename: str | Path):
         """
         Save the experiment as yaml.
 
@@ -290,7 +291,7 @@ class Experiment:
 
     @classmethod
     def create_experiment_directory(cls,
-                                    base_dir: Union[str, Path],
+                                    base_dir: str | Path,
                                     label: str) -> Path:
         """Create an experiment directory inside the output directory.
 
@@ -306,7 +307,7 @@ class Experiment:
         return experiment_dir
 
     @classmethod
-    def validate_experiment_dir(cls, dir: Union[str, Path]) -> Path:
+    def validate_experiment_dir(cls, dir: str | Path) -> Path:
         """
         Validate that a particular directory is an "experiment" directory.
 
@@ -328,7 +329,7 @@ class Experiment:
         return experiment_dir
 
     @classmethod
-    def from_directory(cls, dir: Union[str, Path]) -> Dict[str, 'keras.Model']:
+    def from_directory(cls, dir: str | Path) -> dict[str, keras.Model]:
         """
         Create an experiment object by loading a directory with experiment artifacts.
 
@@ -354,7 +355,7 @@ class Experiment:
         return models
 
     @classmethod
-    def touch_marker(cls, dir: Union[str, Path]):
+    def touch_marker(cls, dir: str | Path):
         """
         Create a marker file in a given directory.
 
@@ -373,7 +374,7 @@ class Experiment:
     def compute_train_test_validate_groups(cls,
                                            adf: AnnotatedDataFrame,
                                            group: str,
-                                           ratios: List[float]) -> List[List[Any]]:
+                                           ratios: list[float]) -> list[list[Any]]:
         """
         Given a :class:`damast.AnnotatedDataFrame` and a column name, split the dataframe into groups
         based on the column name. The size of each group is determined by the ratio.
@@ -429,7 +430,7 @@ class Experiment:
     def create_generator(self,
                          adf: AnnotatedDataFrame,
                          group: str,
-                         group_ids: List[Any]) -> Sequence:
+                         group_ids: list[Any]) -> Sequence:
         """
         Create a generator applicable for :py:mod:`keras` from the input data.
 
@@ -514,7 +515,7 @@ class Experiment:
 
     def evaluate(self,
                  test_generator: Sequence,
-                 steps: int = 1) -> Dict[str, Dict[str, Any]]:
+                 steps: int = 1) -> dict[str, dict[str, Any]]:
 
         return Experiment.evaluate_models(models=self._trained_models,
                                           test_generator=test_generator,
@@ -522,9 +523,9 @@ class Experiment:
 
     @classmethod
     def evaluate_models(cls,
-                        models: List[BaseModel],
+                        models: list[BaseModel],
                         test_generator: Sequence,
-                        steps: int = 1) -> Dict[str, Dict[str, Any]]:
+                        steps: int = 1) -> dict[str, dict[str, Any]]:
         """
         Evaluate a list of trained models.
 
@@ -547,7 +548,7 @@ class Experiment:
 
     def run(self,
             logging_level: int = INFO,
-            report_filename: Optional[Union[str, Path]] = None) -> DataFrame:
+            report_filename: str | Path | None = None) -> DataFrame:
         """
         Run the experiment and return evaluation data.
 
@@ -610,7 +611,7 @@ class Experiment:
                 train_generator=train_data_gen,
                 validate_generator=validate,
                 output_dir=experiment_dir,
-                **self.learning_task.training_parameters._asdict()  # noqa
+                **self.learning_task.training_parameters._asdict()
             )
             self._trained_models.append(model)
 

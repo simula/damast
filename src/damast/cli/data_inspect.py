@@ -10,6 +10,7 @@ import damast  # noqa
 from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import ValidationMode
+from damast.core.partitioning import SaveAs
 from damast.utils.io import Archive
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,22 @@ class DataInspectParser(BaseParser):
                             default="readonly",
                             choices=[x.value.lower() for x in ValidationMode],
                             help="Define the validation mode")
+
+        parser.add_argument("-s", "--save-as",
+                            type=str,
+                            default=None,
+                            help="If filters are being used, it will save the result in the given file"
+                                 " (all columns being used). A plain path saves one file; use"
+                                 " 'time:<column>+<interval>:<template>', 'column:<column>:<template>',"
+                                 " or 'time+column:<column>+<interval>+<column>:<template>' to instead save"
+                                 " one file per partition - see damast.core.partitioning.SaveAs.parse"
+        )
+
+        parser.add_argument("-e", "--export-metadata",
+                            type=str,
+                            help="Export the (updated) metadata spec file to the given path",
+                            default=None
+        )
 
     def fill_missing_value_stats(self, adf: AnnotatedDataFrame) -> dict[str, set[str]]:
         """
@@ -197,6 +214,16 @@ class DataInspectParser(BaseParser):
                 with pl.Config(tbl_rows=args.tail, tbl_cols=args.column_count, fmt_str_lengths=args.column_width):
                     print(df.tail(n=args.tail).collect())
 
+                if args.save_as:
+                    if not args.filter:
+                        logger.warning("--save-as is only active with --filter")
+                    else:
+                        SaveAs.parse(args.save_as).export(adf)
+
+                if args.export_metadata:
+                    specfile = Path(args.export_metadata)
+                    specfile.parent.mkdir(parents=True, exist_ok=True)
+                    adf.metadata.save_yaml(specfile)
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)

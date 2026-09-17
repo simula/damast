@@ -23,8 +23,8 @@ import shlex
 import subprocess
 import time
 import traceback as tc
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -32,9 +32,9 @@ from tqdm import tqdm
 from typing_extensions import Self
 
 __all__ = [
+    "WatchConfig",
     "WatchJob",
     "WatchResult",
-    "WatchConfig",
 ]
 
 logger = logging.getLogger(__name__)
@@ -272,7 +272,7 @@ class WatchJob(BaseModel):
 
         return moved
 
-    def run(self, dry_run: bool = False, now: float | None = None) -> "WatchResult":
+    def run(self, dry_run: bool = False, now: float | None = None) -> WatchResult:
         """
         Run a single watch cycle for this job.
 
@@ -416,7 +416,7 @@ class WatchConfig(BaseModel):
     jobs: list[WatchJob]
 
     @model_validator(mode="after")
-    def _check_jobs(self) -> "WatchConfig":
+    def _check_jobs(self) -> WatchConfig:
         if not self.jobs:
             raise ValueError("requires a non-empty 'jobs' list")
 
@@ -441,7 +441,7 @@ class WatchConfig(BaseModel):
         return list(data.get("jobs") or [])
 
     @classmethod
-    def load(cls, path: Path) -> "WatchConfig":
+    def load(cls, path: Path) -> WatchConfig:
         """
         Load a watch config file, with defaults applied to each job.
 

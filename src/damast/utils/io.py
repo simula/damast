@@ -6,9 +6,9 @@ import tempfile
 import time
 import warnings
 import zipfile
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Callable
 
 from damast.core.constants import DAMAST_MOUNT_PREFIX
 
@@ -68,7 +68,7 @@ class Archive:
         if self._supported_suffixes is not None:
             return self._supported_suffixes
 
-        from ratarmountcore.formats import (  # noqa
+        from ratarmountcore.formats import (
             ARCHIVE_FORMATS,
             COMPRESSION_FORMATS,
         )
@@ -161,7 +161,7 @@ class Archive:
         """
         if self._backend == ArchiveBackend.RATARMOUNT:
             for mounted_dir in list(reversed(self._mounted_dirs)):
-                for count in range(0,5):
+                for count in range(5):
                     time.sleep(0.5)
 
                     response = subprocess.run(["ratarmount", "-u", mounted_dir])

@@ -27,7 +27,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Union
 from xml.sax.saxutils import escape
 
 import jinja2
@@ -244,7 +243,7 @@ class MermaidExporter(PipelineExporter):
         #: `to_html`'s JS uses this to highlight every occurrence of one column on hover
         name: str
         #: The column's description, if any - shown as a click-tooltip
-        tooltip: Optional[str] = None
+        tooltip: str | None = None
 
     @dataclass
     class TransformNode:
@@ -266,7 +265,7 @@ class MermaidExporter(PipelineExporter):
         #: ``"inputsBlockStyle"`` or ``"outputsBlockStyle"``
         style_class: str
         #: The columns in this block, in render order
-        columns: List["MermaidExporter.LeafNode"]
+        columns: list[MermaidExporter.LeafNode]
 
     @dataclass
     class DataSourceBlock:
@@ -278,7 +277,7 @@ class MermaidExporter(PipelineExporter):
         #: Cluster title, e.g. ``"DataSource"``
         title: str
         #: The required columns, in render order
-        columns: List["MermaidExporter.LeafNode"]
+        columns: list[MermaidExporter.LeafNode]
         #: Always ``"dataSourceNodeStyle"`` - kept as a field (rather than hard-coded in the
         #: template) so `datasource_block.j2` stays a trivial include of `column_block.j2`
         style_class: str = "dataSourceNodeStyle"
@@ -292,13 +291,13 @@ class MermaidExporter(PipelineExporter):
         #: The transformer's class name, shown as the cluster's title
         class_name: str
         #: One input block per input slot (more than one only for a join)
-        input_blocks: List["MermaidExporter.ColumnBlock"]
+        input_blocks: list[MermaidExporter.ColumnBlock]
         #: The step's ``transform`` call
-        transform: "MermaidExporter.TransformNode"
+        transform: MermaidExporter.TransformNode
         #: The step's output columns
-        output_block: "MermaidExporter.ColumnBlock"
+        output_block: MermaidExporter.ColumnBlock
         #: The step's ``@describe`` text, if any - shown as a click-tooltip on the cluster
-        tooltip: Optional[str] = None
+        tooltip: str | None = None
 
     @dataclass
     class Edge:
@@ -309,9 +308,9 @@ class MermaidExporter(PipelineExporter):
         #: Id of the target node/subgraph
         target: str
         #: Input slot name - set only when the target has more than one input (a join)
-        label: Optional[str] = None
+        label: str | None = None
 
-    def __init__(self, pipeline: DataProcessingPipeline, template_dir: Optional[Union[str, Path]] = None) -> None:
+    def __init__(self, pipeline: DataProcessingPipeline, template_dir: str | Path | None = None) -> None:
         super().__init__(pipeline)
 
         loaders = []
@@ -342,8 +341,8 @@ class MermaidExporter(PipelineExporter):
 
     @staticmethod
     def _leaf_nodes(
-            columns: List[ColumnInfo], *, shape: str, style_class: str, prefix: str
-    ) -> List["MermaidExporter.LeafNode"]:
+            columns: list[ColumnInfo], *, shape: str, style_class: str, prefix: str
+    ) -> list[MermaidExporter.LeafNode]:
         """Build one `LeafNode` per column in ``columns``."""
         nodes = []
         for i, column in enumerate(columns):
@@ -365,7 +364,7 @@ class MermaidExporter(PipelineExporter):
             ))
         return nodes
 
-    def _datasource_element(self, node_id: str, facts: DataSourceFacts) -> "MermaidExporter.DataSourceBlock":
+    def _datasource_element(self, node_id: str, facts: DataSourceFacts) -> MermaidExporter.DataSourceBlock:
         """Build the top-level cluster for a datasource node - its required columns only,
         since `DataSource`'s own declared input/output is always empty (see `input_metadata`)."""
         pe_id = self._safe_id(node_id)
@@ -376,7 +375,7 @@ class MermaidExporter(PipelineExporter):
 
         return self.DataSourceBlock(id=pe_id, title=f"⎆ {class_name}", columns=columns)
 
-    def _processing_element(self, node_id: str, facts: StepFacts) -> "MermaidExporter.ProcessingElement":
+    def _processing_element(self, node_id: str, facts: StepFacts) -> MermaidExporter.ProcessingElement:
         """Build the top-level cluster for a processing step: one "Input" block
         per input slot, its `transform` call, and one "Output" block."""
         pe_id = self._safe_id(node_id)
@@ -414,8 +413,8 @@ class MermaidExporter(PipelineExporter):
     def to_elements(
             self,
     ) -> tuple[
-        List[Union["MermaidExporter.DataSourceBlock", "MermaidExporter.ProcessingElement", "MermaidExporter.ColumnBlock"]],
-        List["MermaidExporter.Edge"],
+        list[MermaidExporter.DataSourceBlock | MermaidExporter.ProcessingElement | MermaidExporter.ColumnBlock],
+        list[MermaidExporter.Edge],
     ]:
         """
         Build the top-level element/`Edge` representation of this exporter's pipeline - one
@@ -486,11 +485,10 @@ class MermaidExporter(PipelineExporter):
 
     def _style_and_click_lines(
             self,
-            top_level: List[Union["MermaidExporter.DataSourceBlock", "MermaidExporter.ProcessingElement",
-                                   "MermaidExporter.ColumnBlock"]],
+            top_level: list[MermaidExporter.DataSourceBlock | MermaidExporter.ProcessingElement | MermaidExporter.ColumnBlock],
             *,
             interactive: bool,
-    ) -> tuple[List[str], List[str], dict[str, str]]:
+    ) -> tuple[list[str], list[str], dict[str, str]]:
         """
         Collect every ``class``/``click`` statement for ``top_level``, to emit as one block at
         the end of the document - Mermaid only renders classes/clicks correctly when they come
@@ -517,11 +515,11 @@ class MermaidExporter(PipelineExporter):
         `to_mermaid`/`export_mermaid` pass ``interactive=False``: a portable ``.mmd`` file has no
         page-side JS to match ``collapsible`` elements, so it must not depend on one.
         """
-        class_lines: List[str] = []
-        click_lines: List[str] = []
+        class_lines: list[str] = []
+        click_lines: list[str] = []
         column_names: dict[str, str] = {}
 
-        def add_leaf(leaf: "MermaidExporter.LeafNode") -> None:
+        def add_leaf(leaf: MermaidExporter.LeafNode) -> None:
             class_lines.append(f"class {leaf.id} {leaf.style_class}")
             if leaf.tooltip:
                 click_lines.append(f'click {leaf.id} "javascript:void(0)" "{leaf.tooltip}"')
@@ -531,7 +529,7 @@ class MermaidExporter(PipelineExporter):
             if interactive:
                 class_lines.append(f"class {subgraph_id} collapsible")
 
-        def add_block(block: Union["MermaidExporter.ColumnBlock", "MermaidExporter.DataSourceBlock"]) -> None:
+        def add_block(block: MermaidExporter.ColumnBlock | MermaidExporter.DataSourceBlock) -> None:
             class_lines.append(f"class {block.id} {block.style_class}")
             mark_collapsible(block.id)
             for leaf in block.columns:
@@ -596,7 +594,7 @@ class MermaidExporter(PipelineExporter):
         diagram, _ = self._render(interactive=False)
         return diagram
 
-    def export_mermaid(self, path: Union[str, Path]) -> Path:
+    def export_mermaid(self, path: str | Path) -> Path:
         """
         Render this exporter's pipeline to Mermaid flowchart source and write it to a `.mmd`
         file - just the diagram, not wrapped in an HTML page (see `export_html` for that).
@@ -621,7 +619,7 @@ class MermaidExporter(PipelineExporter):
         path.write_text(diagram, encoding="utf-8")
         return path
 
-    def to_html(self, title: Optional[str] = None) -> str:
+    def to_html(self, title: str | None = None) -> str:
         """
         Render this exporter's pipeline to a self-contained HTML page with the flowchart,
         loading Mermaid from a CDN - open it in any browser, no local Mermaid install needed.
@@ -656,7 +654,7 @@ class MermaidExporter(PipelineExporter):
             column_names_json=json.dumps(column_names, ensure_ascii=False),
         )
 
-    def export_html(self, path: Union[str, Path], title: Optional[str] = None) -> Path:
+    def export_html(self, path: str | Path, title: str | None = None) -> Path:
         """
         Render this exporter's pipeline to a self-contained HTML page and write it to a `.html`
         file.

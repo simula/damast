@@ -1,12 +1,12 @@
 import copy
 from pathlib import Path
 
-import astropy.units as units
 import numpy as np
 import pandas as pd
 import polars
 import polars.testing
 import pytest
+from astropy import units
 
 from damast.core.annotations import Annotation
 from damast.core.data_description import ListOfValues, MinMax

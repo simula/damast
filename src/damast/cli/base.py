@@ -30,7 +30,6 @@ class BaseParser(ABC):
 
     def execute(self, args):
         print(f"Subparser: {args.active_subparser.__class__.__name__}")
-        pass
 
     def get_files_stats(self, files: list[str | Path]) -> FilesStats:
         """

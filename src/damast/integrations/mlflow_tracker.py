@@ -16,9 +16,10 @@ Requires the optional `mlflow` dependency (`uv add --optional mlflow mlflow`).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterator
+from typing import TYPE_CHECKING, Any
 
 from damast.utils import ensure_packages
 
@@ -42,13 +43,13 @@ class MLflowTracker(ExperimentTracker):
     def start_run(self, run_name: str | None = None, **kwargs: Any) -> None:
         self._mlflow.start_run(run_name=run_name, **kwargs)
 
-    def log_params(self, params: Dict[str, Any]) -> None:
+    def log_params(self, params: dict[str, Any]) -> None:
         self._mlflow.log_params(params)
 
-    def log_metrics(self, metrics: Dict[str, float]) -> None:
+    def log_metrics(self, metrics: dict[str, float]) -> None:
         self._mlflow.log_metrics(metrics)
 
-    def set_tags(self, tags: Dict[str, str]) -> None:
+    def set_tags(self, tags: dict[str, str]) -> None:
         self._mlflow.set_tags(tags)
 
     def log_artifact(self, path: str | Path) -> None:
@@ -60,7 +61,7 @@ class MLflowTracker(ExperimentTracker):
 
 @contextmanager
 def track_pipeline(
-    pipeline: "DataProcessingPipeline",
+    pipeline: DataProcessingPipeline,
     run_name: str | None = None,
     tracking_uri: str | None = None,
     experiment_name: str | None = None,

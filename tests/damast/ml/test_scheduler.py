@@ -1,7 +1,7 @@
 import select
 import socket
 import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 import pytest
 
@@ -71,7 +71,7 @@ def test_response_collector(tmp_path, monkeypatch):
 
         def recvmsg(self, length: int):
             if self.do_exit:
-                return ["BYE".encode()]
+                return [b"BYE"]
             if length == 4:
                 return [msg_size.to_bytes(4, byteorder="little")]
             else:

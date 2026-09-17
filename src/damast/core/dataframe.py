@@ -6,14 +6,19 @@ from __future__ import annotations
 import copy
 import json
 import logging
+from collections.abc import Callable
 from logging import INFO, Logger, getLogger
 from pathlib import Path
-from typing import Callable, Union
 
 import polars
 import pyarrow
 import pyarrow.parquet as pq
 from tqdm import tqdm
+
+try:
+    from typing import deprecated
+except ImportError:
+    from typing_extensions import deprecated
 
 from .annotations import Annotation
 from .constants import (
@@ -23,6 +28,7 @@ from .constants import (
 )
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
+from .partitioning import PartitionStrategy
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
@@ -32,6 +38,7 @@ logging.basicConfig()
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
 
+COMPRESSION_CODECS = ["NONE", "SNAPPY", "GZIP", "BROTLI", "LZ4", "ZSTD", "BZ2"]
 
 class AnnotatedDataFrame(XDataFrame):
     """
@@ -178,8 +185,8 @@ class AnnotatedDataFrame(XDataFrame):
                     new_spec if c.name == column_name else c for c in self._metadata.columns
                 ]
 
-
-    def save(self, *, filename: Union[str, Path]) -> AnnotatedDataFrame:
+    @deprecated("Use `export(..)` instead")
+    def save(self, *, filename: str | Path) -> AnnotatedDataFrame:
         """
         Save this annotated dataframe in a file.
 
@@ -213,14 +220,84 @@ class AnnotatedDataFrame(XDataFrame):
 
         return self
 
-    def export(self, filename: str | Path):
+    def export(self, filename: str | Path, compression: str | None = None, compression_level: int | None = None):
         """
-        Export the annotated dataframe to a file. By default the format is parquet.
+        Export the annotated dataframe to a file.
+        By default the format is parquet.
+
+        Compression is applied when possible, e.g., for parquet.
         """
+        # this sets the default
+        if compression is None:
+            compression = "zstd"
+            if not compression_level:
+                compression_level = 5
+        # this sets explicitly no compression
+        elif compression == "NONE":
+            compression = None
+
         arrow_table = self.lazyframe.compat.collected().to_arrow()
         new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
         arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
-        pq.write_table(arrow_table, filename)
+        pq.write_table(arrow_table, filename, compression=compression, compression_level=compression_level)
+
+    def export_partitioned(
+        self,
+        directory: str | Path,
+        strategy: PartitionStrategy,
+        *,
+        compression: str | None = None,
+        compression_level: int | None = None,
+    ) -> list[Path]:
+        """
+        Export this dataframe as one file per partition, as determined by `strategy`.
+
+        Each partition is written via :meth:`save`/:meth:`export`, so the result round-trips
+        through :meth:`from_files` exactly like any other multi-file dataset.
+
+        .. note::
+            This collects the full dataframe before splitting it (`polars.DataFrame.partition_by`
+            requires an eager dataframe) - not suited for data too large to fit in memory.
+
+        :param directory: Directory to write partition files into (created if missing)
+        :param strategy: Determines the per-row partition key and its filename
+        :return: Paths of the written data files, one per partition
+
+        Example:
+
+        .. code-block:: python
+
+            adf.export_partitioned("out/", ByColumn("mmsi"))
+            adf.export_partitioned("out/", ByTime("timestamp", every="1d"))
+        """
+        if self.lazyframe is None:
+            raise ValueError(f"{self.__class__.__name__}.export_partitioned: no dataframe to export")
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        key_col = "__damast_partition_key__"
+        collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
+
+        written: list[Path] = []
+        # as_dict=False + re-deriving the key from the partition itself (rather than
+        # as_dict=True, which needs the key as a dict key) also works for a struct-valued
+        # key_expr() (e.g. a composite of several columns) - a dict isn't hashable.
+        partitions = collected.partition_by(key_col, as_dict=False, include_key=True, maintain_order=True)
+        with tqdm(partitions, unit="partition") as pbar:
+            for part in pbar:
+                key = part[key_col][0]
+                part = part.drop(key_col)
+                filename = directory / f"{strategy.filename(key)}.parquet"
+                pbar.set_description(f"Exporting {filename}")
+                filename.parent.mkdir(parents=True, exist_ok=True)
+                part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
+                part_adf.export(filename,
+                                compression=compression,
+                                compression_level=compression_level)
+                written.append(filename)
+
+        return written
 
     @classmethod
     def get_supported_format(cls, suffix: str) -> str | None:
@@ -315,7 +392,7 @@ class AnnotatedDataFrame(XDataFrame):
                         columns=metadata_list[0].columns,
                         annotations=list(metadata_list[0].annotations.values())
                     )
-            for i in range(0, len(metadata_list)-1):
+            for i in range(len(metadata_list)-1):
                 metadata = metadata.merge(metadata_list[i+1], strategy=merge_strategy)
         else:
             for _, m in metadata.items():
@@ -393,7 +470,7 @@ class AnnotatedDataFrame(XDataFrame):
         column_specs: list[DataSpecification] = []
 
         numeric_columns: list[str] = []
-        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata"):
+        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata", unit="column"):
             data = {'name': column,
                     'is_optional': False,
                     'representation_type': df.compat.dtype(column)
@@ -421,7 +498,7 @@ class AnnotatedDataFrame(XDataFrame):
         if numeric_columns:
             # To allow polars to optimize the query, process all numeric columns at once
             results = df.compat.minmax_stats(numeric_columns)
-            for column in tqdm(numeric_columns, desc="Extract numeric column metadata"):
+            for column in tqdm(numeric_columns, desc="Extract numeric column metadata", unit="column"):
                 data = {'name': column,
                         'is_optional': False,
                         'representation_type': df.compat.dtype(column)

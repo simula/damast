@@ -4,9 +4,11 @@ import gc
 import glob
 import importlib
 from abc import ABC, abstractmethod
+from collections import OrderedDict
+from collections.abc import Generator
 from pathlib import Path
 from tempfile import gettempdir
-from typing import ClassVar, Generator, NamedTuple, OrderedDict
+from typing import ClassVar, NamedTuple
 
 import keras.callbacks
 import keras.utils
@@ -104,7 +106,6 @@ class BaseModel(ABC):
         """
         Initialize the internal keras model, i.e. self.model.
         """
-        pass
 
     def load_weights(self,
                      checkpoint_filepath: str | Path):

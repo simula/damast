@@ -245,7 +245,7 @@ def test_missing_local_plugin_error_mentions_original_path(local_plugin_path):
         PipelineElement.create_new(**saved_step)
 
 
-def test_local_plugin_path_missing_directory_warns_but_does_not_crash(tmp_path, monkeypatch, caplog):
+def test_local_plugin_path_missing_directory_warns_but_does_not_crash(isolate_plugins, tmp_path, monkeypatch, caplog):
     missing_dir = tmp_path / "does-not-exist"
     monkeypatch.setenv(PluginManager.PLUGIN_PATH_ENV, str(missing_dir))
 

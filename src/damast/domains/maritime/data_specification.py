@@ -1,10 +1,11 @@
 """
 Module to define known constraints of the data and introduction of constants for column names and field values.
 """
-__all__ = ["ColumnName",
-           "FieldValue",
-           "MMSI"
-           ]
+__all__ = [
+    "MMSI",
+    "ColumnName",
+    "FieldValue"
+]
 
 from typing import ClassVar
 

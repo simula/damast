@@ -151,7 +151,7 @@ def experiment_dir(tmp_path):
 
 
 def test_learning_task_init():
-    with pytest.raises(ValueError, match="could not instantiate"):
+    with pytest.raises(TypeError, match="could not instantiate"):
         LearningTask(label="test",
                      pipeline=10,
                      features=["a"],
@@ -160,7 +160,7 @@ def test_learning_task_init():
                      )
 
     # ModelInstanceDescription is incorrect
-    with pytest.raises(ValueError, match="could not instantiate"):
+    with pytest.raises(TypeError, match="could not instantiate"):
         LearningTask(label="test",
                      pipeline=DataProcessingPipeline(name="test-pipeline"),
                      features=["a"],
@@ -168,7 +168,7 @@ def test_learning_task_init():
                      models=[10],
                      )
 
-    with pytest.raises(ValueError, match="training_parameters"):
+    with pytest.raises(TypeError, match="training_parameters"):
         LearningTask(label="test",
                      pipeline=DataProcessingPipeline(name="test-pipeline"),
                      features=["a"],
@@ -299,7 +299,7 @@ def test_to_and_from_file(tmp_path):
         forecast_length=1
     )
 
-    with pytest.raises(ValueError, match="learning_task"):
+    with pytest.raises(TypeError, match="learning_task"):
         Experiment(learning_task="This is not a learning task",
                    batch_size=10,
                    input_data=Path(__file__).parent.parent / "data" / "test_dataframe.hdf5")

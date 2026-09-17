@@ -10,7 +10,7 @@ from damast.data_handling.accessors import GroupSequenceAccessor, SequenceIterat
 @pytest.fixture()
 def dataframe():
     data = []
-    for group_id in range(0, 100):
+    for group_id in range(100):
         for i in range(1000, 3000):
             data.append([group_id, i, i, i * i])
     columns = ["id", "timestamp", "x", "y"]
@@ -25,7 +25,7 @@ def invalid_dataframe():
     """Dataframe with mixed dtype and short sequences to test error-handling.
     """
     data = []
-    for group_id in range(0, 100):
+    for group_id in range(100):
         for i in range(10, 20):
             data.append([group_id, np.float64(i), i, np.float64(i * i)])
     columns = ["id", "timestamp", "x", "y"]
@@ -62,7 +62,7 @@ def test_group_sequence_accessor(dataframe, target, sequence_forecast, sort_colu
                                       batch_size=epoch,
                                       infinite=True, shuffle=shuffle)
 
-    for i in range(0, 2):
+    for i in range(2):
         epoch = batch_size
         for batch in data_gen:
             epoch -= 1

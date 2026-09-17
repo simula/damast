@@ -179,7 +179,6 @@ class JoinSpatioTemporal(PipelineElement):
         self.distance_in_km = distance_in_km
         self.before_time_in_s = before_time_in_s
         self.after_time_in_s = after_time_in_s
-        pass
 
     @damast.core.describe("JoinSpatioTemporal")
     @damast.core.input({
@@ -545,6 +544,48 @@ def test_single_element_pipeline(tmp_path):
 
     assert adf.metadata['status_suffix'], "Expect metadata to be available for 'status_suffix'"
     assert adf.metadata['status_suffix'].representation_type == polars.Int64, f"Expect representation_type Int64 for 'status_suffix', but got {adf.metadata['status_suffix']}"
+
+
+def test_pipeline_step_failure_reports_full_traceback(tmp_path):
+    """
+    Regression test: DataProcessingPipeline._run's exception handler used to truncate the
+    original traceback to its last two formatted lines (`tc.format_exception(e)[-2:]`) and
+    build the per-input preview via plain (non-f-)strings ("{slot=} " / "{df.head(1).collect)}"
+    - literal template text, never interpolated, and with a stray closing paren that would be a
+    SyntaxError if it were an f-string). Together this discarded exactly the frames showing
+    where in the failing pipeline element the error originated, replacing them with literal
+    "{slot=} {df.head(1).collect)}" - which is what actually surfaced to users.
+    """
+    data = [["10000000", 0]]
+    column_names = ["mmsi", "status"]
+    column_specs = [
+        DataSpecification(name="mmsi"),
+        DataSpecification(name="status", unit=units.deg),
+    ]
+    df = polars.LazyFrame(data, column_names, orient="row")
+    adf = AnnotatedDataFrame(df, MetaData(columns=column_specs))
+
+    class TransformXFail(PipelineElement):
+        @damast.core.describe("Deliberately failing transform")
+        @damast.core.input({"x": {"unit": units.deg}})
+        @damast.core.output({"{{x}}_suffix": {"unit": units.deg}})
+        def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            raise ValueError("deliberate-failure-marker")
+
+    pipeline = DataProcessingPipeline(name="TransformStatusFail", base_dir=tmp_path)
+    pipeline.add("Transform status", TransformXFail(), name_mappings={"x": "status"})
+
+    with pytest.raises(RuntimeError, match="deliberate-failure-marker") as exc_info:
+        pipeline.transform(df=adf)
+
+    # The original ValueError's own traceback frame (pointing at TransformXFail.transform, not
+    # just the damast-internal frame that caught it) must survive.
+    assert "in transform" in str(exc_info.value)
+    assert "ValueError: deliberate-failure-marker" in str(exc_info.value)
+    # The per-input preview must be properly interpolated, not the dead "{slot=}" template.
+    assert "{slot=}" not in str(exc_info.value)
+    assert "input 'df':" in str(exc_info.value)
+
 
 @pytest.mark.parametrize("varname",["x","xyz"])
 def test_decorator_renaming(varname, tmp_path):
