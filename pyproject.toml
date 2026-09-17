@@ -57,6 +57,7 @@ dependencies = [
     "pydantic>=2.0",
     "pydot",
     "ratarmount>=1.2.1; platform_system != 'Darwin'",
+    "typing_extensions;python_version<'3.13'",
     "scikit-learn",
     "tables",
     "tqdm",

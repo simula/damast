@@ -245,7 +245,9 @@ class SaveAs:
 
         return cls(Path(value))
 
-    def export(self, adf: AnnotatedDataFrame) -> Path | list[Path]:
+    def export(self, adf: AnnotatedDataFrame,
+               compression: str | None = None,
+               compression_level: int | None = None) -> Path | list[Path]:
         """
         Export `adf` per this spec: a single file via :meth:`AnnotatedDataFrame.save` for a
         plain path (parquet with a sidecar `.spec.yaml`, or hdf5), or one file per partition
@@ -255,10 +257,15 @@ class SaveAs:
         :return: The single written path, or the list of per-partition paths
         """
         if self.strategy is None:
-            adf.save(filename=self.path)
+            adf.export(filename=self.path,
+                       compression=compression,
+                       compression_level=compression_level
+            )
             return self.path
 
-        return adf.export_partitioned(self.path, self.strategy)
+        return adf.export_partitioned(self.path, self.strategy,
+                                      compression=compression,
+                                      compression_level=compression_level)
 
     @classmethod
     def expected_paths(cls, value: str, *, start: datetime, end: datetime) -> list[Path]:

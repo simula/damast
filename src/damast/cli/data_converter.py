@@ -4,11 +4,12 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from damast.cli.base import BaseParser
-from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataframe import AnnotatedDataFrame, COMPRESSION_CODECS
 from damast.core.metadata import MetaData, ValidationMode
 from damast.core.partitioning import SaveAs
 from damast.utils.io import Archive
+
+from .base import BaseParser
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class DataConvertParser(BaseParser):
                             default=".parquet",
                             required=False,
                             )
-        parser.add_argument("-save-as",
+        parser.add_argument("-s","--save-as",
                             type=str,
                             default=None,
                             required=False,
@@ -72,6 +73,14 @@ class DataConvertParser(BaseParser):
                                  " 'time+column:<column>+<interval>+<column>:<template>' to instead"
                                  " save one file per partition - see"
                                  " damast.core.partitioning.SaveAs.parse"
+        )
+        parser.add_argument("-c", "--compression-type",
+                            default="zstd",
+                            choices=[x.lower() for x in COMPRESSION_CODECS],
+                            )
+        parser.add_argument("-l", "--compression-level",
+                            default=None,
+                            type=int
         )
         parser.add_argument("--validation-mode",
                             default="update_data",
@@ -130,7 +139,10 @@ class DataConvertParser(BaseParser):
 
                 self.validate(adf, args)
 
-                written = save_as.export(adf)
+                written = save_as.export(adf,
+                                         compression=args.compression_type,
+                                         compression_level=args.compression_level
+                )
                 created_files = written if isinstance(written, list) else [written]
 
                 print(adf.head(10).collect())
@@ -154,7 +166,9 @@ class DataConvertParser(BaseParser):
 
                     self.validate(adf, args)
 
-                    adf.save(filename=output_file)
+                    adf.export(filename=output_file,
+                               compression=args.compression_type,
+                               compression_level=args.compression_level)
                     created_files.append(output_file)
 
                     print(f"Filename: {output_file.resolve()}")

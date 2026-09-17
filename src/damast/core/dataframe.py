@@ -15,6 +15,11 @@ import pyarrow
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
+try:
+    from typing import deprecated
+except ImportError:
+    from typing_extensions import deprecated
+
 from .annotations import Annotation
 from .constants import (
     DAMAST_CSV_DEFAULT_ARGS,
@@ -33,6 +38,7 @@ logging.basicConfig()
 _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
 
+COMPRESSION_CODECS = ["NONE", "SNAPPY", "GZIP", "BROTLI", "LZ4", "ZSTD", "BZ2"]
 
 class AnnotatedDataFrame(XDataFrame):
     """
@@ -179,7 +185,7 @@ class AnnotatedDataFrame(XDataFrame):
                     new_spec if c.name == column_name else c for c in self._metadata.columns
                 ]
 
-
+    @deprecated("Use `export(..)` instead")
     def save(self, *, filename: str | Path) -> AnnotatedDataFrame:
         """
         Save this annotated dataframe in a file.
@@ -214,21 +220,34 @@ class AnnotatedDataFrame(XDataFrame):
 
         return self
 
-    def export(self, filename: str | Path):
+    def export(self, filename: str | Path, compression: str | None = None, compression_level: int | None = None):
         """
-        Export the annotated dataframe to a file. By default the format is parquet.
+        Export the annotated dataframe to a file.
+        By default the format is parquet.
+
+        Compression is applied when possible, e.g., for parquet.
         """
+        # this sets the default
+        if compression is None:
+            compression = "zstd"
+            if not compression_level:
+                compression_level = 5
+        # this sets explicitly no compression
+        elif compression == "NONE":
+            compression = None
+
         arrow_table = self.lazyframe.compat.collected().to_arrow()
         new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
         arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
-        pq.write_table(arrow_table, filename)
+        pq.write_table(arrow_table, filename, compression=compression, compression_level=compression_level)
 
     def export_partitioned(
         self,
         directory: str | Path,
         strategy: PartitionStrategy,
         *,
-        save_spec: bool = True,
+        compression: str | None = None,
+        compression_level: int | None = None,
     ) -> list[Path]:
         """
         Export this dataframe as one file per partition, as determined by `strategy`.
@@ -242,7 +261,6 @@ class AnnotatedDataFrame(XDataFrame):
 
         :param directory: Directory to write partition files into (created if missing)
         :param strategy: Determines the per-row partition key and its filename
-        :param save_spec: Also write a sibling `.spec.yaml` per partition file (see :meth:`save`)
         :return: Paths of the written data files, one per partition
 
         Example:
@@ -274,10 +292,9 @@ class AnnotatedDataFrame(XDataFrame):
                 pbar.set_description(f"Exporting {filename}")
                 filename.parent.mkdir(parents=True, exist_ok=True)
                 part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
-                if save_spec:
-                    part_adf.save(filename=filename)
-                else:
-                    part_adf.export(filename)
+                part_adf.export(filename,
+                                compression=compression,
+                                compression_level=compression_level)
                 written.append(filename)
 
         return written

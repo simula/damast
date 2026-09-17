@@ -1,7 +1,6 @@
 from argparse import Action, ArgumentParser
 from pathlib import Path
 
-from damast.cli.base import BaseParser
 from damast.core.annotations import Annotation
 from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.core.metadata import (
@@ -10,6 +9,8 @@ from damast.core.metadata import (
     MetaData,
     ValidationMode,
 )
+
+from .base import BaseParser
 
 
 class SetTxtFieldAction(Action):
