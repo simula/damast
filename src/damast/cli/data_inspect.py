@@ -56,7 +56,7 @@ class DataInspectParser(BaseParser):
                             choices=[x.value.lower() for x in ValidationMode],
                             help="Define the validation mode")
 
-        parser.add_argument("-save-as",
+        parser.add_argument("-s", "--save-as",
                             type=str,
                             default=None,
                             help="If filters are being used, it will save the result in the given file"
@@ -64,6 +64,12 @@ class DataInspectParser(BaseParser):
                                  " 'time:<column>+<interval>:<template>', 'column:<column>:<template>',"
                                  " or 'time+column:<column>+<interval>+<column>:<template>' to instead save"
                                  " one file per partition - see damast.core.partitioning.SaveAs.parse"
+        )
+
+        parser.add_argument("-e", "--export-metadata",
+                            type=str,
+                            help="Export the (updated) metadata spec file to the given path",
+                            default=None
         )
 
     def fill_missing_value_stats(self, adf: AnnotatedDataFrame) -> dict[str, set[str]]:
@@ -213,6 +219,11 @@ class DataInspectParser(BaseParser):
                         logger.warning("--save-as is only active with --filter")
                     else:
                         SaveAs.parse(args.save_as).export(adf)
+
+                if args.export_metadata:
+                    specfile = Path(args.export_metadata)
+                    specfile.parent.mkdir(parents=True, exist_ok=True)
+                    adf.metadata.save_yaml(specfile)
         except RuntimeError as e:
             if re.search(r"metadata is missing", str(e)) is not None:
                 print(e)

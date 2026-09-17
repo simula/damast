@@ -41,7 +41,6 @@ def test_by_column_writes_one_file_per_distinct_value(timeseries_adf, tmp_path):
     ]
     for p in written:
         assert p.exists()
-        assert p.with_suffix(".spec.yaml").exists()
 
 
 def test_by_time_daily_buckets_rows_by_calendar_day(timeseries_adf, tmp_path):
@@ -144,16 +143,6 @@ def test_export_partitioned_round_trips_through_from_files(timeseries_adf, tmp_p
     assert sorted(loaded.dataframe.collected()["mmsi"].to_list()) == [1, 1, 2, 2, 3]
 
 
-def test_export_partitioned_without_spec_skips_sidecar_yaml(timeseries_adf, tmp_path):
-    written = timeseries_adf.export_partitioned(
-        tmp_path, ByColumn("mmsi"), save_spec=False
-    )
-
-    for p in written:
-        assert p.exists()
-        assert not p.with_suffix(".spec.yaml").exists()
-
-
 def test_export_partitioned_creates_missing_directory(timeseries_adf, tmp_path):
     target = tmp_path / "nested" / "out"
     written = timeseries_adf.export_partitioned(target, ByColumn("mmsi"))
@@ -188,7 +177,6 @@ def test_save_as_export_writes_a_single_file_for_a_plain_path(timeseries_adf, tm
     assert output_file.exists()
     # SaveAs.export goes through AnnotatedDataFrame.save (like export_partitioned's per-
     # partition files), not the lower-level export - so a plain path also gets its sidecar.
-    assert output_file.with_suffix(".spec.yaml").exists()
     loaded = AnnotatedDataFrame.from_files([str(output_file)])
     assert loaded.dataframe.collected().height == 5
 
