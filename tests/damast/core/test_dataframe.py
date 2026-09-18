@@ -540,3 +540,66 @@ def test_from_files_round_trip_for_every_supported_suffix(file_format, suffix, t
     adf = AnnotatedDataFrame.from_files(files=[str(path)], metadata_required=False)
 
     polars.testing.assert_frame_equal(adf.lazyframe.select(["x", "y"]).collect(), expected)
+
+
+def test_from_files_netcdf_uses_cf_attributes_as_metadata(tmp_path):
+    import xarray
+
+    from damast.core.units import Unit
+
+    path = tmp_path / "data.nc"
+    xarray.Dataset(
+        {
+            "speed": ("row", [1.0, 2.0, 3.0], {"units": "m s-1", "long_name": "Speed over ground"}),
+            "lat": ("row", [60.0, 61.0, 62.0], {"units": "degrees_north", "long_name": "Latitude"}),
+        },
+        coords={"row": [0, 1, 2]},
+    ).to_netcdf(path)
+
+    # metadata is required by default - it has to come from the file itself here
+    adf = AnnotatedDataFrame.from_files(files=[str(path)])
+
+    assert not adf.metadata_inferred
+    assert adf.metadata["speed"].unit == Unit("m s-1")
+    assert adf.metadata["speed"].description == "Speed over ground"
+    assert adf.metadata["speed"].representation_type == polars.Float64
+    # 'degrees_north' is not a parseable unit, but the description is still used
+    assert adf.metadata["lat"].unit is None
+    assert adf.metadata["lat"].description == "Latitude"
+
+
+def test_from_files_netcdf_without_cf_attributes_falls_back_to_inference(tmp_path):
+    import xarray
+
+    path = tmp_path / "data.nc"
+    xarray.Dataset({"speed": ("row", [1.0, 2.0, 3.0])}).to_netcdf(path)
+
+    adf = AnnotatedDataFrame.from_files(files=[str(path)], metadata_required=False)
+
+    assert adf.metadata_inferred
+
+
+def test_from_files_netcdf_uses_cf_valid_range_as_value_range(tmp_path):
+    import xarray
+
+    path = tmp_path / "data.nc"
+    xarray.Dataset(
+        {
+            # packed: stored as int16, data = raw * 0.1 + 10 - valid_range is given in raw units
+            "speed": ("row", [10.0, 20.0, 30.0], {"valid_range": np.array([0, 400], dtype="int16")}),
+            "depth": ("row", [1.0, 2.0, 3.0], {"valid_min": 0.0}),
+        },
+        coords={
+            "row": [0, 1, 2],
+            "time": ("row", pd.date_range("2026-01-01", periods=3), {"valid_min": 0}),
+        },
+    ).to_netcdf(path, encoding={"speed": {"dtype": "int16", "scale_factor": 0.1, "add_offset": 10.0,
+                                          "_FillValue": -32768}})
+
+    metadata = AnnotatedDataFrame.from_files(files=[str(path)]).metadata
+
+    assert (metadata["speed"].value_range.min, metadata["speed"].value_range.max) == pytest.approx((10.0, 50.0))
+    # an open side stays unbounded
+    assert (metadata["depth"].value_range.min, metadata["depth"].value_range.max) == (0.0, np.inf)
+    # a raw numeric range cannot apply to the decoded datetime column
+    assert metadata["time"].value_range is None

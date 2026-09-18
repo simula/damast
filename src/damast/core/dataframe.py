@@ -402,7 +402,7 @@ class AnnotatedDataFrame(XDataFrame):
         return cls(dataframe=df, metadata=metadata, validation_mode=validation_mode)
 
     @classmethod
-    def load_parquet(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
+    def load_parquet(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
             _log.info(f"Loading parquet: {files=}")
             metadata_per_file = {}
 
@@ -427,17 +427,17 @@ class AnnotatedDataFrame(XDataFrame):
             return df, metadata_per_file
 
     @classmethod
-    def load_netcdf(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
+    def load_netcdf(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
         _log.info(f"Loading netcdf: {files=}")
         return XDataFrame.import_netcdf(files)
 
     @classmethod
-    def load_hdf(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
+    def load_hdf(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
         _log.info(f"Loading hdf: {files=}")
         return XDataFrame.import_hdf5(files)
 
     @classmethod
-    def load_csv(cls, files) -> tuple[AnnotatedDataFrame, dict[str, MetaData]]:
+    def load_csv(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
         _log.info(f"Loading csv: {files=}")
         df = polars.scan_csv(files, separator=";",
                              **DAMAST_CSV_DEFAULT_ARGS)

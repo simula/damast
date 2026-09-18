@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 import polars
@@ -557,13 +557,104 @@ class PolarsDataFrame(metaclass=Meta):
         import xarray
 
         dataframes = []
+        variables = {}
         for f in path:
             ds = xarray.open_dataset(f)
             dataframes.append( ds.to_dataframe().reset_index() )
+            variables[str(f)] = {name: (dict(variable.attrs), dict(variable.encoding))
+                                 for name, variable in ds.variables.items()}
         pandas_df = pd.concat(dataframes, ignore_index=True).reset_index()
         df = polars.from_pandas(pandas_df)
 
-        return df.lazy(), {}
+        metadata = {}
+        for f, file_variables in variables.items():
+            file_metadata = cls._metadata_from_cf_attributes(df.schema, file_variables, source=Path(f).name)
+            if file_metadata is not None:
+                metadata[f] = file_metadata
+
+        return df.lazy(), metadata
+
+    @classmethod
+    def _metadata_from_cf_attributes(cls,
+                                     schema: polars.Schema,
+                                     variables: dict[str, tuple[dict, dict]],
+                                     source: str) -> 'MetaData | None': # noqa
+        """
+        Create metadata for the columns of a loaded NetCDF file from the CF attributes of its
+        variables: 'long_name' becomes the description, 'units' the unit - if it can be parsed -,
+        and 'valid_range'/'valid_min'/'valid_max' the value range of a numeric column.
+
+        '_FillValue'/'missing_value' are not mapped: xarray already decodes them to NaN (null in
+        polars), while damast's missing_value is the value used to replace out-of-range values.
+
+        :param variables: variable name -> (attributes, xarray encoding)
+        :return: The metadata, or None if no variable carries any of these attributes - so that
+            callers can fall back to searching for a spec file or inferring the metadata
+        """
+        # avoid circular dependencies
+        from damast.core.annotations import Annotation
+        from damast.core.data_description import MinMax
+        from damast.core.metadata import DataSpecification, MetaData
+        from damast.core.units import Unit
+
+        column_specs = []
+        has_cf_attributes = False
+        for column, dtype in schema.items():
+            attrs, encoding = variables.get(column, ({}, {}))
+            spec = DataSpecification(name=column, representation_type=dtype)
+
+            if "long_name" in attrs:
+                spec.description = str(attrs["long_name"])
+                has_cf_attributes = True
+
+            if "units" in attrs:
+                has_cf_attributes = True
+                try:
+                    spec.unit = Unit(str(attrs["units"]))
+                except ValueError:
+                    logger.info(f"NetCDF {source}: cannot interpret unit '{attrs['units']}' of '{column}' - ignoring it")
+
+            valid_range = cls._cf_valid_range(attrs, encoding)
+            if valid_range is not None:
+                has_cf_attributes = True
+                # e.g. a decoded time column cannot be compared with its (numeric) raw range
+                if dtype.is_numeric():
+                    spec.value_range = MinMax(*valid_range)
+                else:
+                    logger.info(f"NetCDF {source}: ignoring valid range of non-numeric '{column}'")
+
+            column_specs.append(spec)
+
+        if not has_cf_attributes:
+            return None
+
+        return MetaData(columns=column_specs,
+                        annotations=[Annotation(name=Annotation.Key.Source, value=source)])
+
+    @staticmethod
+    def _cf_valid_range(attrs: dict, encoding: dict) -> tuple[Any, Any] | None:
+        """
+        (min, max) from the CF 'valid_range', or 'valid_min'/'valid_max' attributes - an open side
+        becomes -inf/inf. CF defines them in packed units, so they are unpacked like the data via
+        'scale_factor'/'add_offset', which xarray moves into the variable's encoding.
+
+        :return: The range, or None if the variable declares none
+        """
+        if "valid_range" in attrs:
+            low, high = np.asarray(attrs["valid_range"]).tolist()
+        elif "valid_min" in attrs or "valid_max" in attrs:
+            low = np.asarray(attrs.get("valid_min", -np.inf)).item()
+            high = np.asarray(attrs.get("valid_max", np.inf)).item()
+        else:
+            return None
+
+        if "scale_factor" in encoding or "add_offset" in encoding:
+            scale = float(encoding.get("scale_factor", 1.0))
+            offset = float(encoding.get("add_offset", 0.0))
+            # a negative scale_factor swaps the bounds
+            low, high = sorted([low * scale + offset, high * scale + offset])
+
+        return low, high
 
     @classmethod
     def import_hdf5(cls, files: str | Path | list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]: # noqa
