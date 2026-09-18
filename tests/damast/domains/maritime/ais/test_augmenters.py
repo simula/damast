@@ -292,6 +292,28 @@ def test_add_distance_closest_anchorage(tmp_path):
         assert np.isclose(np.min(distances), closest_anchorages[idx])
 
 
+def test_add_distance_closest_anchorage_empty_input(tmp_path):
+    dataset = polars.DataFrame({"latitude": [34.84, 35.14], "longitude": [128.42, 128.60]})
+    df = polars.DataFrame({ColumnName.LATITUDE: [], ColumnName.LONGITUDE: []},
+                          schema={ColumnName.LATITUDE: pl.Float64, ColumnName.LONGITUDE: pl.Float64})
+    metadata = damast.core.MetaData(
+        columns=[damast.core.DataSpecification(ColumnName.LATITUDE, unit=units.deg,
+                                               representation_type=float),
+                 damast.core.DataSpecification(ColumnName.LONGITUDE, unit=units.deg,
+                                               representation_type=float)])
+    adf = damast.core.AnnotatedDataFrame(df, metadata)
+
+    pipeline = damast.core.DataProcessingPipeline(name="Compute closest anchorage",
+                                                  base_dir=tmp_path)
+    pipeline.add("Add distance to anchorage", ComputeClosestAnchorage(dataset, ["latitude", "longitude"]),
+                 name_mappings={"x": ColumnName.LATITUDE,
+                                "y": ColumnName.LONGITUDE,
+                                "distance": ColumnName.DISTANCE_CLOSEST_ANCHORAGE})
+    new_adf = pipeline.transform(adf)
+
+    assert new_adf.collect()[ColumnName.DISTANCE_CLOSEST_ANCHORAGE].len() == 0
+
+
 def test_message_index(tmp_path):
     mmsi_a = 400000000
     mmsi_b = 500000000

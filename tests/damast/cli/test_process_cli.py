@@ -1,6 +1,5 @@
 import re
 import shutil
-import sys
 
 import pytest
 
@@ -226,7 +225,7 @@ def join_pipeline_path(tmp_path, monkeypatch):
     monkeypatch.setenv("DAMAST_PLUGIN_PATH", str(plugin_dir))
     plugin_manager.reload()
 
-    from damast.plugins import JoinByTimestamp
+    from damast.plugins.join_transformer import JoinByTimestamp
 
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -243,12 +242,8 @@ def join_pipeline_path(tmp_path, monkeypatch):
 
     # drop the cached plugin module so it doesn't leak into other tests sharing the
     # process-wide plugin_manager - mirrors _reset_plugin_manager() in test_plugins.py
-    for module_name in list(plugin_manager.local_files):
-        sys.modules.pop(module_name, None)
-    plugin_manager._local_modules.clear()
-    plugin_manager._local_files.clear()
-    plugin_manager._requirement_cache.clear()
-    plugin_manager._loaded = False
+    plugin_manager._unload()
+    plugin_manager._registered_packages.clear()
 
 
 def test_process_multi_datasource_input_data(data_path, join_pipeline_path, tmp_path, script_runner):

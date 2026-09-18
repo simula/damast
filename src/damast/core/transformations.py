@@ -3,12 +3,16 @@ from __future__ import annotations
 import copy
 import importlib
 import importlib.metadata
+import importlib.machinery
 import importlib.util
 import inspect
+import keyword
 import os
+import pkgutil
 import re
 import sys
 from abc import abstractmethod
+from collections.abc import Callable
 from logging import getLogger
 from pathlib import Path
 from types import ModuleType
@@ -67,20 +71,29 @@ class PluginManager:
     Discovers and resolves :class:`PipelineElement` 'plugin' transformers, i.e.
     transformers that are not necessarily part of the damast package itself.
 
-    Two plugin sources are supported:
+    Supported plugin sources:
 
-    - packages that register :class:`PipelineElement` subclasses via the
-      ``damast.transformers`` entry-point group, e.g. in their own pyproject.toml::
+    - installed packages that register :class:`PipelineElement` subclasses via the
+      ``damast.transformers`` entry-point group in their own pyproject.toml - either one
+      entry per class, or one entry per module (every PipelineElement defined in that module,
+      or in the top-level submodules of that package, is registered)::
 
         [project.entry-points."damast.transformers"]
         MyTransformer = "acme_pkg.transformers:MyTransformer"
+        acme_pkg = "acme_pkg.transformers"
 
-    - loose ``*.py`` files in directories listed in the ``DAMAST_PLUGIN_PATH``
-      environment variable (os.pathsep-separated), for local/ad-hoc transformers that
-      are not part of an installed package. Every top-level file found there is
-      imported once (using its filename stem as 'module_name'), so that any
-      :class:`PipelineElement` subclasses it defines become resolvable exactly like
-      classes from an installed package.
+    - local directories listed in the ``DAMAST_PLUGIN_PATH`` environment variable
+      (os.pathsep-separated), for transformers that are not part of an installed package:
+
+      - ``name=path`` (or :func:`register_plugin_package`) imports the directory as a package
+        called ``name``, so its top-level files become ``name.<stem>`` and may use relative
+        imports (``from .helpers import x``), including into subpackages
+      - a bare ``path`` (deprecated) imports each top-level file as a flat module named after
+        its filename stem - relative imports are not possible there
+
+    In either case every top-level, non-underscore file is imported once, so that the
+    :class:`PipelineElement` subclasses it defines become resolvable exactly like classes from
+    an installed package.
     """
 
     #: Entry-point group that plugin packages use to advertise PipelineElement subclasses
@@ -90,10 +103,18 @@ class PluginManager:
     PLUGIN_PATH_ENV = "DAMAST_PLUGIN_PATH"
 
     def __init__(self):
-        #: module_name -> loaded module, for modules imported from PLUGIN_PATH_ENV
+        #: module_name -> loaded module, for modules imported from local plugin directories
         self._local_modules: dict[str, ModuleType] = {}
         #: module_name -> source file, used to detect/warn about name collisions
         self._local_files: dict[str, Path] = {}
+        #: package name -> directory, for named local plugin directories that were loaded
+        self._local_packages: dict[str, Path] = {}
+        #: package name -> directory, registered via register_plugin_package()
+        self._registered_packages: dict[str, Path] = {}
+        #: module entry-point value -> modules found in it (see scan_module_entry_point)
+        self._entry_point_modules: dict[str, dict[str, ModuleType]] = {}
+        #: unnamed plugin directories a deprecation warning was already logged for
+        self._warned_unnamed: set[Path] = set()
         self._loaded = False
         self._requirement_cache: dict[str, dict[str, str] | None] = {}
 
@@ -105,15 +126,57 @@ class PluginManager:
     def local_files(self) -> dict[str, Path]:
         return dict(self._local_files)
 
+    @property
+    def local_packages(self) -> dict[str, Path]:
+        return dict(self._local_packages)
+
     def plugin_path_dirs(self) -> list[Path]:
+        return [path for _, path in self.plugin_path_entries()]
+
+    def plugin_path_entries(self) -> list[tuple[str | None, Path]]:
+        """
+        Parse :attr:`PLUGIN_PATH_ENV` into ``(package_name, directory)`` pairs.
+
+        An entry ``name=path`` names the package, a bare ``path`` yields ``None`` as name. An
+        entry is only treated as named if the part before the first ``=`` contains no path
+        separator, so plain paths that happen to contain ``=`` keep working.
+        """
         raw = os.environ.get(self.PLUGIN_PATH_ENV, "")
-        return [Path(p) for p in raw.split(os.pathsep) if p.strip()]
+        entries = []
+        for entry in raw.split(os.pathsep):
+            if not entry.strip():
+                continue
+            name, sep, path = entry.partition("=")
+            if sep and not any(s in name for s in {"/", os.sep}):
+                entries.append((name.strip(), Path(path)))
+            else:
+                entries.append((None, Path(entry)))
+        return entries
+
+    def register_plugin_package(self, name: str, path: str | Path):
+        """
+        Register a local plugin directory as package ``name`` - same as adding ``name=path``
+        to :attr:`PLUGIN_PATH_ENV`. It is loaded on the next plugin lookup.
+
+        :param name: Package name, a valid Python identifier
+        :param path: Directory containing the plugin files
+        :raise ValueError: If ``name`` is not a valid package name
+        """
+        if not self._is_valid_package_name(name):
+            raise ValueError(f"PluginManager: '{name}' is not a valid plugin package name")
+        self._registered_packages[name] = Path(path)
+        self._loaded = False
+
+    @staticmethod
+    def _is_valid_package_name(name: str) -> bool:
+        return name.isidentifier() and not keyword.iskeyword(name)
 
     def load_local_plugins(self, force: bool = False) -> dict[str, ModuleType]:
         """
-        Import loose '*.py' files found in :attr:`PLUGIN_PATH_ENV` directories, so that
-        any PipelineElement subclasses they define become resolvable by
-        'module_name'/'class_name' - the same way as classes from an installed package.
+        Import the plugin files found in :attr:`PLUGIN_PATH_ENV` directories and in packages
+        registered via :func:`register_plugin_package`, so that any PipelineElement subclasses
+        they define become resolvable by 'module_name'/'class_name' - the same way as classes
+        from an installed package.
 
         :param force: Re-scan the configured directories and re-import their files, even
             if they were already loaded in this process
@@ -122,44 +185,182 @@ class PluginManager:
             return self._local_modules
 
         if force:
-            self._local_modules.clear()
-            self._local_files.clear()
-            self._requirement_cache.clear()
+            self._unload()
+            # the import system caches directory listings - make added files visible
+            importlib.invalidate_caches()
 
-        for plugin_dir in self.plugin_path_dirs():
-            if not plugin_dir.is_dir():
-                logger.warning(f"PluginManager: {self.PLUGIN_PATH_ENV} entry '{plugin_dir}'"
-                               " is not a directory - skipping")
-                continue
-
-            for py_file in sorted(plugin_dir.glob("*.py")):
-                module_name = py_file.stem
-                if module_name.startswith("_"):
+        # Do not write bytecode for local plugin sources: .pyc files are validated by the
+        # source's mtime (in whole seconds) and size only, so an edit within the same second
+        # would otherwise be missed by a reload.
+        dont_write_bytecode = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            entries = self.plugin_path_entries() + list(self._registered_packages.items())
+            for name, plugin_dir in entries:
+                if not plugin_dir.is_dir():
+                    logger.warning(f"PluginManager: {self.PLUGIN_PATH_ENV} entry '{plugin_dir}'"
+                                   " is not a directory - skipping")
                     continue
 
-                existing_file = self._local_files.get(module_name)
-                if existing_file is not None:
-                    if existing_file != py_file:
-                        logger.warning(
-                            f"PluginManager: plugin module '{module_name}' from '{py_file}' collides with"
-                            f" already loaded '{existing_file}' - keeping the first one"
-                        )
-                    continue
-
-                spec = importlib.util.spec_from_file_location(module_name, py_file)
-                module = importlib.util.module_from_spec(spec)
-                try:
-                    spec.loader.exec_module(module)
-                except Exception as e:
-                    logger.warning(f"PluginManager: failed to load plugin '{py_file}': {e}")
-                    continue
-
-                sys.modules[module_name] = module
-                self._local_modules[module_name] = module
-                self._local_files[module_name] = py_file
+                if name is None:
+                    self._load_flat_directory(plugin_dir)
+                else:
+                    self._load_package_directory(name, plugin_dir)
+        finally:
+            sys.dont_write_bytecode = dont_write_bytecode
 
         self._loaded = True
         return self._local_modules
+
+    def _load_flat_directory(self, plugin_dir: Path):
+        if plugin_dir not in self._warned_unnamed:
+            self._warned_unnamed.add(plugin_dir)
+            logger.warning(
+                f"PluginManager: unnamed {self.PLUGIN_PATH_ENV} entry '{plugin_dir}' is deprecated"
+                f" - use '<package_name>={plugin_dir}' to load it as a package"
+            )
+
+        for py_file in sorted(plugin_dir.glob("*.py")):
+            module_name = py_file.stem
+            if module_name.startswith("_"):
+                continue
+
+            existing_file = self._local_files.get(module_name)
+            if existing_file is not None:
+                if existing_file != py_file:
+                    logger.warning(
+                        f"PluginManager: plugin module '{module_name}' from '{py_file}' collides with"
+                        f" already loaded '{existing_file}' - keeping the first one"
+                    )
+                continue
+
+            spec = importlib.util.spec_from_file_location(module_name, py_file)
+            module = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(module)
+            except Exception as e:
+                logger.warning(f"PluginManager: failed to load plugin '{py_file}': {e}")
+                continue
+
+            sys.modules[module_name] = module
+            self._local_modules[module_name] = module
+            self._local_files[module_name] = py_file
+
+    def _load_package_directory(self, name: str, plugin_dir: Path):
+        existing_dir = self._local_packages.get(name)
+        if existing_dir is not None:
+            if existing_dir != plugin_dir:
+                logger.warning(f"PluginManager: plugin package '{name}' from '{plugin_dir}' collides"
+                               f" with already loaded '{existing_dir}' - keeping the first one")
+            return
+
+        if not self._is_valid_package_name(name):
+            logger.warning(f"PluginManager: '{name}' in {self.PLUGIN_PATH_ENV} entry"
+                           f" '{name}={plugin_dir}' is not a valid package name - skipping")
+            return
+
+        # never shadow an importable module, e.g. from the standard library or an installed
+        # plugin package - which then takes precedence
+        if name in sys.modules or importlib.util.find_spec(name) is not None:
+            logger.warning(f"PluginManager: plugin package name '{name}' (for '{plugin_dir}') is"
+                           " already importable - skipping")
+            return
+
+        # The directory itself becomes the package: its __init__.py if present, an empty
+        # package otherwise. Submodules then resolve via the regular import system.
+        init_file = plugin_dir / "__init__.py"
+        if init_file.is_file():
+            spec = importlib.util.spec_from_file_location(
+                name, init_file, submodule_search_locations=[str(plugin_dir)])
+        else:
+            spec = importlib.machinery.ModuleSpec(name, None, is_package=True)
+            spec.submodule_search_locations = [str(plugin_dir)]
+
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[name] = package
+        try:
+            if spec.loader is not None:
+                spec.loader.exec_module(package)
+        except Exception as e:
+            sys.modules.pop(name, None)
+            logger.warning(f"PluginManager: failed to load plugin package '{name}' from '{init_file}': {e}")
+            return
+
+        self._local_packages[name] = plugin_dir
+        for module_name, module in self._scan_package(package).items():
+            self._local_modules[module_name] = module
+            self._local_files[module_name] = Path(module.__file__) if module.__file__ else plugin_dir
+
+    @staticmethod
+    def _scan_package(module: ModuleType) -> dict[str, ModuleType]:
+        """
+        The given module, plus - if it is a package - its top-level, non-underscore,
+        non-package submodules (imported here). A failing submodule is skipped with a warning.
+        """
+        modules = {module.__name__: module}
+        for info in pkgutil.iter_modules(getattr(module, "__path__", [])):
+            if info.ispkg or info.name.startswith("_"):
+                continue
+            module_name = f"{module.__name__}.{info.name}"
+            try:
+                modules[module_name] = importlib.import_module(module_name)
+            except Exception as e:
+                logger.warning(f"PluginManager: failed to load plugin module '{module_name}': {e}")
+        return modules
+
+    @staticmethod
+    def is_module_entry_point(entry_point) -> bool:
+        """Whether an entry point names a whole module ('pkg.mod') rather than a class ('pkg.mod:Class')."""
+        return ":" not in entry_point.value
+
+    def scan_module_entry_point(self, entry_point) -> dict[str, ModuleType]:
+        """
+        Import the module named by a module entry point - see :func:`is_module_entry_point` -
+        and, if it is a package, its top-level submodules.
+
+        :return: module_name -> module, empty if the module could not be imported
+        """
+        value = entry_point.value.strip()
+        if value not in self._entry_point_modules:
+            try:
+                module = importlib.import_module(value)
+            except Exception as e:
+                logger.warning(f"PluginManager: failed to load plugin module '{value}' of"
+                               f" entry-point '{entry_point.name}': {e}")
+                self._entry_point_modules[value] = {}
+            else:
+                self._entry_point_modules[value] = self._scan_package(module)
+        return self._entry_point_modules[value]
+
+    @staticmethod
+    def pipeline_elements(modules: dict[str, ModuleType]) -> list[tuple[str, str, type]]:
+        """
+        :return: (module_name, class_name, class) for each PipelineElement subclass *defined*
+            in one of the given modules - re-exported classes are skipped
+        """
+        return [
+            (module_name, attr_name, obj)
+            for module_name, module in modules.items()
+            for attr_name, obj in vars(module).items()
+            if (inspect.isclass(obj)
+                and issubclass(obj, PipelineElement)
+                and obj is not PipelineElement
+                and obj.__module__ == module_name)
+        ]
+
+    def _unload(self):
+        """Forget all loaded local plugins and module entry points, and drop them from sys.modules."""
+        for module_name in self._local_files:
+            sys.modules.pop(module_name, None)
+        for name in self._local_packages:
+            for module_name in [m for m in sys.modules if m == name or m.startswith(f"{name}.")]:
+                sys.modules.pop(module_name, None)
+        self._local_modules.clear()
+        self._local_files.clear()
+        self._local_packages.clear()
+        self._entry_point_modules.clear()
+        self._requirement_cache.clear()
+        self._loaded = False
 
     def reload(self):
         """
@@ -181,9 +382,11 @@ class PluginManager:
 
         :param module_name: Dotted module path of a :class:`PipelineElement` subclass
         :return: Dict with 'distribution' and 'version' for an installed package; a dict with
-            'hint': 'local' and 'path' for a transformer loaded from :attr:`PLUGIN_PATH_ENV`;
-            or None if it could not be resolved at all (e.g. the class is defined in a script or
-            notebook that is neither installed nor on the plugin path)
+            'hint': 'local', 'package' and 'path' (the directory) for a transformer from a named
+            local plugin package; a dict with 'hint': 'local' and 'path' (the file) for one from
+            an unnamed :attr:`PLUGIN_PATH_ENV` directory; or None if it could not be resolved at
+            all (e.g. the class is defined in a script or notebook that is neither installed nor
+            on the plugin path)
         """
         if module_name in self._requirement_cache:
             return self._requirement_cache[module_name]
@@ -191,11 +394,13 @@ class PluginManager:
         self.load_local_plugins()
 
         result = None
+        top_level = module_name.split(".")[0]
         local_file = self._local_files.get(module_name)
-        if local_file is not None:
+        if top_level in self._local_packages:
+            result = {"hint": "local", "package": top_level, "path": str(self._local_packages[top_level])}
+        elif local_file is not None:
             result = {"hint": "local", "path": str(local_file)}
         else:
-            top_level = module_name.split(".")[0]
             try:
                 distributions = importlib.metadata.packages_distributions().get(top_level)
             except Exception:
@@ -212,42 +417,99 @@ class PluginManager:
         self._requirement_cache[module_name] = result
         return result
 
+    @staticmethod
+    def plugin_package(module_name: str) -> str:
+        """
+        The plugin package a module belongs to, i.e. its top-level package - e.g. 'acme' for
+        'acme.transformers', or the package name of a named local plugin directory. Plugin
+        transformers are exposed per plugin package, as ``damast.plugins.<package>.<class>``.
+        """
+        return module_name.split(".")[0]
+
+    def _entry_points(self) -> tuple[list, list]:
+        """:return: (class entry-points, module entry-points) of :attr:`ENTRY_POINT_GROUP`"""
+        entry_points = list(importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP))
+        return ([ep for ep in entry_points if not self.is_module_entry_point(ep)],
+                [ep for ep in entry_points if self.is_module_entry_point(ep)])
+
+    def plugin_packages(self) -> set[str]:
+        """Names of all plugin packages - local ones and those of entry-points (not imported here)."""
+        packages = {self.plugin_package(module_name) for module_name in self.load_local_plugins()}
+        packages |= {self.plugin_package(ep.value) for ep in importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP)}
+        return packages
+
+    def resolve_plugin(self, package: str, name: str) -> type[PipelineElement]:
+        """
+        Resolve transformer ``name`` within plugin ``package`` - see :func:`plugin_package`.
+
+        Sources are checked in this order, the first one wins (with a warning, if several
+        provide it): local plugin files, class entry-points, then module entry-points - the
+        latter are only imported if nothing else provides ``name``.
+
+        :raise AttributeError: If the package provides no transformer ``name``
+        """
+        matches: dict[str, Callable[[], type]] = {
+            f"{module_name}:{attr_name}": (lambda obj=obj: obj)
+            for module_name, attr_name, obj in self.pipeline_elements(self.load_local_plugins())
+            if self.plugin_package(module_name) == package and attr_name == name
+        }
+        class_entry_points, module_entry_points = self._entry_points()
+        for ep in class_entry_points:
+            if self.plugin_package(ep.value) == package and ep.name == name:
+                matches.setdefault(ep.value, ep.load)
+
+        if not matches:
+            for ep in module_entry_points:
+                if self.plugin_package(ep.value) != package:
+                    continue
+                for module_name, attr_name, obj in self.pipeline_elements(self.scan_module_entry_point(ep)):
+                    if attr_name == name:
+                        matches.setdefault(f"{module_name}:{attr_name}", lambda obj=obj: obj)
+
+        if not matches:
+            raise AttributeError(f"plugin package '{package}' has no transformer '{name}'")
+
+        targets = list(matches)
+        if len(targets) > 1:
+            logger.warning(f"PluginManager: transformer '{package}.{name}' is provided by more than one"
+                           f" source ({', '.join(targets)}) - using '{targets[0]}'")
+        return matches[targets[0]]()
+
     def list_plugins(self) -> dict[str, str]:
         """
         Discover transformer plugins from both the entry-point group and local plugin path.
 
         This is purely a discovery/documentation aid - :func:`PipelineElement.create_new`
         resolves classes by ``module_name``/``class_name`` regardless of whether they are
-        registered here. If the same class name is registered by more than one source (two
-        local plugin files, two entry-points, or a local plugin and an entry-point), a warning
-        is logged and the first source encountered wins - local plugin files are checked before
-        entry-points, matching the precedence used when resolving a single name (e.g. via
-        :mod:`damast.plugins`).
+        registered here. If the same transformer is provided by more than one source with a
+        different target, a warning is logged and the first one wins - see
+        :func:`resolve_plugin` for the order.
 
-        :return: Mapping of class name to its 'module_name:class_name' target
+        :return: Mapping of '<plugin package>.<class name>' (see :func:`plugin_package`) to its
+            'module_name:class_name' target
         """
         plugins: dict[str, str] = {}
 
-        def register(attr_name: str, target: str, source: str) -> None:
-            if attr_name in plugins:
+        def register(qualified_name: str, target: str, source: str) -> None:
+            existing = plugins.setdefault(qualified_name, target)
+            if existing != target:
                 logger.warning(
-                    f"PluginManager: plugin name '{attr_name}' is registered by more than one"
-                    f" source ('{plugins[attr_name]}' and '{target}' from {source}) - keeping"
-                    " the first one"
+                    f"PluginManager: plugin '{qualified_name}' is registered by more than one"
+                    f" source ('{existing}' and '{target}' from {source}) - keeping the first one"
                 )
-                return
-            plugins[attr_name] = target
 
-        for module_name, module in self.load_local_plugins().items():
-            for attr_name, obj in vars(module).items():
-                if (inspect.isclass(obj)
-                        and issubclass(obj, PipelineElement)
-                        and obj is not PipelineElement
-                        and obj.__module__ == module_name):
-                    register(attr_name, f"{module_name}:{attr_name}", "a local plugin file")
+        for module_name, attr_name, _ in self.pipeline_elements(self.load_local_plugins()):
+            register(f"{self.plugin_package(module_name)}.{attr_name}", f"{module_name}:{attr_name}",
+                     "a local plugin file")
 
-        for ep in importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP):
-            register(ep.name, ep.value, "an entry-point")
+        class_entry_points, module_entry_points = self._entry_points()
+        for ep in class_entry_points:
+            register(f"{self.plugin_package(ep.value)}.{ep.name}", ep.value, "an entry-point")
+
+        for ep in module_entry_points:
+            for module_name, attr_name, _ in self.pipeline_elements(self.scan_module_entry_point(ep)):
+                register(f"{self.plugin_package(module_name)}.{attr_name}", f"{module_name}:{attr_name}",
+                         f"module entry-point '{ep.name}'")
 
         return plugins
 
@@ -439,6 +701,14 @@ class PipelineElement(Transformer):
                     f"Install it with: pip install {pip_spec}")
 
         plugin_path = os.environ.get(PluginManager.PLUGIN_PATH_ENV, "<unset>")
+        if requires and requires.get("hint") == "local" and requires.get("package"):
+            package = requires["package"]
+            return (f"{cls.__name__}.create_new: could not load '{class_name}' from '{module_name}'."
+                    f" It was saved as part of the local plugin package '{package}', originally loaded"
+                    f" from '{requires.get('path')}'. Register that directory under the same name, e.g."
+                    f" {PluginManager.PLUGIN_PATH_ENV}=\"{package}={requires.get('path')}\""
+                    f" (currently: {plugin_path}).")
+
         origin_hint = ""
         if requires and requires.get("hint") == "local":
             origin_hint = f" It was saved as a local transformer, originally loaded from '{requires.get('path')}'."
@@ -540,7 +810,7 @@ class PipelineElement(Transformer):
         supported sources (installed packages via entry-points, and local files via
         ``DAMAST_PLUGIN_PATH``).
 
-        :return: Mapping of class name to its 'module_name:class_name' target
+        :return: Mapping of '<plugin package>.<class name>' to its 'module_name:class_name' target
         """
         return plugin_manager.list_plugins()
 

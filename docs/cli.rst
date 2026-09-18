@@ -345,7 +345,7 @@ Generating small synthetic datasets to try it on:
 
     # JoinByTimestamp is a local plugin transformer (see Plugins below) - needed both to
     # build the pipeline above and to load it back for damast process
-    export DAMAST_PLUGIN_PATH=docs/examples/plugins
+    export DAMAST_PLUGIN_PATH=ais_osint=docs/examples/plugins
     damast process --pipeline pipelines/osint_ais_preparation.damast.ppl \
         --input-data df=docs/examples/data/ais.parquet \
         --input-data osint_events=docs/examples/data/osint.parquet \
@@ -365,7 +365,7 @@ resolvable, i.e., ``DAMAST_PLUGIN_PATH`` must be set for a local plugin, while i
 
 ::
 
-    export DAMAST_PLUGIN_PATH=docs/examples/plugins
+    export DAMAST_PLUGIN_PATH=ais_osint=docs/examples/plugins
     damast process --pipeline pipelines/osint_ais_preparation.damast.ppl --describe
 
 .. highlight:: none
@@ -624,20 +624,35 @@ registering such plugin transformers are supported - see :class:`damast.core.tra
 for the full API:
 
 - installable packages that declare their :class:`damast.core.transformations.PipelineElement` subclasses via the
-  ``damast.transformers`` entry-point group in their own ``pyproject.toml``::
+  ``damast.transformers`` entry-point group in their own ``pyproject.toml`` - either one entry per class, or
+  one entry per module, which registers every transformer defined in that module (or, for a package, in its
+  top-level submodules)::
 
       [project.entry-points."damast.transformers"]
       MyTransformer = "acme_pkg.transformers:MyTransformer"
+      acme_pkg = "acme_pkg.transformers"
 
-- local, ad-hoc ``*.py`` files that are not part of any installed package, made discoverable by
-  pointing the ``DAMAST_PLUGIN_PATH`` environment variable at the directory (or directories,
-  separated with ``os.pathsep``) that contains them
+- local directories that are not part of any installed package, made discoverable via the
+  ``DAMAST_PLUGIN_PATH`` environment variable (several entries separated with ``os.pathsep``). An entry
+  ``name=path`` loads the directory as a package called ``name``: its top-level ``*.py`` files become
+  ``name.<file>``, and may use relative imports (``from .helpers import x``), also into subdirectories.
+  The same can be done in code via ``plugin_manager.register_plugin_package(name, path)``.
+  Choose a distinctive name - one that is already importable is rejected. A bare ``path`` entry
+  (deprecated) loads each file as a flat module named after the file, without relative imports.
+
+The package name of a local directory is recorded in saved pipelines (e.g.
+``module_name: my_plugins.my_transformers``), so a pipeline can only be replayed with the directory
+registered under the same name - or with an installed package of that name, e.g. once the directory has
+been turned into an installable package with a module entry-point.
 
 Regardless of which of the two a transformer comes from, it is resolvable in code the same way,
-via the ``damast.plugins`` namespace::
+via ``damast.plugins.<package>`` - where ``<package>`` is the top-level package of the module
+defining it, i.e. ``acme_pkg`` for ``acme_pkg.transformers:MyTransformer``, or the name a local
+directory was registered under::
 
-    from damast.plugins import MyTransformer
+    from damast.plugins.acme_pkg import MyTransformer
 
+Scoping by package means two plugins can provide a transformer of the same name without clashing.
 ``damast.plugins`` resolves names lazily on first access, so nothing beyond the requested class
 is ever imported - see :mod:`damast.plugins` for details.
 
@@ -650,27 +665,29 @@ subclass in a loose ``*.py`` file, written like any other transformer:
 .. literalinclude:: ./examples/plugins/my_transformers.py
    :language: Python
 
-With ``DAMAST_PLUGIN_PATH`` pointing at the directory containing that file, ``damast plugins``
-lists it without requiring any further Python code:
+With ``DAMAST_PLUGIN_PATH`` registering the directory containing that file (here as package
+``my_plugins``), ``damast plugins`` lists it without requiring any further Python code:
 
 .. highlight:: none
 
 ::
 
-    $ export DAMAST_PLUGIN_PATH=./examples/plugins
+    $ export DAMAST_PLUGIN_PATH=my_plugins=./examples/plugins
     $ damast plugins
 
-    MyTripler: my_transformers:MyTripler
+    my_plugins (local: examples/plugins)
+        JoinByTimestamp  .osint_ais_transformers
+        MyTripler        .my_transformers
 
-``MyTripler`` is now resolvable via ``damast.plugins`` and can be used in a pipeline like any
-other transformer:
+``MyTripler`` is now resolvable via ``damast.plugins.my_plugins`` and can be used in a pipeline
+like any other transformer:
 
 .. literalinclude:: ./examples/damast-plugin-pipeline.py
    :language: Python
 
 The resulting pipeline can be applied like any other, e.g. via ``damast process`` (see `Process`_
-above), as long as ``DAMAST_PLUGIN_PATH`` is still set to a directory containing
-``my_transformers.py``:
+above), as long as ``DAMAST_PLUGIN_PATH`` still registers the directory containing
+``my_transformers.py`` as ``my_plugins``:
 
 .. highlight:: none
 
@@ -679,7 +696,7 @@ above), as long as ``DAMAST_PLUGIN_PATH`` is still set to a directory containing
     damast process --input-data data.parquet --pipeline pipelines/my-plugin-pipeline.damast.ppl
 
 Pipelines saved with a plugin transformer record where it came from under ``requires`` (the
-installed distribution and version, or the original local file path), so that loading the pipeline
-elsewhere fails with an actionable message - naming the missing package to ``pip install``, or the
-``DAMAST_PLUGIN_PATH`` directory to add - instead of a bare import error.
+installed distribution and version, or the local package name and directory), so that loading the
+pipeline elsewhere fails with an actionable message - naming the missing package to ``pip install``, or
+the ``DAMAST_PLUGIN_PATH`` entry to add - instead of a bare import error.
 
