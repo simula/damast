@@ -551,7 +551,7 @@ class PolarsDataFrame(metaclass=Meta):
 
         ensure_packages(pkgs=["dask", "xarray", "pandas"],
                         required_for="Loading netcdf files",
-                        hints=", additionally either netcdf4 or h5netcdf have to be installed")
+                        hint="additionally either netcdf4 or h5netcdf have to be installed")
 
         import pandas as pd
         import xarray

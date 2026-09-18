@@ -9,6 +9,7 @@ import pytest
 from astropy import units
 
 from damast.core.annotations import Annotation
+from damast.core.constants import DAMAST_SUPPORTED_FILE_FORMATS
 from damast.core.data_description import ListOfValues, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import (
@@ -495,3 +496,47 @@ def test_update_preserves_representation_type_when_step_output_declares_none():
     assert adf.metadata["date_time_utc"].description == "original description"
     assert adf.metadata["date_time_utc"].unit == units.deg
     adf.validate_metadata()
+
+
+def _write_parquet(df: polars.DataFrame, path: Path):
+    df.write_parquet(path)
+
+
+def _write_csv(df: polars.DataFrame, path: Path):
+    df.write_csv(path, separator=";")
+
+
+def _write_hdf(df: polars.DataFrame, path: Path):
+    # as AnnotatedDataFrame.save does: the loader needs the per-column metadata nodes
+    XDataFrame.export_hdf5(df, path)
+    AnnotatedDataFrame.infer_annotation(df).append_to_hdf(path)
+
+
+def _write_netcdf(df: polars.DataFrame, path: Path):
+    import xarray
+
+    xarray.Dataset.from_dataframe(df.to_pandas()).to_netcdf(path)
+
+
+ROUND_TRIP_WRITERS = {
+    "parquet": _write_parquet,
+    "csv": _write_csv,
+    "hdf": _write_hdf,
+    "netcdf": _write_netcdf,
+}
+
+
+@pytest.mark.parametrize(["file_format", "suffix"], [
+    [file_format, suffix]
+    for file_format, suffixes in DAMAST_SUPPORTED_FILE_FORMATS.items()
+    for suffix in suffixes
+])
+def test_from_files_round_trip_for_every_supported_suffix(file_format, suffix, tmp_path):
+    """Every registered suffix must reach a working loader - including its optional-package checks."""
+    expected = polars.DataFrame({"x": [1, 2, 3], "y": [0.5, 1.5, 2.5]})
+    path = tmp_path / f"data{suffix}"
+    ROUND_TRIP_WRITERS[file_format](expected, path)
+
+    adf = AnnotatedDataFrame.from_files(files=[str(path)], metadata_required=False)
+
+    polars.testing.assert_frame_equal(adf.lazyframe.select(["x", "y"]).collect(), expected)
