@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -11,6 +12,7 @@ import numpy as np
 import polars
 import polars.api
 from polars import LazyFrame
+from polars.io.plugins import register_io_source
 from pydantic import ValidationError
 
 from damast.utils import ensure_packages
@@ -546,39 +548,108 @@ class PolarsDataFrame(metaclass=Meta):
 
         return polars.LazyFrame(data), metadata
 
+    #: Maximum number of grid cells read per batch by the lazy NetCDF scan (before dropping padding)
+    NETCDF_BATCH_SIZE: ClassVar[int] = 100_000
+
     @classmethod
     def import_netcdf(cls, path: list[str|Path]) -> tuple[polars.LazyFrame, dict[str, 'MetaData']]: #noqa
+        """
+        Lazily scan NetCDF files - see :func:`scan_netcdf` - and extract metadata from their CF
+        attributes, see :func:`_metadata_from_cf_attributes`.
+        """
+        frames = []
+        metadata = {}
+        for f in path:
+            lazyframe, variables = cls.scan_netcdf(f)
+            frames.append(lazyframe)
 
-        ensure_packages(pkgs=["dask", "xarray", "pandas"],
+            file_metadata = cls._metadata_from_cf_attributes(lazyframe.collect_schema(), variables,
+                                                             source=Path(f).name)
+            if file_metadata is not None:
+                metadata[str(f)] = file_metadata
+
+        return polars.concat(frames, how="diagonal_relaxed"), metadata
+
+    @classmethod
+    def scan_netcdf(cls, path: str | Path) -> tuple[polars.LazyFrame, dict[str, tuple[dict, dict]]]:
+        """
+        Lazily scan a NetCDF file as a table with one row per grid cell - the same layout as
+        ``xarray.Dataset.to_dataframe()``, with the dimensions as leading columns.
+
+        Nothing is read until the frame is collected. The grid is then read in slices along its
+        first dimension, so memory is bounded by a slice rather than the whole grid, and rows are
+        filtered/projected/limited per slice. Rows in which every data variable spanning the full
+        grid is missing - e.g. the padding of a sparse (entity x time) grid - are dropped.
+
+        :param path: The NetCDF file
+        :return: The lazyframe, and variable name -> (CF attributes, xarray encoding)
+        """
+        ensure_packages(pkgs=["xarray"],
                         required_for="Loading netcdf files",
-                        hint="additionally either netcdf4 or h5netcdf have to be installed")
-
-        import pandas as pd
+                        hint="additionally either netCDF4 or h5netcdf have to be installed")
         import xarray
 
-        dataframes = []
-        variables = {}
-        for f in path:
-            ds = xarray.open_dataset(f)
-            dataframes.append( ds.to_dataframe().reset_index() )
-            variables[str(f)] = {name: (dict(variable.attrs), dict(variable.encoding))
-                                 for name, variable in ds.variables.items()}
-        pandas_df = pd.concat(dataframes, ignore_index=True).reset_index()
-        df = polars.from_pandas(pandas_df)
+        with xarray.open_dataset(path) as ds:
+            variables = {name: (dict(variable.attrs), dict(variable.encoding))
+                         for name, variable in ds.variables.items()}
+            schema = cls._netcdf_schema(ds)
 
-        metadata = {}
-        for f, file_variables in variables.items():
-            file_metadata = cls._metadata_from_cf_attributes(df.schema, file_variables, source=Path(f).name)
-            if file_metadata is not None:
-                metadata[f] = file_metadata
+        def read_batches(with_columns: list[str] | None,
+                         predicate: polars.Expr | None,
+                         n_rows: int | None,
+                         batch_size: int | None):
+            with xarray.open_dataset(path) as ds:
+                dims = list(ds.sizes)
+                # A cell is padding if all variables spanning the full grid are missing there - lower
+                # dimensional ones (e.g. static per-entity values) are just repeated into every cell
+                data_vars = [name for name, var in ds.data_vars.items() if set(var.dims) == set(dims)]
+                data_vars = data_vars or list(ds.data_vars)
+                # cells per step along the first dimension - which to_dataframe() iterates slowest
+                cells_per_step = math.prod(list(ds.sizes.values())[1:])
+                # polars' batch_size is only a hint - cap it, so memory stays bounded per slice
+                max_cells = min(batch_size or cls.NETCDF_BATCH_SIZE, cls.NETCDF_BATCH_SIZE)
+                step = max(1, max_cells // max(1, cells_per_step))
+                first_dim_size = ds.sizes[dims[0]] if dims else 1
 
-        return df.lazy(), metadata
+                for start in range(0, first_dim_size, step):
+                    if n_rows is not None and n_rows <= 0:
+                        return
+
+                    part = ds.isel({dims[0]: slice(start, start + step)}) if dims else ds
+                    pandas_df = part.to_dataframe().reset_index()
+                    if data_vars:
+                        pandas_df = pandas_df.dropna(how="all", subset=data_vars)
+
+                    # e.g. an all-missing string column would otherwise come back as Null
+                    df = polars.from_pandas(pandas_df).cast(schema)
+                    if predicate is not None:
+                        df = df.filter(predicate)
+                    if with_columns is not None:
+                        df = df.select(with_columns)
+                    if n_rows is not None:
+                        df = df.head(n_rows)
+                        n_rows -= df.height
+                    yield df
+
+        return register_io_source(read_batches, schema=schema), variables
+
+    @staticmethod
+    def _netcdf_schema(ds) -> polars.Schema:
+        """
+        Columns and dtypes of ``ds.to_dataframe()`` without reading data: taken from an empty
+        slice, where object columns (strings) cannot be inferred and default to String.
+        """
+        empty = ds.isel({dim: slice(0, 0) for dim in ds.sizes}).to_dataframe().reset_index()
+        return polars.Schema({
+            column: polars.String if dtype.kind == "O" else polars.from_pandas(empty[column]).dtype
+            for column, dtype in empty.dtypes.items()
+        })
 
     @classmethod
     def _metadata_from_cf_attributes(cls,
                                      schema: polars.Schema,
                                      variables: dict[str, tuple[dict, dict]],
-                                     source: str) -> 'MetaData | None': # noqa
+                                     source: str) -> 'MetaData' | None: # noqa
         """
         Create metadata for the columns of a loaded NetCDF file from the CF attributes of its
         variables: 'long_name' becomes the description, 'units' the unit - if it can be parsed -,

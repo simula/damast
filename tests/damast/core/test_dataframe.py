@@ -603,3 +603,101 @@ def test_from_files_netcdf_uses_cf_valid_range_as_value_range(tmp_path):
     assert (metadata["depth"].value_range.min, metadata["depth"].value_range.max) == (0.0, np.inf)
     # a raw numeric range cannot apply to the decoded datetime column
     assert metadata["time"].value_range is None
+
+
+def _sparse_grid_dataset(n_mmsi: int, n_time: int, observed_ratio: float, seed: int = 0):
+    """An AIS-like (mmsi x time) grid, padded with NaN where a vessel has no observation."""
+    import xarray
+
+    rng = np.random.default_rng(seed)
+    observed = rng.uniform(size=(n_mmsi, n_time)) < observed_ratio
+    observed[0, 0] = True
+    speed = np.where(observed, rng.uniform(0, 20, (n_mmsi, n_time)), np.nan)
+    lat = np.where(observed, rng.uniform(55, 70, (n_mmsi, n_time)), np.nan)
+    return xarray.Dataset(
+        {
+            "speed": (("mmsi", "time"), speed),
+            "lat": (("mmsi", "time"), lat),
+            # static per vessel - repeated into every cell, so it must not count as an observation
+            "ship_type": ("mmsi", rng.integers(30, 90, n_mmsi)),
+        },
+        coords={"mmsi": np.arange(n_mmsi) + 257_000_000,
+                "time": pd.date_range("2026-01-01", periods=n_time, freq="min")},
+    )
+
+
+def _without_padding(path: Path) -> polars.DataFrame:
+    """What an eager read of the file gives, minus the padding cells."""
+    import xarray
+
+    with xarray.open_dataset(path) as ds:
+        pandas_df = ds.to_dataframe().reset_index()
+    return polars.from_pandas(pandas_df.dropna(how="all", subset=["speed", "lat"]))
+
+
+@pytest.fixture
+def small_netcdf_batches(monkeypatch):
+    # a single mmsi (one row of the grid) per batch, to exercise multi-batch reads
+    monkeypatch.setattr(XDataFrame, "NETCDF_BATCH_SIZE", 1)
+
+
+def test_scan_netcdf_matches_eager_to_dataframe_without_padding(tmp_path, small_netcdf_batches):
+    ds = _sparse_grid_dataset(n_mmsi=20, n_time=30, observed_ratio=0.15)
+    path = tmp_path / "grid.nc"
+    ds.to_netcdf(path)
+
+    df, _ = XDataFrame.import_netcdf([path])
+    result = df.collect()
+
+    polars.testing.assert_frame_equal(result, _without_padding(path))
+    assert result.height == int(ds["speed"].notnull().sum())
+
+
+def test_scan_netcdf_concatenates_multiple_files(tmp_path, small_netcdf_batches):
+    datasets = [_sparse_grid_dataset(n_mmsi=5, n_time=8, observed_ratio=0.3, seed=seed) for seed in [1, 2]]
+    paths = [tmp_path / f"grid_{i}.nc" for i in range(len(datasets))]
+    for ds, path in zip(datasets, paths):
+        ds.to_netcdf(path)
+
+    df, _ = XDataFrame.import_netcdf(paths)
+
+    polars.testing.assert_frame_equal(df.collect(), polars.concat([_without_padding(path) for path in paths]))
+
+
+def test_scan_netcdf_applies_filter_and_projection(tmp_path, small_netcdf_batches):
+    ds = _sparse_grid_dataset(n_mmsi=10, n_time=10, observed_ratio=0.5)
+    path = tmp_path / "grid.nc"
+    ds.to_netcdf(path)
+
+    df, _ = XDataFrame.import_netcdf([path])
+    result = df.filter(polars.col("speed") > 10).select(["mmsi", "speed"]).collect()
+
+    expected = _without_padding(path).filter(polars.col("speed") > 10).select(["mmsi", "speed"])
+    polars.testing.assert_frame_equal(result, expected)
+
+
+def test_scan_netcdf_reads_nothing_until_collected_and_stops_early(tmp_path, monkeypatch, small_netcdf_batches):
+    import xarray
+
+    ds = _sparse_grid_dataset(n_mmsi=50, n_time=10, observed_ratio=0.5)
+    path = tmp_path / "grid.nc"
+    ds.to_netcdf(path)
+
+    rows_read = []
+    to_dataframe = xarray.Dataset.to_dataframe
+
+    def spy(self, *args, **kwargs):
+        result = to_dataframe(self, *args, **kwargs)
+        rows_read.append(len(result))
+        return result
+
+    monkeypatch.setattr(xarray.Dataset, "to_dataframe", spy)
+
+    df, _ = XDataFrame.import_netcdf([path])
+    lazy_query = df.filter(polars.col("speed") > 0).head(1)
+    # only the (empty) schema probe so far
+    assert sum(rows_read) == 0
+
+    assert lazy_query.collect().height == 1
+    # far fewer than the 500 grid cells
+    assert 0 < sum(rows_read) < 50

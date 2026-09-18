@@ -107,7 +107,6 @@ test = [
     "damast[ml]",
     "coverage",
     # NetCDF loading (see PolarsDataFrame.import_netcdf)
-    "dask",
     "netCDF4",
     "xarray",
     "pandas>=2",
