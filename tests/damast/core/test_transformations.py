@@ -34,12 +34,8 @@ class LocalDoubler(PipelineElement):
 
 
 def _reset_plugin_manager():
-    for module_name in list(plugin_manager.local_files):
-        sys.modules.pop(module_name, None)
-    plugin_manager._local_modules.clear()
-    plugin_manager._local_files.clear()
-    plugin_manager._requirement_cache.clear()
-    plugin_manager._loaded = False
+    plugin_manager._unload()
+    plugin_manager._registered_packages.clear()
 
 
 @pytest.fixture
@@ -198,12 +194,11 @@ def test_list_plugins_discovers_entry_points(monkeypatch):
 
     monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
 
-    assert "AcmeTransformer" in PipelineElement.list_plugins()
-    assert PipelineElement.list_plugins()["AcmeTransformer"] == "acme_pkg.transformers:AcmeTransformer"
+    assert PipelineElement.list_plugins()["acme_pkg.AcmeTransformer"] == "acme_pkg.transformers:AcmeTransformer"
 
 
 def test_list_plugins_empty_by_default():
-    assert "AcmeTransformer" not in PipelineElement.list_plugins()
+    assert "acme_pkg.AcmeTransformer" not in PipelineElement.list_plugins()
 
 
 def test_local_plugin_path_discovered_via_list_plugins(local_plugin_path):
@@ -211,7 +206,7 @@ def test_local_plugin_path_discovered_via_list_plugins(local_plugin_path):
     PipelineElement.reload_plugins()
 
     plugins = PipelineElement.list_plugins()
-    assert plugins["LocalDoubler"] == "acme_local_transformer:LocalDoubler"
+    assert plugins["acme_local_transformer.LocalDoubler"] == "acme_local_transformer:LocalDoubler"
 
 
 def test_local_plugin_path_resolvable_via_create_new(local_plugin_path):
@@ -277,7 +272,7 @@ def test_local_plugin_path_name_collision_warns_and_keeps_first(tmp_path, monkey
     _reset_plugin_manager()
 
 
-def test_list_plugins_class_name_collision_across_local_files_warns_and_keeps_first(
+def test_list_plugins_same_class_name_in_different_local_files_is_listed_per_package(
         local_plugin_path, caplog):
     (local_plugin_path / "acme_transformer_a.py").write_text(LOCAL_TRANSFORMER_SOURCE)
     (local_plugin_path / "acme_transformer_b.py").write_text(LOCAL_TRANSFORMER_SOURCE)
@@ -286,8 +281,9 @@ def test_list_plugins_class_name_collision_across_local_files_warns_and_keeps_fi
     with caplog.at_level("WARNING"):
         plugins = PipelineElement.list_plugins()
 
-    assert plugins["LocalDoubler"] == "acme_transformer_a:LocalDoubler"
-    assert any("is registered by more than one source" in record.message for record in caplog.records)
+    assert plugins["acme_transformer_a.LocalDoubler"] == "acme_transformer_a:LocalDoubler"
+    assert plugins["acme_transformer_b.LocalDoubler"] == "acme_transformer_b:LocalDoubler"
+    assert not any("is registered by more than one source" in record.message for record in caplog.records)
 
 
 def test_list_plugins_local_and_entry_point_collision_warns_and_local_wins(
@@ -297,14 +293,14 @@ def test_list_plugins_local_and_entry_point_collision_warns_and_local_wins(
 
     class FakeEntryPoint:
         name = "LocalDoubler"
-        value = "acme_pkg.transformers:LocalDoubler"
+        value = "acme_local_transformer.other:LocalDoubler"
 
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: [FakeEntryPoint()])
 
     with caplog.at_level("WARNING"):
         plugins = PipelineElement.list_plugins()
 
-    assert plugins["LocalDoubler"] == "acme_local_transformer:LocalDoubler"
+    assert plugins["acme_local_transformer.LocalDoubler"] == "acme_local_transformer:LocalDoubler"
     assert any("is registered by more than one source" in record.message for record in caplog.records)
 
 

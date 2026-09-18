@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 import pytest
@@ -35,9 +34,5 @@ def isolate_plugins(monkeypatch):
 
     monkeypatch.setattr(importlib_metadata, "entry_points", fake_entry_points)
 
-    for module_name in list(plugin_manager.local_files):
-        sys.modules.pop(module_name, None)
-    plugin_manager._local_modules.clear()
-    plugin_manager._local_files.clear()
-    plugin_manager._requirement_cache.clear()
-    plugin_manager._loaded = False
+    plugin_manager._unload()
+    plugin_manager._registered_packages.clear()
