@@ -631,6 +631,8 @@ class PolarsDataFrame(metaclass=Meta):
                         n_rows -= df.height
                     yield df
 
+        # According to polars documentation this functionality is considered unstable
+        # https://docs.pola.rs/api/python/stable/reference/api/polars.io.plugins.register_io_source.html
         return register_io_source(read_batches, schema=schema), variables
 
     @staticmethod
