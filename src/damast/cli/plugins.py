@@ -1,4 +1,5 @@
 import os
+from rich import print
 from argparse import ArgumentParser
 
 from damast.cli.base import BaseParser
@@ -29,7 +30,7 @@ class PluginsParser(BaseParser):
 
         for package, transformers in sorted(packages.items()):
             source = self._describe_source(plugin_manager.resolve_requirement(transformers[0][1]))
-            print(f"{package}{f' ({source})' if source else ''}")
+            print(f"[bold]{package}[/bold]{f' ({source})' if source else ''}")
 
             width = max(len(class_name) for class_name, _ in transformers)
             for class_name, module_name in sorted(transformers):
