@@ -565,6 +565,23 @@ def test_update_preserves_representation_type_when_step_output_declares_none():
     adf.validate_metadata()
 
 
+def test_infer_annotation_takes_descriptive_fields_from_reference():
+    reference = MetaData([
+        DataSpecification(name="lat", unit=units.deg, description="latitude",
+                          representation_type=float, value_range=MinMax(-90.0, 90.0)),
+    ])
+    df = polars.DataFrame({"lat": [10.0, 20.0], "count": [1, 2]})
+
+    metadata = AnnotatedDataFrame.infer_annotation(df, reference=reference)
+
+    assert metadata["lat"].unit == units.deg
+    assert metadata["lat"].description == "latitude"
+    # data-dependent fields are inferred from the data itself, not taken from the reference
+    assert metadata["lat"].value_range == MinMax(10.0, 20.0)
+    assert metadata["count"].unit is None
+    assert AnnotatedDataFrame.infer_annotation(df)["lat"].unit is None
+
+
 def _write_parquet(df: polars.DataFrame, path: Path):
     df.write_parquet(path)
 

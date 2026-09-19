@@ -464,8 +464,20 @@ class AnnotatedDataFrame(XDataFrame):
                               validation_mode=validation_mode,
                               merge_strategy=merge_strategy)
 
+    # descriptive fields that remain valid for a column when its data is filtered or reshaped
+    _INHERITED_SPEC_FIELDS = ("description", "category", "abbreviation", "unit", "precision", "missing_value")
+
     @classmethod
-    def infer_annotation(cls, df: DataFrame) -> MetaData:
+    def infer_annotation(cls, df: DataFrame, reference: MetaData | None = None) -> MetaData:
+        """
+        Infer the metadata of a dataframe from its data.
+
+        :param df: The dataframe to annotate
+        :param reference: Optional metadata, e.g. of the dataframe ``df`` was derived from: for
+            columns it contains, the descriptive fields (unit, description, category, abbreviation,
+            precision, missing value) are taken over, while type and value range/stats are inferred
+        :return: The inferred metadata
+        """
         column_specs: list[DataSpecification] = []
 
         # Each collect() re-reads the input - so compute categories and min/max of all
@@ -524,6 +536,15 @@ class AnnotatedDataFrame(XDataFrame):
 
                 ds = DataSpecification(**data)
                 column_specs.append(ds)
+
+        if reference is not None:
+            for ds in column_specs:
+                if ds.name in reference:
+                    reference_spec = reference[ds.name]
+                    for field in cls._INHERITED_SPEC_FIELDS:
+                        value = getattr(reference_spec, field, None)
+                        if value is not None:
+                            setattr(ds, field, value)
 
         return MetaData(columns=column_specs, annotations=[])
 
