@@ -235,7 +235,12 @@ class PolarsDataFrame(metaclass=Meta):
         """
         Get column dtype (without collecting the full dataframe)
         """
-        idx = self.column_names.index(column_name)
+        try:
+            idx = self.column_names.index(column_name)
+        except ValueError as e:
+            if re.search("not in list", str(e)):
+                raise ValueError(f"{e} -- known columns are {','.join(sorted(self.column_names))}")
+            raise
         return self.lazyframe.collect_schema().dtypes()[idx]
 
     def set_dtype(self, column_name, representation_type) -> polars.datatype.DataType:
