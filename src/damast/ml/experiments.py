@@ -278,18 +278,17 @@ class Experiment:
                  output_directory: str | Path = tempfile.gettempdir(),
                  batch_size: int = 2,
                  evaluation_steps=1,
-                 split_data_ratios: list[float] = [1.6, 0.2, 0.2],
+                 split_data_ratios: list[float] = [0.8, 0.1, 0.1],
                  label: str = "damast-ml-experiment",
                  timestamp: str | datetime.datetime = datetime.datetime.now(datetime.timezone.utc),
                  evaluation={}
                  ):
         """
-        The ratios of how to split (test, training, validation) data from the input dataset
-
         :param learning_task:  A description of the machine-learning model setup
         :param input_data:
         :param evaluation_steps:
-        :param split_data_ratios:
+        :param split_data_ratios: Relative sizes of the (train, test, validate) partitions of the
+            input groups; normalized, so that they sum to 1
         :param label:
         :param timestamp:
         :param evaluation:
