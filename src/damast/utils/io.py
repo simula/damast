@@ -29,6 +29,8 @@ class Archive:
 
     _extracted_files: list[str]
     _mounted_dirs: list[Path]
+    #: Temporary directory holding all mountpoints of this archive
+    _mount_root: Path | None = None
 
     _supported_suffixes: list[str] = None
     _backend: ArchiveBackend = None
@@ -42,7 +44,7 @@ class Archive:
             self._backend = ArchiveBackend.RATARMOUNT
         except Exception:
             warnings.warn("ratarmount could not be loaded: falling back to zipfile-based support")
-        self._backend = ArchiveBackend.ZIPFILE
+            self._backend = ArchiveBackend.ZIPFILE
 
     def supported_suffixes(self):
         """
@@ -157,7 +159,10 @@ class Archive:
 
     def umount(self):
         """
-        Umount the archive
+        Umount the archive and remove all mountpoints, including the temporary mount root
+
+        :raise RuntimeError: If a ratarmount mountpoint could not be unmounted - it is then kept,
+            so that removing it cannot touch the mounted content
         """
         if self._backend == ArchiveBackend.RATARMOUNT:
             for mounted_dir in list(reversed(self._mounted_dirs)):
@@ -170,41 +175,51 @@ class Archive:
                         break
                     else:
                         logger.debug(f"Retrying to unmount {mounted_dir}")
+                else:
+                    raise RuntimeError(f"Archive.umount: failed to unmount {mounted_dir}")
 
-        for mounted_dir in self._mounted_dirs:
-            if Path(mounted_dir).exists():
-                shutil.rmtree(mounted_dir)
+        if self._mount_root is not None and self._mount_root.exists():
+            shutil.rmtree(self._mount_root)
+
+        self._mount_root = None
+        self._mounted_dirs = []
+        self._extracted_files = []
 
     def mount(self) -> list[str]:
         """
         Mount the archive (and potentially) inner archives to make the files accessible
         """
-        if self._mounted_dirs:
+        if self._mount_root is not None:
             raise RuntimeError("Archive.mount: looks like these files are already mounted. Call 'umount' first")
 
         extracted_files = []
-        local_mount = tempfile.mkdtemp(prefix=DAMAST_MOUNT_PREFIX)
+        self._mount_root = Path(tempfile.mkdtemp(prefix=DAMAST_MOUNT_PREFIX))
 
-        for file in self.filenames:
-            if Path(file).suffix[1:] in self.supported_suffixes():
-                logger.info(f"Archive.mount: found archive: {file}")
-                target_mount = Path(local_mount) / Path(file).name
-                target_mount.mkdir(parents=True, exist_ok=True)
+        try:
+            for file in self.filenames:
+                if Path(file).suffix[1:] in self.supported_suffixes():
+                    logger.info(f"Archive.mount: found archive: {file}")
+                    target_mount = self._mount_root / Path(file).name
+                    target_mount.mkdir(parents=True, exist_ok=True)
 
-                fn = getattr(self, f"mount_{self._backend.value}")
-                fn(file, target_mount)
+                    fn = getattr(self, f"mount_{self._backend.value}")
+                    fn(file, target_mount)
 
-                decompressed_files = [x for x in Path(target_mount).glob("**/*") if Path(x).is_file()]
-                for idx, x in enumerate(decompressed_files):
-                    if self.filter_fn(x):
-                        logger.debug(f"Archive.mount: ignoring unsupported file={x}")
-                    else:
-                        extracted_files += [ x ]
-            elif self.filter_fn(file):
-                logger.debug(f"Archive.mount: ignoring unsupported {file=}")
-            else:
-                # no extraction needed, and file suffix is supported
-                extracted_files += [ file ]
+                    decompressed_files = [x for x in Path(target_mount).glob("**/*") if Path(x).is_file()]
+                    for idx, x in enumerate(decompressed_files):
+                        if self.filter_fn(x):
+                            logger.debug(f"Archive.mount: ignoring unsupported file={x}")
+                        else:
+                            extracted_files += [ x ]
+                elif self.filter_fn(file):
+                    logger.debug(f"Archive.mount: ignoring unsupported {file=}")
+                else:
+                    # no extraction needed, and file suffix is supported
+                    extracted_files += [ file ]
+        except Exception:
+            # __exit__ is not called when __enter__ fails, so clean up what has been mounted so far
+            self.umount()
+            raise
 
         self._extracted_files = extracted_files
         return self._extracted_files
