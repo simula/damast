@@ -8,7 +8,7 @@ from collections import OrderedDict
 from collections.abc import Generator
 from pathlib import Path
 from tempfile import gettempdir
-from typing import ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import keras.callbacks
 import keras.utils
@@ -272,7 +272,7 @@ class BaseModel(ABC):
     def evaluate(self,
                  label: str,
                  evaluation_data: Generator,
-                 **kwargs) -> dict[str, any]:
+                 **kwargs) -> dict[str, Any]:
         """
         Evaluate this model.
 
@@ -296,7 +296,7 @@ class BaseModel(ABC):
                                                            **kwargs)
 
         evaluation_column_names = ["dataset"]
-        evaluation_results: list[any] = [label]
+        evaluation_results: list[Any] = [label]
         for name, value in evaluation.items():
             evaluation_column_names.append(name)
             evaluation_results.append(value)
@@ -312,11 +312,11 @@ class ModelInstanceDescription(NamedTuple):
     """
     Provide a description of a model instance to allow serialization.
     """
-    model: BaseModel
+    model: type[BaseModel]
     parameters: dict[str, str]
 
     @classmethod
-    def from_dict(cls, data: dict[str, any]) -> ModelInstanceDescription:
+    def from_dict(cls, data: dict[str, Any]) -> ModelInstanceDescription:
         if "module_name" not in data:
             raise ValueError(f"{cls.__name__}.from_dict: missing 'module' specification")
         if "class_name" not in data:

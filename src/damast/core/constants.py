@@ -1,3 +1,5 @@
+from typing import Any
+
 __all__ = [
     "DECORATED_ARTIFACT_SPECS",
     "DECORATED_DESCRIPTION",
@@ -31,7 +33,7 @@ DAMAST_SUPPORTED_FILE_FORMATS: dict[str, list[str]] = {
 
 DAMAST_MOUNT_PREFIX: str = "damast-mount"
 
-DAMAST_CSV_DEFAULT_ARGS: dict[str, any] = {
+DAMAST_CSV_DEFAULT_ARGS: dict[str, Any] = {
     'null_values': ["None", "none", "Null", "null"],
     'infer_schema_length': None
 }

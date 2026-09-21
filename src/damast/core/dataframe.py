@@ -14,6 +14,7 @@ import polars
 import pyarrow
 import pyarrow.parquet as pq
 from tqdm import tqdm
+from typing import Any
 
 try:
     from typing import deprecated
@@ -103,7 +104,7 @@ class AnnotatedDataFrame(XDataFrame):
         return self._metadata_inferred
 
     @classmethod
-    def ensure_type(cls, obj: any):
+    def ensure_type(cls, obj: Any):
         if not isinstance(obj, cls):
             raise ValueError("Object {obj} is not an AnnotatedDataFrame")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+from typing import Any
 import uuid as uuid_module
 
 import networkx as nx
@@ -86,7 +87,7 @@ class Node:
         yield "transformer", dict(self.transformer)
 
     @classmethod
-    def from_dict(cls, data: dict[str, any]):
+    def from_dict(cls, data: dict[str, Any]):
         return Node(uuid=data['uuid'],
                     name=data['name'],
                     transformer=PipelineElement.create_new(**data['transformer'])
@@ -136,7 +137,7 @@ class ProcessingGraph:
         ]
 
     @classmethod
-    def from_dict(cls, data: dict[str, any]):
+    def from_dict(cls, data: dict[str, Any]):
         """
         Load the graph from dictionary containing nodes and edges.
         Note, that no internal states can be loaded.

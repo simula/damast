@@ -16,6 +16,7 @@ from collections.abc import Callable
 from logging import getLogger
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import numpy as np
 import polars
@@ -611,13 +612,13 @@ class PipelineElement(Transformer):
 
         self._parameters = parameters
 
-    def get_name(self, name: str, datasource: str | None = None) -> any:
+    def get_name(self, name: str, datasource: str | None = None) -> Any:
         if datasource is None:
             datasource = DAMAST_DEFAULT_DATASOURCE
 
         return self._get_name(name=name, datasource=datasource)
 
-    def _get_name(self, name: str, datasource: str | None) -> any:
+    def _get_name(self, name: str, datasource: str | None) -> Any:
         """
         Add the fully resolved input/output name for this key.
 
@@ -772,7 +773,7 @@ class PipelineElement(Transformer):
                    module_name: str,
                    class_name: str,
                    name_mappings: dict[str, dict[str, str]] | None = None,
-                   parameters: dict[str, any] | None = {},
+                   parameters: dict[str, Any] | None = {},
                    requires: dict[str, str] | None = None) -> PipelineElement:
         """
         Create a new PipelineElement Subclass instance dynamically

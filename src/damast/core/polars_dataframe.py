@@ -85,7 +85,7 @@ class PolarsDataFrame(metaclass=Meta):
         self._minmax_cache = {}
 
     @classmethod
-    def types(cls) -> dict[str, any]:
+    def types(cls) -> dict[str, Any]:
         return POLARS_TYPE_DICT
 
     @classmethod
@@ -306,7 +306,7 @@ class PolarsDataFrame(metaclass=Meta):
                 result[f"{column_name}::max"][0],
             )
 
-    def minmax(self, column_name: str) -> tuple[any, any]:
+    def minmax(self, column_name: str) -> tuple[Any, Any]:
         """
         Tuple of min and max values of the given column
         """
@@ -356,7 +356,7 @@ class PolarsDataFrame(metaclass=Meta):
         return None
 
 
-    def minmax_stats(self, column_names: list[str]) -> dict[str, dict[str, any]]:
+    def minmax_stats(self, column_names: list[str]) -> dict[str, dict[str, Any]]:
         """
         Tuple of min and max values of the given column
         """

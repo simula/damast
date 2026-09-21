@@ -1,6 +1,7 @@
 import functools
 import inspect
 from collections import OrderedDict
+from typing import Any
 
 from damast.core.dataframe import AnnotatedDataFrame
 
@@ -80,7 +81,7 @@ def describe(description: str):
     return decorator
 
 
-def input(requirements: dict[str, any], label: str | None = None):
+def input(requirements: dict[str, Any], label: str | None = None):
     """
     Specify the input for the decorated function.
 
@@ -151,7 +152,7 @@ def input(requirements: dict[str, any], label: str | None = None):
     return decorator
 
 
-def output(requirements: dict[str, any]):
+def output(requirements: dict[str, Any]):
     """
     Specify the output for the decorated function.
 
@@ -229,7 +230,7 @@ def output(requirements: dict[str, any]):
     return decorator
 
 
-def artifacts(requirements: dict[str, any]):
+def artifacts(requirements: dict[str, Any]):
     """
     Specify the (file) artifact(s) the decorated function is expected to produce as a side
     effect - e.g. an exported file or a plot - in addition to (or instead of) any dataframe
