@@ -1,3 +1,5 @@
+import copy
+import datetime
 import os
 from collections import OrderedDict
 from pathlib import Path
@@ -19,6 +21,7 @@ from damast.ml.experiments import (
     ForecastTask,
     LearningTask,
     ModelInstanceDescription,
+    TemporalForecastTask,
     TrainingParameters,
 )
 from damast.ml.models.base import BaseModel
@@ -399,3 +402,60 @@ def test_compute_train_test_validate_groups_rounding(number_of_groups, ratios):
     assert sorted(pl.concat(partitions)["id"].to_list()) == list(range(number_of_groups))
     exact_sizes = [number_of_groups * r / sum(ratios) for r in ratios]
     assert all(abs(len(p) - size) < 1 for p, size in zip(partitions, exact_sizes))
+
+
+def _temporal_task(pipeline, **kwargs) -> TemporalForecastTask:
+    arguments = dict(label="forecast-ais-temporal",
+                     pipeline=pipeline, features=["lat_x", "lat_y", "lon_x", "lon_y"],
+                     models=[ModelInstanceDescription(BaselineA, {}),
+                             ModelInstanceDescription(BaselineB, {})],
+                     group_column="mmsi",
+                     timestamp_column="date_time_utc",
+                     window="10m", sequence_length=5,
+                     forecast_horizon="2m", forecast_length=1,
+                     max_gap="5m",
+                     training_parameters=TrainingParameters(epochs=1, validation_steps=1))
+    arguments.update(kwargs)
+    return TemporalForecastTask(**arguments)
+
+
+def test_temporal_forecast_task_io(tmp_path):
+    pipeline = DataProcessingPipeline(name="ais_preparation", base_dir=tmp_path) \
+        .add("cyclic", LatLonTransformer())
+    task = _temporal_task(pipeline)
+
+    loaded_task = LearningTask.from_dict(data=dict(task))
+    assert isinstance(loaded_task, TemporalForecastTask)
+    assert loaded_task == task
+    assert loaded_task != _temporal_task(pipeline, window="20m")
+
+    experiment = Experiment(learning_task=task, batch_size=10, input_data=tmp_path / "unused.parquet")
+    filename = tmp_path / "temporal-experiment.yaml"
+    experiment.save(filename=filename)
+    assert Experiment.from_file(filename) == experiment
+
+    with pytest.raises(TypeError, match="window must be a duration string or number"):
+        _temporal_task(pipeline, window=datetime.timedelta(minutes=10))
+
+
+def test_temporal_experiment_run(tmp_path):
+    pipeline = DataProcessingPipeline(name="ais_preparation", base_dir=tmp_path) \
+        .add("cyclic", LatLonTransformer())
+
+    spec = copy.deepcopy(AISTestDataSpec)
+    for column in spec["columns"]:
+        if column["name"] == "date_time_utc":
+            column["representation_type"] = "datetime"
+    data = AISTestData(200)
+    adf = AnnotatedDataFrame(dataframe=data.dataframe.with_columns(pl.col("date_time_utc").str.to_datetime()),
+                             metadata=MetaData.from_dict(data=spec))
+    dataset_filename = tmp_path / "test.parquet"
+    adf.export(filename=dataset_filename)
+
+    experiment = Experiment(learning_task=_temporal_task(pipeline),
+                            input_data=dataset_filename,
+                            output_directory=tmp_path)
+    report = experiment.run()
+    assert Path(report).exists()
+    assert set(experiment._evaluation_report) == {"BaselineA-forecast-ais-temporal",
+                                                  "BaselineB-forecast-ais-temporal"}
