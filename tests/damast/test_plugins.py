@@ -359,6 +359,39 @@ def test_module_entry_point_resolvable_via_damast_plugins(installed_package, fak
     assert ModuleDoubler.__module__ == "acme_mod_lookup.a"
 
 
+def test_module_entry_point_name_is_only_a_label(installed_package, fake_entry_points, caplog):
+    """The namespace is the top-level package; a different entry-point name is warned about, once."""
+    installed_package("acme_mod_label", MODULE_ENTRY_FILES)
+    fake_entry_points("acme_label", "acme_mod_label")
+
+    with caplog.at_level("WARNING"):
+        packages = plugin_manager.plugin_packages()
+        plugin_manager.plugin_packages()
+
+    assert "acme_mod_label" in packages
+    assert "acme_label" not in packages
+    warnings = [r.message for r in caplog.records if "is ignored" in r.message]
+    assert len(warnings) == 1
+    assert "'acme_label = acme_mod_label'" in warnings[0]
+    assert "damast.plugins.acme_mod_label" in warnings[0]
+
+    from damast.plugins.acme_mod_label import ModuleDoubler
+    assert ModuleDoubler.__module__ == "acme_mod_label.a"
+    with pytest.raises(ModuleNotFoundError, match="No plugin package 'acme_label'"):
+        import damast.plugins.acme_label  # noqa: F401
+
+
+def test_module_entry_point_named_after_its_package_is_not_warned_about(
+        installed_package, fake_entry_points, caplog):
+    installed_package("acme_mod_named", MODULE_ENTRY_FILES)
+    fake_entry_points("acme_mod_named", "acme_mod_named.a")
+
+    with caplog.at_level("WARNING"):
+        plugin_manager.plugin_packages()
+
+    assert not any("is ignored" in record.message for record in caplog.records)
+
+
 def test_class_entry_point_wins_over_module_entry_point_of_same_package(installed_package, fake_entry_points):
     installed_package("acme_mod_class", MODULE_ENTRY_FILES)
     installed_package("acme_mod_lazy", MODULE_ENTRY_FILES)

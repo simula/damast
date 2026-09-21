@@ -82,6 +82,10 @@ class PluginManager:
         MyTransformer = "acme_pkg.transformers:MyTransformer"
         acme_pkg = "acme_pkg.transformers"
 
+      Either way, the transformers are provided as ``damast.plugins.<top-level package>``, here
+      ``damast.plugins.acme_pkg``. The name of a class entry is the transformer's name; the name
+      of a module entry is only a label - use the package name, a different one is warned about.
+
     - local directories listed in the ``DAMAST_PLUGIN_PATH`` environment variable
       (os.pathsep-separated), for transformers that are not part of an installed package:
 
@@ -115,6 +119,8 @@ class PluginManager:
         self._entry_point_modules: dict[str, dict[str, ModuleType]] = {}
         #: unnamed plugin directories a deprecation warning was already logged for
         self._warned_unnamed: set[Path] = set()
+        #: (name, value) of module entry-points whose ignored name was already warned about
+        self._warned_entry_points: set[tuple[str, str]] = set()
         self._loaded = False
         self._requirement_cache: dict[str, dict[str, str] | None] = {}
 
@@ -429,13 +435,29 @@ class PluginManager:
     def _entry_points(self) -> tuple[list, list]:
         """:return: (class entry-points, module entry-points) of :attr:`ENTRY_POINT_GROUP`"""
         entry_points = list(importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP))
-        return ([ep for ep in entry_points if not self.is_module_entry_point(ep)],
-                [ep for ep in entry_points if self.is_module_entry_point(ep)])
+        module_entry_points = [ep for ep in entry_points if self.is_module_entry_point(ep)]
+        for ep in module_entry_points:
+            self._warn_ignored_entry_point_name(ep)
+        return ([ep for ep in entry_points if not self.is_module_entry_point(ep)], module_entry_points)
+
+    def _warn_ignored_entry_point_name(self, entry_point):
+        """
+        Warn (once) if a module entry point's name differs from its plugin package: the namespace
+        is always the top-level package, the name of a module entry point is only a label.
+        """
+        package = self.plugin_package(entry_point.value)
+        key = (entry_point.name, entry_point.value)
+        if entry_point.name != package and key not in self._warned_entry_points:
+            self._warned_entry_points.add(key)
+            logger.warning(f"PluginManager: the name '{entry_point.name}' of entry-point"
+                           f" '{entry_point.name} = {entry_point.value}' is ignored - its transformers"
+                           f" are provided by plugin package '{package}', i.e. damast.plugins.{package}")
 
     def plugin_packages(self) -> set[str]:
         """Names of all plugin packages - local ones and those of entry-points (not imported here)."""
         packages = {self.plugin_package(module_name) for module_name in self.load_local_plugins()}
-        packages |= {self.plugin_package(ep.value) for ep in importlib.metadata.entry_points(group=self.ENTRY_POINT_GROUP)}
+        class_entry_points, module_entry_points = self._entry_points()
+        packages |= {self.plugin_package(ep.value) for ep in class_entry_points + module_entry_points}
         return packages
 
     def resolve_plugin(self, package: str, name: str) -> type[PipelineElement]:
