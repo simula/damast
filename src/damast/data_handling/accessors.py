@@ -22,7 +22,8 @@ from damast.ml import keras
 __all__ = [
     "GroupSequenceAccessor",
     "GroupWindowAccessor",
-    "SequenceIterator"
+    "SequenceIterator",
+    "partition_sizes"
 ]
 logger = logging.getLogger("damast")
 
@@ -91,6 +92,26 @@ def _log_steps_per_epoch(steps_per_epoch: int):
     logger.setLevel(current_level)
 
 
+def partition_sizes(number_of_items: int, ratios: list[float]) -> np.ndarray:
+    """
+    Split a number of items into partitions of the given relative sizes.
+
+    Uses largest remainder rounding, so that the sizes always add up to ``number_of_items`` - plain
+    rounding may not, e.g. 5 items at ``[0.5, 0.5]`` would yield 2 + 2.
+
+    :param number_of_items: Total number of items to distribute
+    :param ratios: Relative partition sizes (will be normalized, so that all elements sum to 1)
+    :return: Size per partition, each within 1 of its exact share
+    """
+    exact_sizes = number_of_items * np.asarray(ratios, dtype=float) / sum(ratios)
+    sizes = np.floor(exact_sizes).astype(int)
+    remainder = number_of_items - sizes.sum()
+    # 'remainder' items are still unassigned: give one each to the partitions
+    # that lost the largest fraction when flooring
+    sizes[np.argsort(sizes - exact_sizes, kind="stable")[:remainder]] += 1
+    return sizes
+
+
 class _GroupAccessorBase:
     """
     Common base of the accessors that sample from groups of a dataframe.
@@ -114,17 +135,14 @@ class _GroupAccessorBase:
         :param ratios: List of relative partition sizes (will be normalized, so that all elements sum to 1
         :return: Following the ratios, returns lists of randomly sampled values from the id/group column
         """
-        scaled_ratios = np.asarray(ratios) / sum(ratios)
         groups = self.groups[self.group_column].to_numpy().copy()
 
         random.shuffle(groups)
         number_of_groups = len(groups)
 
-        partition_sizes = np.asarray(np.round(number_of_groups*scaled_ratios), dtype=int)
-        assert (len(groups) == sum(partition_sizes))
         from_idx = 0
         partitions = []
-        for ps in partition_sizes:
+        for ps in partition_sizes(number_of_groups, ratios):
             to_idx = min(from_idx + ps, number_of_groups)
             partitions.append(groups[from_idx:to_idx])
             from_idx = to_idx

@@ -152,6 +152,17 @@ def test_group_split_random(dataframe, ratios):
                 assert np.isin(group_A, group_B, invert=True).all()
 
 
+@pytest.mark.parametrize("number_of_groups, ratios", [(5, [0.5, 0.5]), (7, [1, 1, 1]), (3, [0.8, 0.1, 0.1])])
+def test_group_split_random_rounding(number_of_groups, ratios):
+    """Partition sizes add up to the number of groups, even if rounding each ratio does not."""
+    df = pl.DataFrame({"id": np.arange(number_of_groups)})
+    partitions = GroupSequenceAccessor(df=df, group_column="id").split_random(ratios=ratios)
+
+    assert sorted(np.concatenate(partitions)) == list(range(number_of_groups))
+    exact_sizes = number_of_groups * np.asarray(ratios) / sum(ratios)
+    assert all(abs(len(p) - size) < 1 for p, size in zip(partitions, exact_sizes))
+
+
 @pytest.mark.parametrize("sequence_length", [50, 1999])
 @pytest.mark.parametrize("sequence_forecast", [0, 1, 2])
 def test_sequence_accessor(dataframe, sequence_forecast, sequence_length):

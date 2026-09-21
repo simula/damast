@@ -2,6 +2,7 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 import damast
@@ -386,3 +387,15 @@ def test_experiment_run(tmp_path):
                             output_directory=tmp_path)
     with pytest.raises(NotImplementedError):
         experiment.run()
+
+
+@pytest.mark.parametrize("number_of_groups, ratios", [(5, [0.5, 0.5]), (10, [1, 1, 1, 1]), (3, [0.8, 0.1, 0.1])])
+def test_compute_train_test_validate_groups_rounding(number_of_groups, ratios):
+    """Partition sizes add up to the number of groups, even if rounding each ratio does not."""
+    df = pl.DataFrame({"id": list(range(number_of_groups))})
+    adf = AnnotatedDataFrame(df, metadata=AnnotatedDataFrame.infer_annotation(df.lazy()))
+    partitions = Experiment.compute_train_test_validate_groups(adf, group="id", ratios=ratios)
+
+    assert sorted(pl.concat(partitions)["id"].to_list()) == list(range(number_of_groups))
+    exact_sizes = [number_of_groups * r / sum(ratios) for r in ratios]
+    assert all(abs(len(p) - size) < 1 for p, size in zip(partitions, exact_sizes))

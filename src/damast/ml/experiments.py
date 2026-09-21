@@ -6,21 +6,19 @@ from __future__ import annotations
 import datetime
 import importlib
 import os
-import random
 import tempfile
 from collections.abc import Sequence
 from logging import INFO, Logger, basicConfig, getLogger
 from pathlib import Path
 from typing import Any, NamedTuple
 
-import numpy as np
 import polars as pl
 import yaml
 
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.types import DataFrame
-from damast.data_handling.accessors import GroupSequenceAccessor
+from damast.data_handling.accessors import GroupSequenceAccessor, partition_sizes
 from damast.ml import keras
 from damast.ml.models.base import BaseModel, ModelInstanceDescription
 
@@ -387,23 +385,11 @@ class Experiment:
         :param ratios: Ratio between the train, test and validate dataset
         """
 
-        normalized_rates = np.asarray([rate / sum(ratios) for rate in ratios])
         groups = adf[group].unique().select(pl.col(group).shuffle().alias(group)).collect()
-
-        partition_sizes = np.asarray(
-            np.round(len(groups) * normalized_rates), dtype=int)
-        delta = len(groups) - sum(partition_sizes)
-        assert delta <= 1, f"|# of groups {len(groups)} - # of partitions {sum(partition_sizes)}| <= 1"
-        if delta == 1:
-            rand_idx = random.randint(0, len(partition_sizes) - 1)
-            partition_sizes[rand_idx] += 1
-
-        if len(groups) != sum(partition_sizes):
-            raise RuntimeError(f"Expected group_len == sum partition_sizes, but was {len(groups)} == {sum(partition_sizes)}")
 
         from_idx = 0
         partitions = []
-        for ps in partition_sizes:
+        for ps in partition_sizes(len(groups), ratios):
             to_idx = min(from_idx + ps, len(groups))
             partitions.append(groups[from_idx:to_idx])
             from_idx = to_idx
