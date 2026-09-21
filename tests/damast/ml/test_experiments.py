@@ -311,6 +311,8 @@ def test_to_and_from_file(tmp_path):
     experiment = Experiment(learning_task=task,
                             batch_size=10,
                             input_data=Path(__file__).parent.parent / "data" / "test_dataframe.hdf5")
+    # The report records the default split as given - it should read as (train, test, validate) fractions
+    assert dict(experiment)["split_data_ratios"] == [0.8, 0.1, 0.1]
 
     filename = tmp_path / "test-experiment.yaml"
     experiment.save(filename=filename)
