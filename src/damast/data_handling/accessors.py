@@ -3,9 +3,12 @@ Module for creating generators for accessing sequences of data from a DataFrame
 """
 
 import logging
+import numbers
 import random
+import re
 import sys
 import time
+from datetime import timedelta
 from typing import Any
 
 import keras.utils
@@ -18,6 +21,7 @@ from damast.ml import keras
 
 __all__ = [
     "GroupSequenceAccessor",
+    "GroupWindowAccessor",
     "SequenceIterator"
 ]
 logger = logging.getLogger("damast")
@@ -33,8 +37,103 @@ else:
     def _mps_precision(data):
         return data
 
+
+def _check_single_dtype(df: DataFrame, columns: list[str], kind: str, owner: str):
+    """
+    Ensure that all columns share one datatype, so that they can be stacked into a single array.
+
+    :param df: The dataframe holding the columns
+    :param columns: Names of the columns to check
+    :param kind: Label of the columns for the error message, e.g. "Features"
+    :param owner: Name of the calling class for the error message
+    """
+    datatypes = [XDataFrame(df).dtype(c) for c in columns]
+    for dtype in datatypes:
+        if dtype != datatypes[0]:
+            raise ValueError(f"{owner}:"
+                             f" {kind} {columns} do not have a consistent (single) datatype,"
+                             f" got {datatypes}")
+
+
+_DURATION_TOKEN = re.compile(r"(\d+)(us|ms|s|m|h|d|w)")
+_DURATION_UNITS = {
+    "us": timedelta(microseconds=1),
+    "ms": timedelta(milliseconds=1),
+    "s": timedelta(seconds=1),
+    "m": timedelta(minutes=1),
+    "h": timedelta(hours=1),
+    "d": timedelta(days=1),
+    "w": timedelta(weeks=1),
+}
+
+
+def _parse_duration(value: str) -> timedelta:
+    """
+    Parse a polars-style duration string, e.g. ``"30m"`` or ``"1h30m"``.
+
+    Supported units are ``us``, ``ms``, ``s``, ``m``, ``h``, ``d`` and ``w``.
+
+    :param value: The duration string
+    :return: The duration
+    """
+    tokens = _DURATION_TOKEN.findall(value)
+    if not tokens or "".join(number + unit for number, unit in tokens) != value:
+        raise ValueError(f"Invalid duration '{value}': expected e.g. '30m' or '1h30m',"
+                         f" with units {list(_DURATION_UNITS)}")
+    return sum((int(number) * _DURATION_UNITS[unit] for number, unit in tokens), timedelta())
+
+
+def _log_steps_per_epoch(steps_per_epoch: int):
+    """Log the recommended steps per epoch, independent of the current log level."""
+    current_level = logger.getEffectiveLevel()
+    logger.setLevel(logging.INFO)
+    logger.info(f'Recommended {steps_per_epoch=}')
+    logger.setLevel(current_level)
+
+
+class _GroupAccessorBase:
+    """
+    Common base of the accessors that sample from groups of a dataframe.
+
+    :param df: The dataframe from which the data (train, test, ...) shall be extracted
+    :param group_column: the name of the column that identifies the group
+    :param groups: Dataframe listing the available groups in ``group_column``
+    """
+
+    def __init__(self, df: DataFrame, group_column: str, groups: pl.DataFrame):
+        self.df = df
+        self.group_column = group_column
+        self.groups = groups
+
+    def split_random(self, ratios: list[float]) -> list[list[Any]]:
+        """
+        Create ``N=len(ratios)`` groups of the dataframe, with given ratios, return the corresponding groups.
+
+        The groups are based on :attr:`group_column`.
+
+        :param ratios: List of relative partition sizes (will be normalized, so that all elements sum to 1
+        :return: Following the ratios, returns lists of randomly sampled values from the id/group column
+        """
+        scaled_ratios = np.asarray(ratios) / sum(ratios)
+        groups = self.groups[self.group_column].to_numpy().copy()
+
+        random.shuffle(groups)
+        number_of_groups = len(groups)
+
+        partition_sizes = np.asarray(np.round(number_of_groups*scaled_ratios), dtype=int)
+        assert (len(groups) == sum(partition_sizes))
+        from_idx = 0
+        partitions = []
+        for ps in partition_sizes:
+            to_idx = min(from_idx + ps, number_of_groups)
+            partitions.append(groups[from_idx:to_idx])
+            from_idx = to_idx
+
+        return partitions
+
+
 # https://www.tensorflow.org/tutorials/structured_data/time_series
-class GroupSequenceAccessor:
+class GroupSequenceAccessor(_GroupAccessorBase):
     """
     A generator that allows access to a length-limited sequence of a particular group.
 
@@ -66,10 +165,7 @@ class GroupSequenceAccessor:
                  group_column: str,
                  sort_columns: list[str] = None,
                  timeout_in_s: int = DEFAULT_TIMEOUT_IN_S):
-        self.df = df
-
-        self.group_column = group_column
-        self.groups = df.unique(group_column)
+        super().__init__(df=df, group_column=group_column, groups=df.unique(group_column))
 
         if sort_columns is not None:
             self.sort_columns = sort_columns if type(sort_columns) is list else [sort_columns]
@@ -77,32 +173,6 @@ class GroupSequenceAccessor:
             self.sort_columns = sort_columns
 
         self.timeout_in_s = timeout_in_s
-
-    def split_random(self, ratios: list[float]) -> list[list[Any]]:
-        """
-        Create ``N=len(ratios)`` groups of the dataframe, with given ratios, return the corresponding groups.
-
-        The groups are based on :attr:`GroupSequenceAccessor.group_column`.
-
-        :param ratios: List of relative partition sizes (will be normalized, so that all elements sum to 1
-        :return: Following the ratios, returns lists of randomly sampled values from the id/group column
-        """
-        scaled_ratios = np.asarray(ratios) / sum(ratios)
-        groups = self.groups[self.group_column].to_numpy().copy()
-
-        random.shuffle(groups)
-        number_of_groups = len(groups)
-
-        partition_sizes = np.asarray(np.round(number_of_groups*scaled_ratios), dtype=int)
-        assert (len(groups) == sum(partition_sizes))
-        from_idx = 0
-        partitions = []
-        for ps in partition_sizes:
-            to_idx = min(from_idx + ps, number_of_groups)
-            partitions.append(groups[from_idx:to_idx])
-            from_idx = to_idx
-
-        return partitions
 
     def to_keras_generator(self, features: list[str],
                            target: list[str] = None,
@@ -165,29 +235,15 @@ class GroupSequenceAccessor:
                 nn_model.fit(x=train_generator, epochs=3, steps_per_epoch=645)
         """
         if verbose:
-            current_level = logger.getEffectiveLevel()
-            logger.setLevel(logging.INFO)
-            steps_per_epoch = np.ceil(len(self.df) / batch_size)
-            logger.info(f'Recommended {steps_per_epoch=}')
-            logger.setLevel(current_level)
+            _log_steps_per_epoch(np.ceil(len(self.df) / batch_size))
 
         # Sanity checks before creating generator
         # Check that all features have the same data-type
-        datatypes = [XDataFrame(self.df).dtype(f) for f in features]
-        for dtype in datatypes:
-            if dtype != datatypes[0]:
-                raise ValueError(f"{self.__class__.__name__}:"
-                                 f" Features {features} do not have a consistent (single) datatype,"
-                                 f" got {datatypes}")
+        _check_single_dtype(self.df, features, "Features", self.__class__.__name__)
 
         use_target = target is not None
         if use_target:
-            datatypes = [XDataFrame(self.df).dtype(t) for t in target]
-            for dtype in datatypes:
-                if dtype != datatypes[0]:
-                    raise ValueError(f"{self.__class__.__name__}:"
-                                     f" Targets {target} do not have a consistent (single) datatype,"
-                                     f" got {datatypes}")
+            _check_single_dtype(self.df, target, "Targets", self.__class__.__name__)
 
         if use_target:
             target = target if type(target) is list else [target]
@@ -317,6 +373,318 @@ class GroupSequenceAccessor:
                           chunk_size=batch_size, shuffle=shuffle, infinite=infinite)
 
 
+class GroupWindowAccessor(_GroupAccessorBase):
+    """
+    A generator of fixed-duration windows of a group, resampled onto a regular time grid.
+
+    Unlike :class:`GroupSequenceAccessor`, which takes a fixed *number* of rows, this accessor takes a
+    fixed *duration*: the input covers ``window`` and the targets lie up to ``forecast_horizon`` beyond it,
+    independent of how often a group reports. Each window is linearly interpolated onto equidistant
+    time points, so that the resulting dataset (X) has a shape of
+    :code:`(<batch_size>, <sequence_length>, <number-of-features>)`, and the targets (y) a shape of
+    :code:`(<batch_size>, <forecast_length>, <number-of-targets>)`.
+
+    A window is only used if no two consecutive rows of the group within it - including the forecast
+    horizon - are further apart than ``max_gap``, so that interpolation never bridges more than ``max_gap``.
+    Window starts are drawn uniformly in time, not per row, so that periods of a high reporting rate are
+    not favoured.
+
+    .. warning::
+        All features and targets are interpolated linearly. Angular values such as course or heading
+        wrap around at 360° and must be transformed beforehand, e.g. into their sine and cosine.
+
+    .. note::
+        Only the timestamps are scanned upfront; each batch then fetches just the rows of its windows.
+        With a file-backed :class:`polars.LazyFrame` this means reading the files once per batch - pass
+        ``df.collect().lazy()`` if the data fits into memory.
+
+    :param df: The dataframe from which the data (train, test, ...) shall be extracted
+    :param group_column: the name of the column that identifies the group
+    :param timestamp_column: the name of the time column, either of type :class:`polars.Datetime` or numeric
+    """
+
+    def __init__(self,
+                 df: DataFrame | pl.DataFrame | XDataFrame,
+                 group_column: str,
+                 timestamp_column: str):
+        if isinstance(df, XDataFrame):
+            df = df.lazyframe
+        df = df.lazy()
+        super().__init__(df=df, group_column=group_column,
+                         groups=df.select(group_column).unique().collect())
+        self.timestamp_column = timestamp_column
+
+    def to_keras_generator(self, features: list[str],
+                           target: list[str] = None,
+                           groups: list[Any] = None,
+                           window: str | timedelta | float = "30m",
+                           sequence_length: int = 50,
+                           forecast_horizon: str | timedelta | float = None,
+                           forecast_length: int = 1,
+                           max_gap: str | timedelta | float = "5m",
+                           batch_size: int = 1024,
+                           shuffle: bool = False,
+                           infinite: bool = False,
+                           verbose: bool = True):
+        """
+        Create a batch generator suitable as a Keras datasource.
+
+        The input grid consists of ``sequence_length`` points spanning the closed interval
+        :code:`[t0, t0 + window]`; the target grid of ``forecast_length`` points at
+        :code:`t0 + window + k * forecast_horizon / forecast_length` for :code:`k = 1..forecast_length`.
+
+        Durations are given as :class:`datetime.timedelta` or a duration string such as ``"1h30m"``
+        if the timestamp column is a :class:`polars.Datetime`, otherwise as a number in the unit of the
+        timestamp column.
+
+        :param features: A list of (numeric) features.
+        :param target: A list of (numeric) targets, if any - requires ``forecast_horizon``
+        :param groups: A list of group ids for which windows will be generated - this must be a subset
+            of the existing group values in the dataframe, see :func:`split_random`
+        :param window: Duration of the input window
+        :param sequence_length: Number of equidistant points the input window is resampled to (at least 2)
+        :param forecast_horizon: Duration between the end of the input window and the last target point
+        :param forecast_length: Number of equidistant target points within the forecast horizon
+        :param max_gap: Maximum time between two consecutive rows that may be interpolated
+        :param batch_size: Number of windows per batch
+        :param shuffle: If True, randomise the order of windows in a single pass (``infinite=False``)
+        :param infinite: If True, draw random windows endlessly, so the caller needs to define a stopping
+            criterion, e.g., :code:`"steps_per_epoch"`.
+            If False, do one pass over all non-overlapping windows of the data, e.g., for evaluation.
+        :param verbose: If True, show an info on the recommended :code:`"steps_per_epoch"` based on the
+            number of non-overlapping windows and :code:`"batch_size"`.
+
+        Example:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                from damast.data_handling.accessors import GroupWindowAccessor
+
+                df = ...
+                features = ['lat_x', 'lat_y', 'lon_x', 'lon_y', 'cog_x', 'cog_y']
+
+                gwa = GroupWindowAccessor(df=df, group_column="mmsi", timestamp_column="timestamp")
+                train_ids, validate_ids, test_ids = gwa.split_random(ratios=[0.8, 0.1, 0.1])
+
+                # 30 minutes resampled to 60 steps (every ~30 s); predict the position 15 minutes ahead
+                train_generator = gwa.to_keras_generator(features=features, target=['lat_x', 'lat_y', 'lon_x', 'lon_y'],
+                                                         groups=train_ids,
+                                                         window="30m", sequence_length=60,
+                                                         forecast_horizon="15m", max_gap="5m",
+                                                         batch_size=32, infinite=True)
+        """
+        owner = self.__class__.__name__
+
+        _check_single_dtype(self.df, features, "Features", owner)
+        use_target = target is not None
+        if use_target:
+            _check_single_dtype(self.df, target, "Targets", owner)
+        for column in features + (target if use_target else []):
+            if not XDataFrame(self.df).is_numeric(column):
+                raise ValueError(f"{owner}: Column '{column}' must be numeric to be interpolated")
+
+        if use_target and forecast_horizon is None:
+            raise ValueError(f"{owner}: Targets require a forecast_horizon")
+        if not use_target and forecast_horizon is not None:
+            raise ValueError(f"{owner}: Cannot do a forecast_horizon with no targets")
+        if sequence_length < 2:
+            raise ValueError(f"{owner}: sequence_length must be at least 2, got {sequence_length}")
+        if forecast_length < 1:
+            raise ValueError(f"{owner}: forecast_length must be at least 1, got {forecast_length}")
+
+        window_units = self._to_time_units("window", window)
+        max_gap_units = self._to_time_units("max_gap", max_gap)
+        horizon_units = self._to_time_units("forecast_horizon", forecast_horizon) if use_target else 0
+        span = window_units + horizon_units
+
+        if isinstance(groups, pl.DataFrame):
+            groups = groups[self.group_column]
+        segments = self._segments(groups=groups, max_gap=max_gap_units)
+        valid_segments = segments.filter((pl.col("end") - pl.col("start")) >= span)
+        if valid_segments.is_empty():
+            longest = (segments["end"] - segments["start"]).max() if not segments.is_empty() else None
+            raise RuntimeError(f"{owner}: could not identify a window of {window} plus a forecast horizon of"
+                               f" {forecast_horizon} without gaps larger than {max_gap}"
+                               f" in {segments[self.group_column].n_unique()} groups:"
+                               f" longest gap-free span is {longest} (in units of '{self.timestamp_column}')")
+        segments = valid_segments
+
+        columns = list(dict.fromkeys(features + (target if use_target else [])))
+        feature_idx = [columns.index(f) for f in features]
+        target_idx = [columns.index(t) for t in target] if use_target else []
+
+        grid = np.linspace(0, window_units, sequence_length)
+        if use_target:
+            grid = np.concatenate([grid,
+                                   window_units + horizon_units * np.arange(1, forecast_length + 1) / forecast_length])
+
+        starts = segments["start"].to_numpy()
+        lengths = segments["end"].to_numpy() - starts
+        tile_counts = (lengths // span).astype(np.int64)
+        if verbose:
+            _log_steps_per_epoch(np.ceil(tile_counts.sum() / batch_size))
+
+        def _batch(segment_idx: np.ndarray, t0: np.ndarray):
+            values = self._resample(columns=columns,
+                                    groups=segments[self.group_column].gather(segment_idx),
+                                    t0=t0, grid=grid, max_gap=max_gap_units)
+            X = _mps_precision(values[:, :sequence_length, feature_idx])
+            if use_target:
+                return X, _mps_precision(values[:, sequence_length:, target_idx])
+            return (X,)
+
+        def _random_generator():
+            while True:
+                yield _batch(*self._draw_starts(segments=segments, span=span, size=batch_size))
+
+        def _single_pass_generator():
+            # Tile each segment with non-overlapping windows, so that each target is seen once
+            segment_idx = np.repeat(np.arange(len(starts)), tile_counts)
+            tile_idx = np.arange(len(segment_idx)) - np.repeat(np.cumsum(tile_counts) - tile_counts, tile_counts)
+            t0 = starts[segment_idx] + tile_idx * span
+
+            order = np.random.permutation(len(t0)) if shuffle else np.arange(len(t0))
+            for from_idx in range(0, len(order), batch_size):
+                selected = order[from_idx:from_idx + batch_size]
+                yield _batch(segment_idx[selected], t0[selected])
+
+        return _random_generator() if infinite else _single_pass_generator()
+
+    def _to_time_units(self, name: str, value: str | timedelta | float) -> float:
+        """
+        Convert a duration into the physical unit of the timestamp column.
+
+        :param name: Name of the parameter, for the error message
+        :param value: The duration
+        :return: The duration as a number in the unit of the timestamp column
+        """
+        owner = self.__class__.__name__
+        dtype = XDataFrame(self.df).dtype(self.timestamp_column)
+        if isinstance(dtype, pl.Datetime):
+            if isinstance(value, str):
+                value = _parse_duration(value)
+            if not isinstance(value, timedelta):
+                raise ValueError(f"{owner}: {name} must be a timedelta or duration string (e.g. '30m'),"
+                                 f" since '{self.timestamp_column}' is {dtype} - got {value!r}")
+            microseconds = value // timedelta(microseconds=1)
+            converted = {"ns": microseconds * 1000, "us": microseconds, "ms": microseconds // 1000}[dtype.time_unit]
+        elif dtype.is_numeric():
+            if not isinstance(value, numbers.Real):
+                raise ValueError(f"{owner}: {name} must be a number in the unit of '{self.timestamp_column}',"
+                                 f" since it is {dtype} - got {value!r}")
+            converted = value
+        else:
+            raise ValueError(f"{owner}: timestamp column '{self.timestamp_column}' must be a Datetime or numeric,"
+                             f" got {dtype}")
+
+        if converted <= 0:
+            raise ValueError(f"{owner}: {name} must be positive, got {value!r}")
+        return converted
+
+    def _segments(self, groups: list[Any] | None, max_gap: float) -> pl.DataFrame:
+        """
+        Compute the gap-free segments of all groups, i.e. the maximal runs of rows without a
+        gap larger than ``max_gap`` between consecutive rows.
+
+        :param groups: The groups to consider, or None for all
+        :param max_gap: Maximum gap in the physical unit of the timestamp column
+        :return: Dataframe with the columns ``group_column``, ``start`` and ``end``, sorted by group and start
+        """
+        timestamps = self.df.select(pl.col(self.group_column),
+                                    pl.col(self.timestamp_column).to_physical().alias("__t")).drop_nulls()
+        if groups is not None:
+            timestamps = timestamps.filter(pl.col(self.group_column).is_in(list(groups)))
+
+        return (timestamps
+                .sort(self.group_column, "__t")
+                .with_columns(__segment=(pl.col("__t").diff() > max_gap).fill_null(False).cum_sum()
+                              .over(self.group_column))
+                .group_by(self.group_column, "__segment")
+                .agg(start=pl.col("__t").min(), end=pl.col("__t").max())
+                .drop("__segment")
+                .sort(self.group_column, "start")
+                .collect())
+
+    def _draw_starts(self, segments: pl.DataFrame, span: float, size: int) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Draw random window starts: a group uniformly, then a start uniformly in time within the
+        valid part of its segments.
+
+        :param segments: Segments that can hold at least one window, sorted by group
+        :param span: Duration of a window including the forecast horizon
+        :param size: Number of starts to draw
+        :return: Tuple of the segment index and start time per window
+        """
+        starts = segments["start"].to_numpy()
+        valid_lengths = segments["end"].to_numpy() - starts - span
+
+        # Segments of a group are contiguous; the cumulative valid length maps a uniform draw
+        # within a group onto a segment and an offset in one step
+        group_ids = segments.select(pl.col(self.group_column).rle_id())[:, 0].to_numpy()
+        number_of_groups = group_ids[-1] + 1
+        group_bounds = np.searchsorted(group_ids, np.arange(number_of_groups + 1))
+        cumulative = np.concatenate([[0.0], np.cumsum(valid_lengths, dtype=np.float64)])
+
+        group = np.random.randint(number_of_groups, size=size)
+        lower, upper = group_bounds[group], group_bounds[group + 1]
+        position = cumulative[lower] + np.random.random(size) * (cumulative[upper] - cumulative[lower])
+        segment_idx = np.clip(np.searchsorted(cumulative, position, side="right") - 1, lower, upper - 1)
+        offset = np.clip(position - cumulative[segment_idx], 0, valid_lengths[segment_idx])
+
+        if np.issubdtype(starts.dtype, np.integer):
+            offset = np.floor(offset).astype(starts.dtype)
+        return segment_idx, starts[segment_idx] + offset
+
+    def _resample(self, columns: list[str], groups: pl.Series, t0: np.ndarray,
+                  grid: np.ndarray, max_gap: float) -> np.ndarray:
+        """
+        Fetch the rows of the given windows and interpolate them onto the grid.
+
+        Rows are fetched in the range :code:`[t0 - max_gap, t0 + grid[-1] + max_gap]`, which ensures a
+        row at or beyond both ends of the grid. To avoid joining each window with all rows of its group,
+        time is split into buckets as wide as this range, so that a window touches at most two buckets.
+
+        :param columns: The columns to interpolate
+        :param groups: Group per window
+        :param t0: Start time per window
+        :param grid: Time points relative to ``t0``
+        :param max_gap: Maximum gap in the physical unit of the timestamp column
+        :return: Array of shape :code:`(len(t0), len(grid), len(columns))`
+        """
+        width = grid[-1] + 2 * max_gap
+        lower = t0 - max_gap
+        requests = (pl.DataFrame([pl.Series("__window", np.arange(len(t0))),
+                                  groups.alias(self.group_column),
+                                  pl.Series("__lower", lower),
+                                  pl.Series("__upper", lower + width)])
+                    .with_columns(__bucket=(pl.col("__lower") // width).cast(pl.Int64)))
+        requests = pl.concat([requests, requests.with_columns(pl.col("__bucket") + 1)])
+
+        value_columns = [f"__value_{i}" for i in range(len(columns))]
+        rows = (self.df
+                .select(pl.col(self.group_column),
+                        pl.col(self.timestamp_column).to_physical().alias("__t"),
+                        *[pl.col(c).cast(pl.Float64).alias(v) for c, v in zip(columns, value_columns)])
+                .with_columns(__bucket=(pl.col("__t") // width).cast(pl.Int64))
+                .join(requests.lazy(), on=[self.group_column, "__bucket"])
+                .filter(pl.col("__t").is_between(pl.col("__lower"), pl.col("__upper")))
+                .sort("__window", "__t")
+                .collect())
+
+        window_bounds = np.searchsorted(rows["__window"].to_numpy(), np.arange(len(t0) + 1))
+        timestamps = rows["__t"].to_numpy()
+        values = rows.select(value_columns).to_numpy()
+
+        resampled = np.empty((len(t0), len(grid), len(columns)))
+        for i in range(len(t0)):
+            rows_in_window = slice(window_bounds[i], window_bounds[i + 1])
+            relative_time = (timestamps[rows_in_window] - t0[i]).astype(np.float64)
+            for j in range(len(columns)):
+                resampled[i, :, j] = np.interp(grid, relative_time, values[rows_in_window, j])
+        return resampled
+
+
 class SequenceIterator:
     """
     A generator that allows iterate over the windows of a length-limited sequence.
@@ -400,21 +768,11 @@ class SequenceIterator:
 
         # Sanity checks before creating generator
         # Check that all features have the same data-type
-        datatypes = [XDataFrame(self.df).dtype(f) for f in features]
-        for dtype in datatypes:
-            if dtype != datatypes[0]:
-                raise ValueError(f"{self.__class__.__name__}:"
-                                 f" Features {features} do not have a consistent (single) datatype,"
-                                 f" got {datatypes}")
+        _check_single_dtype(self.df, features, "Features", self.__class__.__name__)
 
         use_target = target is not None
         if use_target:
-            datatypes = [XDataFrame(self.df).dtype(t) for t in target]
-            for dtype in datatypes:
-                if dtype != datatypes[0]:
-                    raise ValueError(f"{self.__class__.__name__}:"
-                                     f" Targets {target} do not have a consistent (single) datatype,"
-                                     f" got {datatypes}")
+            _check_single_dtype(self.df, target, "Targets", self.__class__.__name__)
 
         if sequence_forecast < 0:
             raise ValueError(f"{self.__class__.__name__}: Sequence forecast cannot be negative")
