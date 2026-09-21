@@ -126,6 +126,18 @@ class _GroupAccessorBase:
         self.group_column = group_column
         self.groups = groups
 
+    def _group_values(self, groups: Any) -> list[Any]:
+        """
+        Get the plain group ids from any of the accepted forms of ``groups``: a list or array of ids
+        (as returned by :func:`split_random`), a :class:`polars.Series`, or a dataframe holding ``group_column``.
+
+        :param groups: The groups
+        :return: List of group ids
+        """
+        if isinstance(groups, (pl.DataFrame, pl.LazyFrame)):
+            groups = groups.lazy().select(self.group_column).collect()[self.group_column]
+        return pl.Series(groups).to_list()
+
     def split_random(self, ratios: list[float]) -> list[list[Any]]:
         """
         Create ``N=len(ratios)`` groups of the dataframe, with given ratios, return the corresponding groups.
@@ -312,8 +324,7 @@ class GroupSequenceAccessor(_GroupAccessorBase):
                 sequence_forecast = 0
             all_columns = list(set(all_columns))
 
-            if groups is None:
-                groups = self.groups
+            groups = self._group_values(self.groups if groups is None else groups)
 
             while True:
                 chunk = []
@@ -330,7 +341,7 @@ class GroupSequenceAccessor(_GroupAccessorBase):
                         # Since we will need the timeline later - we further deal with pandas DataFrame
                         # directly - thus, we do not use a copy of the DataFrame (only used columns)
                         sequence = self.df\
-                                    .filter(pl.col(self.group_column) == group[self.group_column])\
+                                    .filter(pl.col(self.group_column) == group)\
                                     .select(all_columns)
 
                         # If sort columns are set, then ensure that the sorting is done
@@ -516,8 +527,8 @@ class GroupWindowAccessor(_GroupAccessorBase):
         horizon_units = self._to_time_units("forecast_horizon", forecast_horizon) if use_target else 0
         span = window_units + horizon_units
 
-        if isinstance(groups, pl.DataFrame):
-            groups = groups[self.group_column]
+        if groups is not None:
+            groups = self._group_values(groups)
         segments = self._segments(groups=groups, max_gap=max_gap_units)
         valid_segments = segments.filter((pl.col("end") - pl.col("start")) >= span)
         if valid_segments.is_empty():
@@ -612,7 +623,7 @@ class GroupWindowAccessor(_GroupAccessorBase):
         timestamps = self.df.select(pl.col(self.group_column),
                                     pl.col(self.timestamp_column).to_physical().alias("__t")).drop_nulls()
         if groups is not None:
-            timestamps = timestamps.filter(pl.col(self.group_column).is_in(list(groups)))
+            timestamps = timestamps.filter(pl.col(self.group_column).is_in(groups))
 
         return (timestamps
                 .sort(self.group_column, "__t")

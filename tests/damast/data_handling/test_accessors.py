@@ -152,6 +152,24 @@ def test_group_split_random(dataframe, ratios):
                 assert np.isin(group_A, group_B, invert=True).all()
 
 
+@pytest.mark.parametrize("groups_form", ["split_random", "list", "series", "dataframe"])
+def test_group_sequence_accessor_groups(dataframe, groups_form):
+    """Only the given groups are sampled, whether given as ids (e.g. from split_random) or as dataframe."""
+    gsa = GroupSequenceAccessor(df=dataframe, group_column="id")
+    selected = {
+        "split_random": lambda: gsa.split_random(ratios=[0.9, 0.1])[1],
+        "list": lambda: [3, 7],
+        "series": lambda: pl.Series("id", [3, 7]),
+        "dataframe": lambda: dataframe.filter(pl.col("id").is_in([3, 7])).select("id").unique(),
+    }[groups_form]()
+    expected_ids = set(pl.Series(selected).to_list()) if groups_form != "dataframe" else {3, 7}
+
+    X, = next(gsa.to_keras_generator(["id", "x", "y"], groups=selected, sequence_length=5,
+                                     batch_size=200, infinite=True, verbose=False))
+    assert set(np.unique(X[:, :, 0])) <= expected_ids
+    assert len(set(np.unique(X[:, :, 0]))) > 1
+
+
 @pytest.mark.parametrize("number_of_groups, ratios", [(5, [0.5, 0.5]), (7, [1, 1, 1]), (3, [0.8, 0.1, 0.1])])
 def test_group_split_random_rounding(number_of_groups, ratios):
     """Partition sizes add up to the number of groups, even if rounding each ratio does not."""
