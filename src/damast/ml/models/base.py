@@ -166,10 +166,13 @@ class BaseModel(ABC):
         plots_outputdir.mkdir(parents=True, exist_ok=True)
 
         filename = plots_outputdir / f"{self.name}{suffix}"
+        # graphviz' default orthogonal edge routing can abort ("Trapezoid-table overflow"),
+        # e.g. for stacked residual blocks, so draw polyline edges instead
         keras.utils.plot_model(model=self.model,
                                to_file=str(filename),
                                show_shapes=True,
-                               expand_nested=True)
+                               expand_nested=True,
+                               splines="polyline")
         return filename
 
     @property
