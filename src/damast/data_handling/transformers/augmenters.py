@@ -172,6 +172,9 @@ class BallTreeAugmenter:
     def __call__(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         Compute distances between the Balltree and each entry in `x`"""
+        # polars may pass empty batches, which BallTree.query rejects
+        if len(x) == 0:
+            return np.empty(0, dtype=np.float64)
         return self._tree.query(np.vstack([x, y]).T, return_distance=True)[
             0].reshape(-1)
 

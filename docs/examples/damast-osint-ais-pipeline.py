@@ -16,10 +16,10 @@ from pathlib import Path
 
 # JoinByTimestamp lives in its own package/file in a real project - see docs/cli.rst >
 # Plugins. Here it's a local plugin file, resolved the same way.
-os.environ["DAMAST_PLUGIN_PATH"] = str(Path(__file__).parent / "plugins")
+os.environ["DAMAST_PLUGIN_PATH"] = f"ais_osint={Path(__file__).parent / 'plugins'}"
 
 from damast.core.dataprocessing import DataProcessingPipeline
-from damast.plugins import JoinByTimestamp
+from damast.plugins.ais_osint import JoinByTimestamp
 
 pipeline = DataProcessingPipeline(name="osint_ais_preparation",
                                   description="Join AIS pings with OSINT events by timestamp",

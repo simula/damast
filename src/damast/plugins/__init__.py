@@ -1,60 +1,78 @@
 """
-Resolve :class:`damast.core.transformations.PipelineElement` 'plugin' transformers by name, so
-that e.g. ``from damast.plugins import MyTransformer`` works for any transformer discoverable
-by :class:`damast.core.transformations.PluginManager` - whether it comes from an installed
-package's ``damast.transformers`` entry point, or a loose file on ``DAMAST_PLUGIN_PATH``.
+Resolve :class:`damast.core.transformations.PipelineElement` 'plugin' transformers per plugin
+package, so that e.g. ``from damast.plugins.acme import MyTransformer`` works for any transformer
+discoverable by :class:`damast.core.transformations.PluginManager` - whether it comes from an
+installed package's ``damast.transformers`` entry point (for a single class, or for a whole
+module), or a local plugin directory on ``DAMAST_PLUGIN_PATH``.
 
-Names are resolved lazily on first access (via module ``__getattr__``, see :pep:`562`): nothing
-is imported/loaded until a specific name is actually requested, so installed plugin packages
-that are never referenced here are never imported, and a ``DAMAST_PLUGIN_PATH`` set after this
-module was first imported is still picked up.
+The plugin package is the top-level package of the module defining the transformer (see
+:func:`damast.core.transformations.PluginManager.plugin_package`): ``acme`` for an installed
+``acme.transformers:MyTransformer``, or ``name`` for a local directory registered as
+``name=path``. Scoping names by package means two plugins can provide a transformer of the same
+name without clashing.
 
-If a name is registered by more than one source (two local plugin files, two entry-points, or a
-local plugin and an entry-point sharing a name), a warning is logged and the first source found
-wins - local plugin files are checked before entry-points, matching the precedence used by
-:func:`damast.core.transformations.PluginManager.list_plugins`.
+Names are resolved lazily on first access: ``damast.plugins.<package>`` is created on import
+without importing anything, and a transformer is only looked up once it is actually requested - a
+module entry-point is only imported if nothing else in that package provides the name.
 """
 from __future__ import annotations
 
-import importlib.metadata
-import inspect
-from logging import getLogger
+import importlib
+import importlib.abc
+import importlib.util
+import sys
+from types import ModuleType
 
-from damast.core.transformations import PipelineElement, PluginManager, plugin_manager
+from damast.core.transformations import PipelineElement, plugin_manager
 
 __all__: list[str] = []
 
-logger = getLogger(__name__)
+
+class _PluginPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Creates the ``damast.plugins.<package>`` namespace modules on import."""
+
+    def find_spec(self, fullname: str, path=None, target=None):
+        package = fullname.removeprefix(f"{__name__}.")
+        if package == fullname or "." in package:
+            return None
+        if package not in plugin_manager.plugin_packages():
+            raise ModuleNotFoundError(f"No plugin package '{package}' - available:"
+                                      f" {sorted(plugin_manager.plugin_packages())}", name=fullname)
+        return importlib.util.spec_from_loader(fullname, self)
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module: ModuleType):
+        package = module.__name__.rpartition(".")[2]
+
+        def __getattr__(name: str) -> type[PipelineElement]:
+            if name.startswith("__"):
+                raise AttributeError(name)
+            return plugin_manager.resolve_plugin(package, name)
+
+        def __dir__() -> list[str]:
+            prefix = f"{package}."
+            return sorted(name.removeprefix(prefix) for name in plugin_manager.list_plugins()
+                          if name.startswith(prefix))
+
+        module.__getattr__ = __getattr__
+        module.__dir__ = __dir__
 
 
-def __getattr__(name: str) -> type[PipelineElement]:
-    local_matches = [
-        (module_name, obj)
-        for module_name, module in plugin_manager.load_local_plugins().items()
-        for obj in [vars(module).get(name)]
-        if (inspect.isclass(obj) and issubclass(obj, PipelineElement)
-            and obj is not PipelineElement and obj.__module__ == module_name)
-    ]
-    entry_point_matches = [
-        ep for ep in importlib.metadata.entry_points(group=PluginManager.ENTRY_POINT_GROUP)
-        if ep.name == name
-    ]
+# appended, so a real submodule of damast.plugins would still take precedence
+if not any(isinstance(finder, _PluginPackageFinder) for finder in sys.meta_path):
+    sys.meta_path.append(_PluginPackageFinder())
 
-    if len(local_matches) + len(entry_point_matches) > 1:
-        sources = [module_name for module_name, _ in local_matches] + [ep.value for ep in entry_point_matches]
-        logger.warning(
-            f"damast.plugins: plugin name '{name}' is ambiguous - registered by more than one"
-            f" source ({', '.join(sources)}) - using '{sources[0]}'"
-        )
 
-    if local_matches:
-        return local_matches[0][1]
-
-    if entry_point_matches:
-        return entry_point_matches[0].load()
-
-    raise AttributeError(f"module 'damast.plugins' has no plugin named '{name}'")
+def __getattr__(name: str) -> ModuleType:
+    if name.startswith("__"):
+        raise AttributeError(name)
+    try:
+        return importlib.import_module(f"{__name__}.{name}")
+    except ModuleNotFoundError as e:
+        raise AttributeError(f"module '{__name__}' has no plugin package '{name}'") from e
 
 
 def __dir__() -> list[str]:
-    return sorted(plugin_manager.list_plugins())
+    return sorted(plugin_manager.plugin_packages())

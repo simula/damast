@@ -479,6 +479,28 @@ def test_plugins_lists_registered_entry_point(capsys, monkeypatch):
     parser.execute(args=None)
 
     captured = capsys.readouterr()
-    assert "AcmeTransformer: acme_pkg.transformers:AcmeTransformer" in captured.out
+    assert captured.out == "acme_pkg\n    AcmeTransformer  .transformers\n"
+
+
+def test_plugins_lists_transformers_per_package(isolate_plugins, tmp_path, monkeypatch, capsys):
+    source = """
+from damast.core.transformations import PipelineElement
+
+
+class {}(PipelineElement):
+    pass
+"""
+    (tmp_path / "doublers.py").write_text(source.format("Doubler"))
+    (tmp_path / "long_named_triplers.py").write_text(source.format("LongNamedTripler"))
+    monkeypatch.setenv(PluginManager.PLUGIN_PATH_ENV, f"acme_cli={tmp_path}")
+
+    from damast.cli.plugins import PluginsParser
+    PluginsParser(parser=ArgumentParser()).execute(args=None)
+
+    assert capsys.readouterr().out == (
+        f"acme_cli (local: {tmp_path})\n"
+        "    Doubler           .doublers\n"
+        "    LongNamedTripler  .long_named_triplers\n"
+    )
 
 
