@@ -196,6 +196,30 @@ def test_to_html_wires_up_hover_highlight_for_same_named_columns(chained_pipelin
     assert f'"{alpha.id}": "alpha"' in html
 
 
+def test_to_html_wires_up_zoom_controls(chained_pipeline):
+    html = MermaidExporter(chained_pipeline).to_html()
+
+    for element_id in ["toolbar", "viewport", "zoom-in", "zoom-out", "zoom-fit", "zoom-reset", "zoom-level"]:
+        assert f'id="{element_id}"' in html
+
+    assert "function applyZoom" in html
+    assert "function setZoom" in html
+    assert "wireZoomControls()" in html
+    # panning is plain scrolling of the viewport, so only ctrl/meta + wheel may zoom - and that
+    # listener has to be non-passive to suppress the browser's own page-zoom gesture
+    assert re.search(r"#viewport {[^}]*overflow: auto;", html)
+    assert "if (!event.ctrlKey && !event.metaKey)" in html
+    assert "{ passive: false }" in html
+
+
+def test_to_html_reapplies_zoom_after_rerender(chained_pipeline):
+    # collapsing a subgraph re-renders the diagram into a fresh svg (renderDiagram replaces
+    # container.innerHTML), which would drop the zoom level unless it is applied again
+    html = MermaidExporter(chained_pipeline).to_html()
+    render_body = html.split("async function renderDiagram")[1].split("function wireHoverHighlight")[0]
+    assert "applyZoom();" in render_body
+
+
 def test_export_html_writes_file(chained_pipeline, tmp_path):
     path = MermaidExporter(chained_pipeline).export_html(path=tmp_path / "nested" / "pipeline.html")
     assert path.exists()

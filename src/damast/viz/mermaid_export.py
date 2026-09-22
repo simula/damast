@@ -65,7 +65,17 @@ _HTML_TEMPLATE = """<!doctype html>
 <style>
   body {{ font-family: system-ui, sans-serif; margin: 2rem; }}
   h1 {{ font-size: 1.25rem; }}
-  #graph {{ margin-top: 1.5rem; }}
+  #toolbar {{ display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }}
+  #toolbar button {{
+    font: inherit; line-height: 1; padding: 0.25rem 0.6rem;
+    border: 1px solid #bbb; border-radius: 6px; background: #f6f6f6; cursor: pointer;
+  }}
+  #toolbar button:hover {{ background: #eaeaea; }}
+  #zoom-level {{ min-width: 4rem; text-align: center; font-variant-numeric: tabular-nums; }}
+  /* scrolling this viewport is how the (potentially much wider than the window) diagram is panned */
+  #viewport {{ overflow: auto; max-height: calc(100vh - 12rem); margin-top: 0.5rem; }}
+  /* mermaid puts an inline 'max-width' on the svg, which would cap zooming in */
+  #graph svg {{ max-width: none !important; display: block; }}
   /* every occurrence of a hovered column, see wireHoverHighlight */
   .col-highlight path, .col-highlight rect, .col-highlight polygon {{
     stroke: #ff5722 !important;
@@ -84,7 +94,14 @@ _HTML_TEMPLATE = """<!doctype html>
 </head>
 <body>
 <h1>{title}</h1>
-<div id="graph"></div>
+<div id="toolbar" role="toolbar" aria-label="Zoom">
+  <button id="zoom-out" aria-label="Zoom out">&minus;</button>
+  <span id="zoom-level" aria-live="polite">100%</span>
+  <button id="zoom-in" aria-label="Zoom in">+</button>
+  <button id="zoom-fit">Fit</button>
+  <button id="zoom-reset">100%</button>
+</div>
+<div id="viewport"><div id="graph"></div></div>
 <script>
   // securityLevel 'loose' is required for the per-column description tooltips (a plain
   // 'click id "..."' binding) to work - collapsing itself no longer goes through Mermaid's
@@ -116,6 +133,103 @@ _HTML_TEMPLATE = """<!doctype html>
     }}
     wireCollapseClicks(container);
     wireHoverHighlight(container);
+    // re-apply the current zoom: this replaced the svg the previous applyZoom had sized
+    applyZoom();
+  }}
+
+  // Zooming resizes the svg itself (it carries a viewBox, so its content scales crisply) rather
+  // than applying a CSS transform: that way the page layout - and with it #viewport's scrollbars,
+  // i.e. how the diagram is panned - follows the zoomed size instead of the original one
+  const ZOOM_MIN = 0.2;
+  const ZOOM_MAX = 4;
+  const ZOOM_STEP = 1.2;
+  let scale = 1;
+
+  function naturalSize() {{
+    const svg = document.querySelector("#graph svg");
+    if (!svg) {{
+      return null;
+    }}
+    const box = svg.viewBox.baseVal;
+    if (box && box.width && box.height) {{
+      return {{ svg, width: box.width, height: box.height }};
+    }}
+    const rect = svg.getBoundingClientRect();
+    return {{ svg, width: rect.width / scale, height: rect.height / scale }};
+  }}
+
+  function applyZoom() {{
+    const size = naturalSize();
+    document.getElementById("zoom-level").textContent = Math.round(scale * 100) + "%";
+    if (!size) {{
+      return;
+    }}
+    size.svg.style.maxWidth = "none";
+    size.svg.style.width = size.width * scale + "px";
+    size.svg.style.height = size.height * scale + "px";
+  }}
+
+  // clientX/clientY (optional): keep the diagram point under the cursor in place while zooming
+  function setZoom(next, clientX, clientY) {{
+    const viewport = document.getElementById("viewport");
+    const previous = scale;
+    scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+    if (scale === previous) {{
+      return;
+    }}
+
+    let anchor = null;
+    if (clientX !== undefined && clientY !== undefined) {{
+      const rect = viewport.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      anchor = {{ x, y, left: (viewport.scrollLeft + x) / previous, top: (viewport.scrollTop + y) / previous }};
+    }}
+
+    applyZoom();
+
+    if (anchor) {{
+      viewport.scrollLeft = anchor.left * scale - anchor.x;
+      viewport.scrollTop = anchor.top * scale - anchor.y;
+    }}
+  }}
+
+  function fitZoom() {{
+    const size = naturalSize();
+    const viewport = document.getElementById("viewport");
+    if (size) {{
+      setZoom(viewport.clientWidth / size.width);
+    }}
+  }}
+
+  // the toolbar lives outside #graph, so - unlike the per-render wiring above - this is done once
+  function wireZoomControls() {{
+    const viewport = document.getElementById("viewport");
+    document.getElementById("zoom-in").addEventListener("click", () => setZoom(scale * ZOOM_STEP));
+    document.getElementById("zoom-out").addEventListener("click", () => setZoom(scale / ZOOM_STEP));
+    document.getElementById("zoom-fit").addEventListener("click", fitZoom);
+    document.getElementById("zoom-reset").addEventListener("click", () => setZoom(1));
+
+    // plain wheel keeps scrolling (i.e. panning) the viewport - only ctrl/meta zooms, replacing
+    // the browser's own page-zoom gesture, which is why this listener can't be passive
+    viewport.addEventListener("wheel", (event) => {{
+      if (!event.ctrlKey && !event.metaKey) {{
+        return;
+      }}
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+      setZoom(scale * factor, event.clientX, event.clientY);
+    }}, {{ passive: false }});
+
+    document.addEventListener("keydown", (event) => {{
+      if (event.key === "+" || event.key === "=") {{
+        setZoom(scale * ZOOM_STEP);
+      }} else if (event.key === "-") {{
+        setZoom(scale / ZOOM_STEP);
+      }} else if (event.key === "0") {{
+        setZoom(1);
+      }}
+    }});
   }}
 
   // the same column shows up under several ids (required by a datasource, a step's
@@ -201,6 +315,7 @@ _HTML_TEMPLATE = """<!doctype html>
     }});
   }}
 
+  wireZoomControls();
   renderDiagram();
 </script>
 </body>
@@ -636,8 +751,9 @@ class MermaidExporter(PipelineExporter):
 
         Returns:
             The rendered HTML document - every subgraph is clickable, toggling it between
-            Mermaid's ``view: collapsed``/``view: expanded`` states client-side, and hovering a
-            column highlights every other occurrence of that same column
+            Mermaid's ``view: collapsed``/``view: expanded`` states client-side, hovering a
+            column highlights every other occurrence of that same column, and the diagram can be
+            zoomed via the toolbar, ``ctrl``/``cmd`` + mouse wheel or the ``+``/``-``/``0`` keys
 
         Raises:
             RuntimeError: See `DataProcessingPipeline._declared_interface`
