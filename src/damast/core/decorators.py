@@ -10,6 +10,7 @@ from .constants import (
     DECORATED_ARTIFACT_SPECS,
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
+    DECORATED_OUTPUT_EXCLUSIVE,
     DECORATED_OUTPUT_SPECS,
 )
 from .metadata import ArtifactSpecification, DataSpecification
@@ -152,13 +153,16 @@ def input(requirements: dict[str, Any], label: str | None = None):
     return decorator
 
 
-def output(requirements: dict[str, Any]):
+def output(requirements: dict[str, Any], exclusive: bool = False):
     """
     Specify the output for the decorated function.
 
     The decorated function must return :class:`damast.core.AnnotatedDataFrame`.
+    By default it may only add columns, i.e. every input column must still be present.
 
-    :param requirements: List of input requirements
+    :param requirements: List of output requirements
+    :param exclusive: If true, the result consists of exactly the declared output columns (in
+        declared order) - all other columns are dropped
     """
     required_output_specs = DataSpecification.from_requirements(
         requirements=requirements
@@ -172,10 +176,12 @@ def output(requirements: dict[str, Any]):
             )
 
         setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
+        setattr(func, DECORATED_OUTPUT_EXCLUSIVE, exclusive)
 
         @functools.wraps(func)
         def check(*args, **kwargs) -> AnnotatedDataFrame:
             setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
+            setattr(func, DECORATED_OUTPUT_EXCLUSIVE, exclusive)
 
             _df: AnnotatedDataFrame = _get_dataframe(*args, **kwargs)
             input_columns = list(_df.column_names)
@@ -193,12 +199,13 @@ def output(requirements: dict[str, Any]):
                     f"{type(adf)}"
                 )
 
-            for c in input_columns:
-                if c not in adf.column_names:
-                    raise RuntimeError(
-                        f"output: column '{c}' was removed by decorated function."
-                        f" Only adding of columns is permitted."
-                    )
+            if not exclusive:
+                for c in input_columns:
+                    if c not in adf.column_names:
+                        raise RuntimeError(
+                            f"output: column '{c}' was removed by decorated function."
+                            f" Only adding of columns is permitted."
+                        )
 
             # Ensure that name mapping are applied correctly
             assert isinstance(args[0], PipelineElement)
@@ -208,10 +215,16 @@ def output(requirements: dict[str, Any]):
             if hasattr(pipeline_element, "parent_pipeline"):
                 parent_pipeline = pipeline_element.parent_pipeline
 
+            output_columns = [spec.name for spec in pipeline_element.output_specs]
+            if exclusive:
+                adf = adf.drop([c for c in adf.column_names if c not in output_columns])
+
             try:
                 # Ensure that metadata is up to date with the dataframe
                 adf.update(expectations=pipeline_element.output_specs)
                 adf.validate_metadata()
+                if exclusive:
+                    adf.lazyframe = adf.lazyframe.select(output_columns)
             except RuntimeError as e:
                 txt = f"Failed to update metadata in pipeline element: {pipeline_element}"
                 if parent_pipeline:

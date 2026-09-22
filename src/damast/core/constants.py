@@ -4,6 +4,7 @@ __all__ = [
     "DECORATED_ARTIFACT_SPECS",
     "DECORATED_DESCRIPTION",
     "DECORATED_INPUT_SPECS",
+    "DECORATED_OUTPUT_EXCLUSIVE",
     "DECORATED_OUTPUT_SPECS",
 ]
 DAMAST_DEFAULT_DATASOURCE = "df"
@@ -19,6 +20,9 @@ DECORATED_INPUT_SPECS = "_damast_input_specs"
 
 DECORATED_OUTPUT_SPECS = "_damast_output_specs"
 """Attribute description for :func:`output`"""
+
+DECORATED_OUTPUT_EXCLUSIVE = "_damast_output_exclusive"
+"""Attribute description for :func:`output`'s ``exclusive`` flag"""
 
 DAMAST_HDF5_ROOT: str = "/dataframe"
 DAMAST_HDF5_COLUMNS: str = "/dataframe/columns"

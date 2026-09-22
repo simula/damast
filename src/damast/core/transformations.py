@@ -30,6 +30,7 @@ from .constants import (
     DAMAST_DEFAULT_DATASOURCE,
     DECORATED_DESCRIPTION,
     DECORATED_INPUT_SPECS,
+    DECORATED_OUTPUT_EXCLUSIVE,
     DECORATED_OUTPUT_SPECS,
 )
 from .formatting import DEFAULT_INDENT
@@ -709,6 +710,11 @@ class PipelineElement(Transformer):
             spec.name = self.get_name(spec.name)
 
         return specs
+
+    @property
+    def exclusive_output(self) -> bool:
+        """Whether the output consists of exactly :attr:`output_specs`, see :func:`damast.core.decorators.output`"""
+        return getattr(self.transform, DECORATED_OUTPUT_EXCLUSIVE, False)
 
     @classmethod
     def _missing_plugin_message(cls,

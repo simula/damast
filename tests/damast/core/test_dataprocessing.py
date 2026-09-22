@@ -989,3 +989,68 @@ def test_input_metadata_raises_for_ambiguous_post_join_requirement(tmp_path):
         pipeline.input_metadata()
 
 
+# --- @output(..., exclusive=True) ----------------------------------------------------------
+
+def _annotated(**columns) -> AnnotatedDataFrame:
+    df = polars.LazyFrame(columns)
+    return AnnotatedDataFrame(df, AnnotatedDataFrame.infer_annotation(df))
+
+
+class _SelectAlpha(PipelineElement):
+    """Keeps only (the renameable) 'alpha' and a derived 'alpha_doubled' - drops all other columns."""
+    @damast.core.input({"alpha": {"representation_type": int}})
+    @damast.core.output({
+        "alpha_doubled": {"representation_type": int},
+        "alpha": {"representation_type": int},
+    }, exclusive=True)
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df.lazyframe = df.lazyframe.with_columns((polars.col(self.get_name("alpha")) * 2).alias("alpha_doubled"))
+        return df
+
+
+class _ExclusiveJoin(PipelineElement):
+    @damast.core.input({"key": {"representation_type": int}})
+    @damast.core.input({"key": {"representation_type": int}}, label="other")
+    @damast.core.output({"key": {"representation_type": int}}, exclusive=True)
+    def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        return df
+
+
+def test_exclusive_output_keeps_only_declared_columns_in_declared_order(tmp_path):
+    pipeline = DataProcessingPipeline(name="exclusive", base_dir=tmp_path) \
+        .add("select", _SelectAlpha(), name_mappings={"alpha": "a"})
+    adf = pipeline.transform(df=_annotated(a=[1, 2], beta=[3, 4], zeta=["x", "y"]))
+
+    assert adf.column_names == ["alpha_doubled", "a"]
+    assert {c.name for c in adf.metadata.columns} == {"alpha_doubled", "a"}
+    assert adf.collect()["alpha_doubled"].to_list() == [2, 4]
+
+
+def test_exclusive_output_dropped_column_fails_validation(tmp_path):
+    pipeline = DataProcessingPipeline(name="exclusive", base_dir=tmp_path) \
+        .add("select", _SelectAlpha()) \
+        .add("step-two", _StepTwo())
+
+    with pytest.raises(RuntimeError, match="Input requirements are not fulfilled"):
+        pipeline.transform(df=_annotated(alpha=[1], beta=[2]))
+
+
+def test_exclusive_output_static_interface(tmp_path):
+    pipeline = DataProcessingPipeline(name="exclusive", base_dir=tmp_path).add("select", _SelectAlpha())
+    assert {c.name for c in pipeline.input_metadata().columns} == {"alpha"}
+    assert {c.name for c in pipeline.output_metadata().columns} == {"alpha", "alpha_doubled"}
+
+    pipeline.add("step-two", _StepTwo())
+    with pytest.raises(RuntimeError, match="dropped by an upstream step with exclusive output"):
+        pipeline.input_metadata()
+
+
+def test_exclusive_output_join(tmp_path):
+    pipeline = DataProcessingPipeline(name="exclusive-join", base_dir=tmp_path) \
+        .join("other", _ExclusiveJoin(), name_mappings={"df": {}, "other": {}})
+    assert {c.name for c in pipeline.output_metadata().columns} == {"key"}
+
+    adf = pipeline.transform(df=_annotated(key=[1], x=[2]), other=_annotated(key=[3], y=[4]))
+    assert adf.column_names == ["key"]
+
+

@@ -300,6 +300,11 @@ class DataProcessingPipeline(PipelineElement):
                             else:
                                 node.validation_output_spec = DataSpecification.merge_lists(node.transformer.output_specs, node.validation_output_spec)
 
+                            if node.transformer.exclusive_output:
+                                output_columns = {spec.name for spec in node.transformer.output_specs}
+                                node.validation_output_spec = [spec for spec in node.validation_output_spec
+                                                               if spec.name in output_columns]
+
             except Exception as e:
                 msg = ''.join(tc.format_exception(e)[-2:])
                 raise RuntimeError(f"Validation of step #{idx} in pipeline ({node}) failed: name_mappings: {node.transformer.name_mappings}"
@@ -333,7 +338,8 @@ class DataProcessingPipeline(PipelineElement):
 
         Raises:
             RuntimeError: If a step's input requirement can only be attributed to more than one
-                datasource, because it first surfaces after those datasources have been joined
+                datasource, because it first surfaces after those datasources have been joined,
+                or to none, because an upstream step with exclusive output drops it
         """
         required: dict[str, list[DataSpecification]] = {
             ds_node.name: [] for ds_node in processing_graph.datasource_nodes()
@@ -358,6 +364,12 @@ class DataProcessingPipeline(PipelineElement):
 
                 if missing:
                     from_origins = origin[from_node.uuid]
+                    if not from_origins:
+                        raise RuntimeError(
+                            f"{cls.__name__}._declared_interface: step '{node.name}' requires"
+                            f" column(s) {[s.name for s in missing]}, which are dropped by an"
+                            " upstream step with exclusive output"
+                        )
                     if len(from_origins) != 1:
                         raise RuntimeError(
                             f"{cls.__name__}._declared_interface: step '{node.name}' requires"
@@ -375,6 +387,11 @@ class DataProcessingPipeline(PipelineElement):
 
             known[node.uuid] = DataSpecification.merge_lists(node.transformer.output_specs, merged_known)
             origin[node.uuid] = merged_origin
+            if node.transformer.exclusive_output:
+                # nothing else passes this step - so no datasource can supply further columns
+                output_columns = {spec.name for spec in node.transformer.output_specs}
+                known[node.uuid] = [spec for spec in known[node.uuid] if spec.name in output_columns]
+                origin[node.uuid] = set()
 
         output_spec = known[node.uuid] if node is not None else []
         return required, output_spec
