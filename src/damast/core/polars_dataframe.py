@@ -43,6 +43,26 @@ POLARS_TYPE_DICT = {
 }
 POLARS_TYPE_DICT["DataType"] = polars.DataType
 
+
+def scan_csv(files: str | Path | list[str | Path], separator: str = ",", **kwargs) -> LazyFrame:
+    """
+    Lazily scan csv file(s) with damast's default arguments (`DAMAST_CSV_DEFAULT_ARGS`).
+
+    The schema is inferred once and then passed on explicitly: with full schema inference
+    (``infer_schema_length=None``) polars would otherwise re-read the entire input on every
+    collect() just to infer the schema again.
+
+    :param files: csv file(s) to scan
+    :param separator: Column separator
+    :param kwargs: Further arguments for ``polars.scan_csv``, overriding the damast defaults
+    :return: The lazyframe
+    """
+    csv_args = {**DAMAST_CSV_DEFAULT_ARGS, **kwargs, "separator": separator}
+    schema = polars.scan_csv(files, **csv_args).collect_schema()
+
+    csv_args.pop("infer_schema_length", None)
+    return polars.scan_csv(files, schema=schema, **csv_args)
+
 class Meta(type):
     _base_impl: ClassVar[str] = "polars"
 
@@ -58,6 +78,8 @@ class PolarsDataFrame(metaclass=Meta):
     _polars_dataframe: PolarsDataFrame
     _dataframe_collected: polars.DataFrame
     _minmax_cache: dict[str, tuple]
+    _categories_cache: dict[str, list]
+    _schema_cache: polars.Schema | None
 
     def __init__(self, df: LazyFrame | polars.DataFrame):
         self.lazyframe = df
@@ -83,6 +105,8 @@ class PolarsDataFrame(metaclass=Meta):
         self._dataframe_collected = None
         self._polars_dataframe = None
         self._minmax_cache = {}
+        self._categories_cache = {}
+        self._schema_cache = None
 
     @classmethod
     def types(cls) -> dict[str, Any]:
@@ -225,11 +249,21 @@ class PolarsDataFrame(metaclass=Meta):
             raise ValueError("PolarsDataFrame.set_dtype: column '{column_name}' does not exist")
 
     @property
+    def schema(self) -> polars.Schema:
+        """
+        Schema of the lazyframe - cached, since resolving it can require scanning the input,
+        e.g. for a csv file with full schema inference
+        """
+        if self._schema_cache is None:
+            self._schema_cache = self.lazyframe.collect_schema()
+        return self._schema_cache
+
+    @property
     def column_names(self) -> list[str]:
         """
         Get all column names (without collecting the full dataframe)
         """
-        return self.lazyframe.collect_schema().names()
+        return self.schema.names()
 
     def dtype(self, column_name: str) -> polars.datatypes.DataType:
         """
@@ -241,7 +275,7 @@ class PolarsDataFrame(metaclass=Meta):
             if re.search("not in list", str(e)):
                 raise ValueError(f"{e} -- known columns are {','.join(sorted(self.column_names))}")
             raise
-        return self.lazyframe.collect_schema().dtypes()[idx]
+        return self.schema.dtypes()[idx]
 
     def set_dtype(self, column_name, representation_type) -> polars.datatype.DataType:
         """
@@ -329,13 +363,36 @@ class PolarsDataFrame(metaclass=Meta):
 
         return min_value, max_value
 
+    def precompute_categories(self, column_names: list[str]) -> None:
+        """
+        Compute the unique values of several columns in a single collect() and cache them, so
+        that later `categories(column_name)` calls for these columns are served from cache
+        instead of each triggering their own collect().
+
+        The cache is invalidated automatically whenever `lazyframe` is reassigned.
+        """
+        if not column_names:
+            return
+
+        for column_name in column_names:
+            self.ensure_column(column_name)
+
+        try:
+            result = self.lazyframe.select([
+                polars.col(column_name).unique().sort().implode() for column_name in column_names
+            ]).collect()
+        except Exception as e:
+            raise RuntimeError(f"Failed to extract categories for columns {column_names} -- {e}") from e
+
+        for column_name in column_names:
+            self._categories_cache[column_name] = result[column_name][0].to_list()
+
     def categories(self, column_name: str, max_count: int = 100) -> list[str]:
         self.ensure_column(column_name)
 
-        try:
-            categories = self.lazyframe.select(column_name).unique().sort(by=column_name).collect()[:,0].to_list()
-        except Exception as e:
-            raise RuntimeError(f"Failed to extract categories for column '{column_name}' -- {e}") from e
+        if column_name not in self._categories_cache:
+            self.precompute_categories([column_name])
+        categories = self._categories_cache[column_name]
 
         if len(categories) <= max_count:
             # do not count every timepoint as category
@@ -489,10 +546,7 @@ class PolarsDataFrame(metaclass=Meta):
     def open(cls, path: str | Path, sep = ',') -> polars.LazyFrame:
         path = Path(path)
         if path.suffix == ".csv":
-            return polars.scan_csv(path,
-                                   sep=sep,
-                                   **DAMAST_CSV_DEFAULT_ARGS
-            )
+            return scan_csv(path, separator=sep)
         elif path.suffix in [".h5", ".hdf5"]:
             import pandas as pd
 

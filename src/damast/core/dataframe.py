@@ -23,13 +23,13 @@ except ImportError:
 
 from .annotations import Annotation
 from .constants import (
-    DAMAST_CSV_DEFAULT_ARGS,
     DAMAST_SPEC_SUFFIX,
     DAMAST_SUPPORTED_FILE_FORMATS,
 )
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .partitioning import PartitionStrategy
+from .polars_dataframe import scan_csv
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
@@ -440,12 +440,10 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_csv(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
         _log.info(f"Loading csv: {files=}")
-        df = polars.scan_csv(files, separator=";",
-                             **DAMAST_CSV_DEFAULT_ARGS)
+        df = scan_csv(files, separator=";")
         if len(df.compat.column_names) <= 1:
             # unlikely that this frame has only one column, so trying with comma
-            df = polars.scan_csv(files, separator=",",
-                                **DAMAST_CSV_DEFAULT_ARGS)
+            df = scan_csv(files, separator=",")
         return df, {}
 
     @classmethod
@@ -469,6 +467,19 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def infer_annotation(cls, df: DataFrame) -> MetaData:
         column_specs: list[DataSpecification] = []
+
+        # Each collect() re-reads the input - so compute categories and min/max of all
+        # non-numeric columns in (at most) two passes, which the loop below reads from cache
+        string_columns = [c for c in df.compat.column_names if df.compat.is_string(c)]
+        df.compat.precompute_categories(string_columns)
+        minmax_columns = [c for c in df.compat.column_names
+                          if not df.compat.is_numeric(c) and
+                          not (c in string_columns and df.compat.categories(c))]
+        try:
+            df.compat.precompute_minmax(minmax_columns)
+        except ValueError as e:
+            # e.g. unsupported dtype - the loop below then tries each column individually
+            _log.debug(f"AnnotatedDataFrame.infer_annotation: could not precompute value ranges -- {e}")
 
         numeric_columns: list[str] = []
         for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata", unit="column"):
@@ -537,11 +548,7 @@ class AnnotatedDataFrame(XDataFrame):
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
-        df = polars.scan_csv(
-            sorted(csv_filenames),
-            separator=csv_sep,
-            **DAMAST_CSV_DEFAULT_ARGS
-        )
+        df = scan_csv(sorted(csv_filenames), separator=csv_sep)
         adf = cls(dataframe=df, metadata=metadata)
 
         _log.info(f"Metadata: {dict(metadata)}")

@@ -1,4 +1,5 @@
 import copy
+import datetime
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from damast.core.metadata import (
     MetaData,
     ValidationMode,
 )
+from damast.core.polars_dataframe import scan_csv
 from damast.core.types import XDataFrame
 
 
@@ -384,6 +386,71 @@ def test_xdataframe_minmax_cache_invalidated_on_lazyframe_reassignment():
     # Reassigning the lazyframe must drop the stale cache
     xdf.lazyframe = polars.DataFrame({"a": [5, 6, 7], "b": [10, 11, 12]}).lazy()
     assert xdf.minmax("a") == (5, 7)
+
+
+def test_xdataframe_categories_cache():
+    xdf = XDataFrame(polars.DataFrame({"a": ["y", "x", "y"], "b": ["u", None, "v"]}).lazy())
+
+    xdf.precompute_categories(["a", "b"])
+    assert xdf.categories("a") == ["x", "y"]
+    assert xdf.categories("b") == [None, "u", "v"]
+
+    # Reassigning the lazyframe must drop the stale cache
+    xdf.lazyframe = polars.DataFrame({"a": ["z"], "b": ["w"]}).lazy()
+    assert xdf.categories("a") == ["z"]
+
+
+def test_infer_annotation_collects_once_per_kind(monkeypatch):
+    """Regression: every column's metadata used to be computed in its own collect(), i.e. one pass over the input each."""
+    df = polars.DataFrame({
+        "category": ["a", "b", "a"],
+        "name": [f"name-{i}" for i in range(3)],
+        "timestamp": [datetime.datetime(2026, 1, day) for day in (1, 2, 3)],
+        "x": [1.0, 2.0, 3.0],
+        "y": [1, 2, 3],
+    }).lazy()
+
+    original_collect = polars.LazyFrame.collect
+    call_count = 0
+
+    def counting_collect(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_collect(self, *args, **kwargs)
+
+    monkeypatch.setattr(polars.LazyFrame, "collect", counting_collect)
+
+    # 'name' has as many values as rows, but still fewer than the category limit
+    metadata = AnnotatedDataFrame.infer_annotation(df)
+
+    # categories of string columns, min/max of the other non-numeric ones, stats of the numeric ones
+    assert call_count == 3
+    assert metadata["category"].value_range == ListOfValues(["a", "b"])
+    assert metadata["timestamp"].value_range == MinMax(datetime.datetime(2026, 1, 1), datetime.datetime(2026, 1, 3))
+    assert metadata["x"].value_range == MinMax(1.0, 3.0)
+
+
+def test_scan_csv_infers_schema_once(tmp_path, monkeypatch):
+    """Regression: with full schema inference polars re-read the whole csv on every collect()."""
+    csv_file = tmp_path / "data.csv"
+    # the float only shows up in the last row, so only full inference yields Float64
+    csv_file.write_text("a,b\n" + "".join(f"{i},x\n" for i in range(200)) + "0.5,y\n")
+
+    scan_calls = []
+    original_scan_csv = polars.scan_csv
+
+    def recording_scan_csv(*args, **kwargs):
+        scan_calls.append(kwargs)
+        return original_scan_csv(*args, **kwargs)
+
+    monkeypatch.setattr(polars, "scan_csv", recording_scan_csv)
+
+    lf = scan_csv(csv_file)
+
+    # the returned scan carries the inferred schema, so collect() does not infer it again
+    assert "infer_schema_length" not in scan_calls[-1]
+    assert scan_calls[-1]["schema"]["a"] == polars.Float64
+    assert lf.collect()["a"].dtype == polars.Float64
 
 
 def test_convert_csv_to_adf(tmp_path):
