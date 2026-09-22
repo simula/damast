@@ -1,9 +1,14 @@
 import os
-from rich import print
 from argparse import ArgumentParser
+
+from rich.console import Console
 
 from damast.cli.base import BaseParser
 from damast.core.transformations import PipelineElement, PluginManager, plugin_manager
+
+# soft_wrap: leave wrapping to the terminal - rich would otherwise break long lines (e.g. plugin
+# paths) at the console width, inserting newlines into the output
+console = Console(soft_wrap=True)
 
 
 class PluginsParser(BaseParser):
@@ -18,8 +23,8 @@ class PluginsParser(BaseParser):
         plugins = PipelineElement.list_plugins()
         if not plugins:
             plugin_path = os.environ.get(PluginManager.PLUGIN_PATH_ENV, "<unset>")
-            print(f"No transformer plugins registered (entry-point group '{PluginManager.ENTRY_POINT_GROUP}', "
-                 f"{PluginManager.PLUGIN_PATH_ENV}={plugin_path})")
+            console.print(f"No transformer plugins registered (entry-point group '{PluginManager.ENTRY_POINT_GROUP}', "
+                          f"{PluginManager.PLUGIN_PATH_ENV}={plugin_path})")
             return
 
         # '<package>.<class>' -> 'module:class', grouped per plugin package
@@ -30,13 +35,13 @@ class PluginsParser(BaseParser):
 
         for package, transformers in sorted(packages.items()):
             source = self._describe_source(plugin_manager.resolve_requirement(transformers[0][1]))
-            print(f"[bold]{package}[/bold]{f' ({source})' if source else ''}")
+            console.print(f"[bold]{package}[/bold]{f' ({source})' if source else ''}")
 
             width = max(len(class_name) for class_name, _ in transformers)
             for class_name, module_name in sorted(transformers):
                 # module relative to the package - omitted if defined in the package module itself
                 relative_module = module_name.removeprefix(package)
-                print(f"    {class_name:<{width}}  {relative_module}".rstrip())
+                console.print(f"    {class_name:<{width}}  {relative_module}".rstrip())
 
     @staticmethod
     def _describe_source(requirement: dict[str, str] | None) -> str:
