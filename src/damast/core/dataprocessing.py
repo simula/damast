@@ -292,7 +292,11 @@ class DataProcessingPipeline(PipelineElement):
                                 )
 
                             if not node.validation_output_spec:
-                                node.validation_output_spec = DataSpecification.merge_lists(from_node.validation_output_spec, node.transformer.output_specs)
+                                # A declared output (re)defines its column - e.g. a step may change
+                                # a column's type - as AnnotatedDataFrame.update() does at runtime
+                                node.validation_output_spec = DataSpecification.merge_lists(
+                                    from_node.validation_output_spec, node.transformer.output_specs,
+                                    strategy=DataSpecification.MergeStrategy.OTHER)
                             else:
                                 node.validation_output_spec = DataSpecification.merge_lists(node.transformer.output_specs, node.validation_output_spec)
 

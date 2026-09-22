@@ -546,6 +546,29 @@ def test_single_element_pipeline(tmp_path):
     assert adf.metadata['status_suffix'].representation_type == polars.Int64, f"Expect representation_type Int64 for 'status_suffix', but got {adf.metadata['status_suffix']}"
 
 
+class ParseDigits(PipelineElement):
+    """Redefines an existing column with a different type"""
+    @damast.core.describe("Keep only the digits of x")
+    @damast.core.input({"x": {"representation_type": str}})
+    @damast.core.output({"x": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        x = self.get_name("x")
+        df.lazyframe = df.lazyframe.with_columns(polars.col(x).str.extract(r"(\d+)").cast(polars.Int64))
+        return df
+
+
+def test_output_redefines_column_type(tmp_path):
+    df = polars.LazyFrame({"imo": ["IMO9212424", "IMO0001103"]})
+    adf = AnnotatedDataFrame(df, AnnotatedDataFrame.infer_annotation(df))
+
+    pipeline = DataProcessingPipeline(name="redefine", base_dir=tmp_path) \
+        .add("parse_imo", ParseDigits(), name_mappings={"x": "imo"})
+    adf = pipeline.transform(df=adf)
+
+    assert adf.metadata["imo"].representation_type is int
+    assert adf.collect()["imo"].to_list() == [9212424, 1103]
+
+
 def test_pipeline_step_failure_reports_full_traceback(tmp_path):
     """
     Regression test: DataProcessingPipeline._run's exception handler used to truncate the
