@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -76,6 +77,29 @@ def test_drop_missing(tmpdir,  adf: damast.core.AnnotatedDataFrame, inplace: boo
         assert num_missing_post == 0
     else:
         assert num_missing == num_missing_post
+
+
+def test_drop_missing_datetime(tmpdir):
+    """
+    NaN is a float-only concept - dropping it must be skipped for a (non-string) Datetime
+    column, which polars' 'drop_nans' rejects with an InvalidOperationError.
+    """
+    df = pl.LazyFrame({"timestamp": [datetime(2020, 1, 1), None, datetime(2020, 1, 2)]})
+    adf = damast.core.AnnotatedDataFrame(
+        df,
+        metadata=damast.core.MetaData([damast.core.DataSpecification(name="timestamp")]),
+        validation_mode=damast.core.ValidationMode.IGNORE,
+    )
+
+    pipeline = damast.core.DataProcessingPipeline(name="drop missing timestamps", base_dir=Path(tmpdir))
+    pipeline.add("drop_missing_timestamp",
+                 damast.data_handling.transformers.filters.DropMissingOrNan(),
+                 name_mappings={"x": "timestamp"})
+
+    new_adf = pipeline.transform(adf)
+
+    assert len(new_adf.dataframe.collect()) == 2
+    assert new_adf.dataframe.select("timestamp").null_count().collect()[0, 0] == 0
 
 
 @pytest.mark.parametrize("inplace", [True, False])

@@ -64,8 +64,8 @@ class DropMissingOrNan(PipelineElement):
         dataframe = df.lazyframe
 
         new_dataframe = dataframe.drop_nulls(subset=mapped_name)
-        dtype = XDataFrame(new_dataframe).dtype(mapped_name)
-        if dtype not in [str, pl.String]:
+        # NaN only exists for float columns - 'drop_nans' raises for e.g. a Datetime column
+        if XDataFrame(new_dataframe).dtype(mapped_name).is_float():
             new_dataframe = new_dataframe.drop_nans(subset=mapped_name)
 
         df.lazyframe = new_dataframe
