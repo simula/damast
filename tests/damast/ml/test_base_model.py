@@ -1,9 +1,12 @@
+import inspect
 import shutil
 
 import pytest
 
 from damast.ml import keras
 from damast.ml.models.base import BaseModel
+
+supports_splines = "splines" in inspect.signature(keras.utils.plot_model).parameters
 
 
 class StackedAttentionModel(BaseModel):
@@ -25,7 +28,16 @@ class StackedAttentionModel(BaseModel):
 
 
 @pytest.mark.skipif(shutil.which("dot") is None, reason="graphviz is not installed")
+@pytest.mark.skipif(not supports_splines, reason="this keras version cannot select the graphviz edge style")
 def test_plot_stacked_residual_blocks(tmp_path):
     model = StackedAttentionModel(name="stacked", features=["a", "b"], targets=["a", "b"], output_dir=tmp_path)
 
     assert model.plot().is_file()
+
+
+@pytest.mark.skipif(shutil.which("dot") is not None, reason="graphviz is installed, so plotting works")
+def test_plot_without_graphviz_does_not_raise(tmp_path):
+    """The model plot is documentation only - a failing plot must not fail build()/training."""
+    model = StackedAttentionModel(name="stacked", features=["a", "b"], targets=["a", "b"], output_dir=tmp_path)
+
+    assert model.plot().name == "stacked.png"

@@ -3,6 +3,8 @@ from __future__ import annotations
 import gc
 import glob
 import importlib
+import inspect
+import logging
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Generator
@@ -17,6 +19,8 @@ import pandas as pd
 from damast.core import DataSpecification
 from damast.core.types import DataFrame, XDataFrame
 from damast.ml import keras
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BaseModel",
@@ -166,13 +170,19 @@ class BaseModel(ABC):
         plots_outputdir.mkdir(parents=True, exist_ok=True)
 
         filename = plots_outputdir / f"{self.name}{suffix}"
+        plot_options = {"show_shapes": True, "expand_nested": True}
         # graphviz' default orthogonal edge routing can abort ("Trapezoid-table overflow"),
-        # e.g. for stacked residual blocks, so draw polyline edges instead
-        keras.utils.plot_model(model=self.model,
-                               to_file=str(filename),
-                               show_shapes=True,
-                               expand_nested=True,
-                               splines="polyline")
+        # e.g. for stacked residual blocks, so draw polyline edges instead - where keras
+        # supports selecting the edge style
+        if "splines" in inspect.signature(keras.utils.plot_model).parameters:
+            plot_options["splines"] = "polyline"
+
+        try:
+            keras.utils.plot_model(model=self.model, to_file=str(filename), **plot_options)
+        except Exception as e:
+            # the plot is for documentation only - do not fail building the model over it
+            logger.warning(f"{self.__class__.__name__}.plot: could not plot {self.name} -- {e}")
+
         return filename
 
     @property
