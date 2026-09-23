@@ -381,3 +381,20 @@ def test_expected_paths_names_do_not_match_a_non_utc_archive(tmp_path):
 
     assert [p.name for p in predicted] == ["2026-01-01.parquet"]
     assert [p.name for p in written] == ["2026-01-02.parquet"]
+
+
+def test_export_partitioned_suffix_is_configurable(timeseries_adf, tmp_path):
+    """`suffix=""` hands full filenames to the strategy - e.g. names from an external
+    naming scheme; a suffix without a leading dot is normalized."""
+    named = ByExpr(polars.col("mmsi"), filename_fn=lambda key: f"vessel-{key}.parquet")
+
+    written = timeseries_adf.export_partitioned(tmp_path / "own", named, suffix="")
+    assert sorted(p.name for p in written) == ["vessel-1.parquet", "vessel-2.parquet", "vessel-3.parquet"]
+    assert all(p.exists() for p in written)
+
+    written = timeseries_adf.export_partitioned(tmp_path / "dotless", ByColumn("mmsi"), suffix="dat")
+    assert sorted(p.name for p in written) == ["mmsi_1.dat", "mmsi_2.dat", "mmsi_3.dat"]
+
+    # the default is unchanged, and the files stay readable whatever they are called
+    written = timeseries_adf.export_partitioned(tmp_path / "default", ByColumn("mmsi"))
+    assert sorted(p.name for p in written) == ["mmsi_1.parquet", "mmsi_2.parquet", "mmsi_3.parquet"]

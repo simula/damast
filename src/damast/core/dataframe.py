@@ -247,6 +247,7 @@ class AnnotatedDataFrame(XDataFrame):
         directory: str | Path,
         strategy: PartitionStrategy,
         *,
+        suffix: str = ".parquet",
         compression: str | None = None,
         compression_level: int | None = None,
     ) -> list[Path]:
@@ -262,6 +263,10 @@ class AnnotatedDataFrame(XDataFrame):
 
         :param directory: Directory to write partition files into (created if missing)
         :param strategy: Determines the per-row partition key and its filename
+        :param suffix: File extension appended to every :meth:`PartitionStrategy.filename`,
+            with a leading ``.`` added if missing. Pass ``""`` when the strategy already
+            returns complete filenames, e.g. when they come from an external naming scheme.
+            This names the file only - the contents are parquet either way.
         :return: Paths of the written data files, one per partition
 
         Example:
@@ -270,12 +275,17 @@ class AnnotatedDataFrame(XDataFrame):
 
             adf.export_partitioned("out/", ByColumn("mmsi"))
             adf.export_partitioned("out/", ByTime("timestamp", every="1d"))
+
+            # filenames owned by the caller, e.g. to match an existing archive's convention
+            adf.export_partitioned("out/", ByExpr(key, filename_fn=my_pattern), suffix="")
         """
         if self.lazyframe is None:
             raise ValueError(f"{self.__class__.__name__}.export_partitioned: no dataframe to export")
 
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
+        if suffix and not suffix.startswith("."):
+            suffix = f".{suffix}"
 
         key_col = "__damast_partition_key__"
         collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
@@ -290,7 +300,7 @@ class AnnotatedDataFrame(XDataFrame):
             for part in pbar:
                 key = part[key_col][0]
                 part = part.drop(key_col)
-                filename = directory / f"{strategy.filename(key)}.parquet"
+                filename = directory / f"{strategy.filename(key)}{suffix}"
                 pbar.set_description(f"Exporting {filename}")
                 filename.parent.mkdir(parents=True, exist_ok=True)
                 part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
