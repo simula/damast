@@ -582,6 +582,23 @@ def test_infer_annotation_takes_descriptive_fields_from_reference():
     assert AnnotatedDataFrame.infer_annotation(df)["lat"].unit is None
 
 
+def test_infer_annotation_takes_is_optional_and_annotations_from_reference():
+    """Both are declarations about the dataset - a subset of the rows cannot disprove them."""
+    reference = MetaData(
+        [DataSpecification(name="lat", is_optional=True), DataSpecification(name="count")],
+        annotations=[Annotation(name="origin", value="a-test")],
+    )
+    df = polars.DataFrame({"lat": [10.0, 20.0], "count": [1, 2]})
+
+    metadata = AnnotatedDataFrame.infer_annotation(df, reference=reference)
+
+    assert metadata["lat"].is_optional is True
+    assert metadata["count"].is_optional is False
+    assert {name: a.value for name, a in metadata.annotations.items()} == {"origin": "a-test"}
+    # without a reference there is nothing to inherit
+    assert AnnotatedDataFrame.infer_annotation(df).annotations == {}
+
+
 def _write_parquet(df: polars.DataFrame, path: Path):
     df.write_parquet(path)
 

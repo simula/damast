@@ -4,7 +4,7 @@ import polars
 import pytest
 
 from damast.core.dataframe import AnnotatedDataFrame
-from damast.core.metadata import DataSpecification, MetaData
+from damast.core.metadata import DataSpecification, MetaData, ValidationMode
 from damast.core.partitioning import ByColumn, ByExpr, ByTime, SaveAs
 
 
@@ -381,6 +381,40 @@ def test_expected_paths_names_do_not_match_a_non_utc_archive(tmp_path):
 
     assert [p.name for p in predicted] == ["2026-01-01.parquet"]
     assert [p.name for p in written] == ["2026-01-02.parquet"]
+
+
+def test_export_partitioned_keeps_declared_metadata_in_every_partition(tmp_path):
+    """Per-partition metadata is re-inferred, but declarations must survive the split -
+    ranges narrow to the partition, annotations and `is_optional` do not."""
+    from damast.core.annotations import Annotation
+
+    df = polars.DataFrame(
+        {
+            "timestamp": [dt.datetime(2026, 1, 1, 3), dt.datetime(2026, 1, 2, 4)],
+            "x": [10.0, 20.0],
+        }
+    )
+    metadata = MetaData(
+        columns=[DataSpecification(name="timestamp"),
+                 DataSpecification(name="x", description="the x", is_optional=True)],
+        annotations=[Annotation(name="origin", value="a-test")],
+    )
+    adf = AnnotatedDataFrame(df, metadata, validation_mode=ValidationMode.IGNORE)
+
+    written = adf.export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
+
+    assert len(written) == 2
+    for path in written:
+        part = AnnotatedDataFrame.from_files([str(path)], metadata_required=False)
+        assert {name: a.value for name, a in part.metadata.annotations.items()
+                if name == "origin"} == {"origin": "a-test"}
+        assert part.metadata["x"].is_optional is True
+        assert part.metadata["x"].description == "the x"
+
+    # ... while the value range is each partition's own, not the whole frame's
+    ranges = {p.name: AnnotatedDataFrame.from_files([str(p)], metadata_required=False)
+              .metadata["x"].value_range for p in written}
+    assert [(r.min, r.max) for r in ranges.values()] == [(10.0, 10.0), (20.0, 20.0)]
 
 
 def test_export_partitioned_suffix_is_configurable(timeseries_adf, tmp_path):

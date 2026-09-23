@@ -303,7 +303,9 @@ class AnnotatedDataFrame(XDataFrame):
                 filename = directory / f"{strategy.filename(key)}{suffix}"
                 pbar.set_description(f"Exporting {filename}")
                 filename.parent.mkdir(parents=True, exist_ok=True)
-                part_adf = AnnotatedDataFrame(part, self._metadata, validation_mode=ValidationMode.IGNORE)
+                # The file should be self-consistent, so update the metadata
+                metadata = AnnotatedDataFrame.infer_annotation(df=part.lazy(), reference=self._metadata)
+                part_adf = AnnotatedDataFrame(part, metadata, validation_mode=ValidationMode.IGNORE)
                 part_adf.export(filename,
                                 compression=compression,
                                 compression_level=compression_level)
@@ -475,8 +477,10 @@ class AnnotatedDataFrame(XDataFrame):
                               validation_mode=validation_mode,
                               merge_strategy=merge_strategy)
 
-    # descriptive fields that remain valid for a column when its data is filtered or reshaped
-    _INHERITED_SPEC_FIELDS = ("description", "category", "abbreviation", "unit", "precision", "missing_value")
+    # declared fields that remain valid for a column when its data is filtered or reshaped -
+    # unlike type and value range/stats, they cannot be observed from a subset of the data.
+    _INHERITED_SPEC_FIELDS = ("description", "category", "abbreviation", "unit", "precision",
+                              "missing_value", "is_optional")
 
     @classmethod
     def infer_annotation(cls, df: DataFrame, reference: MetaData | None = None) -> MetaData:
@@ -485,8 +489,10 @@ class AnnotatedDataFrame(XDataFrame):
 
         :param df: The dataframe to annotate
         :param reference: Optional metadata, e.g. of the dataframe ``df`` was derived from: for
-            columns it contains, the descriptive fields (unit, description, category, abbreviation,
-            precision, missing value) are taken over, while type and value range/stats are inferred
+            columns it contains, the declared fields (unit, description, category, abbreviation,
+            precision, missing value, is_optional) are taken over, while type and value
+            range/stats are inferred. The reference's dataset-level annotations are carried over
+            as well - they describe the dataset, not the rows that remain in ``df``
         :return: The inferred metadata
         """
         column_specs: list[DataSpecification] = []
@@ -505,7 +511,7 @@ class AnnotatedDataFrame(XDataFrame):
             _log.debug(f"AnnotatedDataFrame.infer_annotation: could not precompute value ranges -- {e}")
 
         numeric_columns: list[str] = []
-        for column in tqdm(df.compat.column_names, desc="Extract str and categorical column metadata", unit="column"):
+        for column in df.compat.column_names:
             data = {'name': column,
                     'is_optional': False,
                     'representation_type': df.compat.dtype(column)
@@ -533,7 +539,7 @@ class AnnotatedDataFrame(XDataFrame):
         if numeric_columns:
             # To allow polars to optimize the query, process all numeric columns at once
             results = df.compat.minmax_stats(numeric_columns)
-            for column in tqdm(numeric_columns, desc="Extract numeric column metadata", unit="column"):
+            for column in numeric_columns:
                 data = {'name': column,
                         'is_optional': False,
                         'representation_type': df.compat.dtype(column)
@@ -548,6 +554,7 @@ class AnnotatedDataFrame(XDataFrame):
                 ds = DataSpecification(**data)
                 column_specs.append(ds)
 
+        annotations: list[Annotation] = []
         if reference is not None:
             for ds in column_specs:
                 if ds.name in reference:
@@ -556,8 +563,9 @@ class AnnotatedDataFrame(XDataFrame):
                         value = getattr(reference_spec, field, None)
                         if value is not None:
                             setattr(ds, field, value)
+            annotations = list(reference.annotations.values())
 
-        return MetaData(columns=column_specs, annotations=[])
+        return MetaData(columns=column_specs, annotations=annotations)
 
     @classmethod
     def convert_csv_to_adf(
