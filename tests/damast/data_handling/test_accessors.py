@@ -408,15 +408,18 @@ def test_group_window_accessor_datetime(irregular_dataframe, time_unit):
                                        forecast_horizon=timedelta(minutes=10), max_gap="2m",
                                        batch_size=32, infinite=True))
     input_times = np.linspace(0, WINDOW, 7)
-    # Datetime windows start at fractional seconds: with float32 output (macOS, see _mps_precision)
-    # the window start recovered from 'tv' (~1e6 s) is only accurate to ~0.06 s
-    rtol = 1e-7 if X.dtype == np.float64 else 1e-4
+    # Set relative tolerance (rtol) and absolute tolerance (atol)
+    # Datetime windows start at fractional seconds: with float32 output (macOS, see
+    # _mps_precision) the window start recovered from 'tv' (~1e6 s) is only accurate to one
+    # float32 step, ~0.06 s. The reference is evaluated at that shifted t0, so it is off by
+    # |dz/dt| * 0.06 s - an absolute error that a pure rtol cannot express.
+    tolerance = {"rtol": 1e-7} if X.dtype == np.float64 else {"rtol": 1e-4, "atol": 1e-4}
     for sample, target in zip(X, y):
         gid, t0 = sample[0, 0], sample[0, 1]
         np.testing.assert_allclose(sample[:, 2], _reference(irregular_dataframe, gid, t0, input_times, "z"),
-                                   rtol=rtol)
+                                   **tolerance)
         np.testing.assert_allclose(target[:, 0], _reference(irregular_dataframe, gid, t0, np.array([SPAN]), "z"),
-                                   rtol=rtol)
+                                   **tolerance)
 
 
 @pytest.mark.parametrize("timestamp_type, kwargs, match", [
