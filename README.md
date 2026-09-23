@@ -172,3 +172,5 @@ Some derived work is mainly part of the specific data processing for the 'mariti
 
 The development of this library is part of the EU-project [AI4COPSEC](https://ai4copsec.eu) which receives funding
  from the Horizon Europe framework programme under Grant Agreement N. 101190021.
+
+For the development of this library we take advantage of AI coding assistance, currently Claude Sonnet 5 and Claude Opus 5.
