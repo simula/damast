@@ -31,6 +31,11 @@ class PartitionStrategy(ABC):
     :meth:`AnnotatedDataFrame.export_partitioned`.
     """
 
+    #: Time zone this strategy deliberately buckets in, if any. Setting it states that a
+    #: non-UTC bucketing is intended and suppresses the warning from
+    #: :func:`warn_on_local_time_buckets`.
+    time_zone: str | None = None
+
     @abstractmethod
     def key_expr(self) -> polars.Expr:
         """A polars expression computing this strategy's per-row partition key."""
@@ -72,11 +77,18 @@ class ByTime(PartitionStrategy):
     for one file per hour, ``"1d"`` for one file per day, ``"1w"`` per week.
 
     .. note::
-        Truncation happens in the timestamp column's own time zone, so a column in e.g.
-        ``Asia/Tokyo`` yields Tokyo-day buckets, not UTC-day buckets - the same instant then
-        lands in a differently named file. :meth:`AnnotatedDataFrame.export_partitioned` warns
-        about this; convert the column with ``dt.convert_time_zone("UTC")`` for UTC buckets.
-        A naive (zone-less) column is truncated as-is.
+        By default truncation happens in the timestamp column's own time zone, so a column in
+        e.g. ``Asia/Tokyo`` yields Tokyo-day buckets, not UTC-day buckets - the same instant
+        then lands in a differently named file, and
+        :meth:`AnnotatedDataFrame.export_partitioned` warns about it. Pass ``time_zone="UTC"``
+        to bucket by UTC regardless of how the column is zoned.
+
+    Example:
+
+    .. code-block:: python
+
+        # one file per UTC day, whatever zone the column carries
+        ByTime("timestamp", every="1d", time_zone="UTC")
     """
 
     def __init__(
@@ -84,12 +96,19 @@ class ByTime(PartitionStrategy):
         timestamp_column: str,
         every: str,
         *,
+        time_zone: str | None = None,
         format: str | None = None,
         prefix: str | None = None,
     ):
         """
         :param timestamp_column: Name of the datetime column to partition by
         :param every: Truncation interval, e.g. ``"1h"``, ``"1d"``, ``"1w"``
+        :param time_zone: Convert the column to this time zone before truncating, e.g.
+            ``"UTC"`` for UTC buckets or ``"Europe/Oslo"`` to bucket by local days on purpose.
+            The default (``None``) truncates in whatever zone the column carries, which is
+            polars' own behaviour. A naive (zone-less) column is read as UTC, so
+            ``time_zone="UTC"`` leaves it unchanged. Setting this states the intent, so the
+            local-time warning of :meth:`AnnotatedDataFrame.export_partitioned` is suppressed.
         :param format: Optional ``strftime`` format for the filename stem (default:
             automatically pick the coarsest representation matching the truncated value, e.g.
             ``"2026-09-14"`` for a day, ``"2026-09-14T13"`` for an hour). Use e.g.
@@ -100,11 +119,15 @@ class ByTime(PartitionStrategy):
         """
         self.timestamp_column = timestamp_column
         self.every = every
+        self.time_zone = time_zone
         self.format = format
         self.prefix = prefix
 
     def key_expr(self) -> polars.Expr:
-        return polars.col(self.timestamp_column).dt.truncate(self.every)
+        column = polars.col(self.timestamp_column)
+        if self.time_zone is not None:
+            column = column.dt.convert_time_zone(self.time_zone)
+        return column.dt.truncate(self.every)
 
     def filename(self, key: Any) -> str:
         stem = (
@@ -170,8 +193,8 @@ def warn_on_local_time_buckets(keys: polars.Series) -> None:
     column carrying e.g. ``Asia/Tokyo`` produces local-day buckets - the same instant lands
     in a different file than it would in UTC, and the resulting filenames cannot be read
     back without knowing that zone. Partitioning by local days is legitimate, so this only
-    warns; convert the column with ``dt.convert_time_zone("UTC")`` beforehand to get UTC
-    buckets.
+    warns; pass ``ByTime(..., time_zone="UTC")`` for UTC buckets, or name the zone explicitly
+    (:attr:`PartitionStrategy.time_zone`) to state the intent and silence this.
 
     :param keys: The materialized partition key column, as produced by
         :meth:`PartitionStrategy.key_expr`
@@ -186,8 +209,9 @@ def warn_on_local_time_buckets(keys: polars.Series) -> None:
         if time_zone is not None and time_zone != "UTC":
             logger.warning(
                 f"Partition key '{name}' is a datetime in time zone '{time_zone}', so its buckets"
-                f" (and the resulting filenames) follow {time_zone} days, not UTC days. Convert the"
-                f" column with dt.convert_time_zone('UTC') first if UTC buckets were intended."
+                f" (and the resulting filenames) follow {time_zone} days, not UTC days. Pass"
+                f" time_zone='UTC' if UTC buckets were intended, or time_zone='{time_zone}' to"
+                f" state that they were not."
             )
 
 

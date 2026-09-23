@@ -289,7 +289,9 @@ class AnnotatedDataFrame(XDataFrame):
 
         key_col = "__damast_partition_key__"
         collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
-        warn_on_local_time_buckets(collected[key_col])
+        if strategy.time_zone is None:
+            # only an accidental local-time bucketing is worth a warning
+            warn_on_local_time_buckets(collected[key_col])
 
         written: list[Path] = []
         # as_dict=False + re-deriving the key from the partition itself (rather than

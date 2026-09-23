@@ -375,8 +375,8 @@ def test_expected_paths_names_do_not_match_a_non_utc_archive(tmp_path):
     written = _zoned_adf("Asia/Tokyo").export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
     predicted = SaveAs.expected_paths(
         "time:timestamp+daily:%Y-%m-%d",
-        start=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-        end=dt.datetime(2026, 1, 1, 23, 59, tzinfo=dt.UTC),
+        start=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+        end=dt.datetime(2026, 1, 1, 23, 59, tzinfo=dt.timezone.utc),
     )
 
     assert [p.name for p in predicted] == ["2026-01-01.parquet"]
@@ -432,3 +432,34 @@ def test_export_partitioned_suffix_is_configurable(timeseries_adf, tmp_path):
     # the default is unchanged, and the files stay readable whatever they are called
     written = timeseries_adf.export_partitioned(tmp_path / "default", ByColumn("mmsi"))
     assert sorted(p.name for p in written) == ["mmsi_1.parquet", "mmsi_2.parquet", "mmsi_3.parquet"]
+
+
+def test_by_time_time_zone_converts_before_truncating(tmp_path, caplog):
+    """`time_zone` decides which day an instant belongs to, whatever the column carries."""
+    tokyo = _zoned_adf("Asia/Tokyo")
+
+    # the column's own zone (default): Tokyo days
+    assert [p.name for p in tokyo.export_partitioned(tmp_path / "own", ByTime("timestamp", every="1d"))] == [
+        "2026-01-02.parquet"
+    ]
+    # converted to UTC: the same instants are a UTC 1 Jan
+    caplog.clear()  # the default export above warned - that is its own test
+    with caplog.at_level("WARNING", logger="damast.core.partitioning"):
+        written = tokyo.export_partitioned(tmp_path / "utc", ByTime("timestamp", every="1d", time_zone="UTC"))
+    assert [p.name for p in written] == ["2026-01-01.parquet"]
+    assert caplog.records == []
+
+    # a naive column is read as UTC, so converting it to UTC changes nothing
+    assert [p.name for p in _zoned_adf(None).export_partitioned(
+        tmp_path / "naive", ByTime("timestamp", every="1d", time_zone="UTC"))] == ["2026-01-01.parquet"]
+
+
+def test_by_time_explicit_local_time_zone_is_not_warned_about(tmp_path, caplog):
+    """Deliberately bucketing by local days is legitimate - only an accidental one warns."""
+    with caplog.at_level("WARNING", logger="damast.core.partitioning"):
+        written = _zoned_adf("UTC").export_partitioned(
+            tmp_path, ByTime("timestamp", every="1d", time_zone="Asia/Tokyo")
+        )
+
+    assert [p.name for p in written] == ["2026-01-02.parquet"]
+    assert caplog.records == []
