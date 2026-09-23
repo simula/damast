@@ -8,6 +8,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import date, datetime
+from logging import Logger, getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from .dataframe import AnnotatedDataFrame
 
 __all__ = ["ByColumn", "ByExpr", "ByTime", "PartitionStrategy", "SaveAs"]
+
+logger: Logger = getLogger(__name__)
 
 
 class PartitionStrategy(ABC):
@@ -67,6 +70,13 @@ class ByTime(PartitionStrategy):
 
     ``every`` is any interval polars' :meth:`polars.Expr.dt.truncate` accepts, e.g. ``"1h"``
     for one file per hour, ``"1d"`` for one file per day, ``"1w"`` per week.
+
+    .. note::
+        Truncation happens in the timestamp column's own time zone, so a column in e.g.
+        ``Asia/Tokyo`` yields Tokyo-day buckets, not UTC-day buckets - the same instant then
+        lands in a differently named file. :meth:`AnnotatedDataFrame.export_partitioned` warns
+        about this; convert the column with ``dt.convert_time_zone("UTC")`` for UTC buckets.
+        A naive (zone-less) column is truncated as-is.
     """
 
     def __init__(
@@ -152,6 +162,35 @@ class ByExpr(PartitionStrategy):
         return self._filename_fn(key)
 
 
+def warn_on_local_time_buckets(keys: polars.Series) -> None:
+    """
+    Warn if a materialized partition key buckets by *local* time instead of UTC.
+
+    ``polars.Expr.dt.truncate`` truncates in the column's own time zone, so a timestamp
+    column carrying e.g. ``Asia/Tokyo`` produces local-day buckets - the same instant lands
+    in a different file than it would in UTC, and the resulting filenames cannot be read
+    back without knowing that zone. Partitioning by local days is legitimate, so this only
+    warns; convert the column with ``dt.convert_time_zone("UTC")`` beforehand to get UTC
+    buckets.
+
+    :param keys: The materialized partition key column, as produced by
+        :meth:`PartitionStrategy.key_expr`
+    """
+    dtype = keys.dtype
+    # "time+column" keys are a struct - the truncated timestamp is one of its fields
+    fields = dtype.fields if isinstance(dtype, polars.Struct) else None
+    candidates = [(f.name, f.dtype) for f in fields] if fields else [(keys.name, dtype)]
+
+    for name, field_dtype in candidates:
+        time_zone = getattr(field_dtype, "time_zone", None)
+        if time_zone is not None and time_zone != "UTC":
+            logger.warning(
+                f"Partition key '{name}' is a datetime in time zone '{time_zone}', so its buckets"
+                f" (and the resulting filenames) follow {time_zone} days, not UTC days. Convert the"
+                f" column with dt.convert_time_zone('UTC') first if UTC buckets were intended."
+            )
+
+
 #: Friendly names for common `polars.Expr.dt.truncate` intervals, accepted by `SaveAs.parse`
 #: alongside any raw interval string (e.g. `"3h"`) it doesn't recognize.
 _INTERVAL_ALIASES = {
@@ -209,7 +248,10 @@ class SaveAs:
           (time bucket, column value) pair
 
         ``<interval>`` is one of ``hourly``, ``daily``, ``weekly``, ``monthly``, or any raw
-        `polars.Expr.dt.truncate` interval (e.g. ``"3h"``, ``"15m"``).
+        `polars.Expr.dt.truncate` interval (e.g. ``"3h"``, ``"15m"``). Time buckets follow the
+        timestamp column's own time zone - see the note on :class:`ByTime`; the read-side
+        counterpart :meth:`expected_paths` derives its bucket names from the ``start``/``end``
+        it is given, so both sides have to agree on the zone.
 
         Example:
 
@@ -297,6 +339,11 @@ class SaveAs:
             # -> [Path("out/vessel_*.parquet")]
 
         :param value: A plain output path, or a `<strategy>:<spec>:<template>` partitioning string
+        .. note::
+            Bucket names are derived from ``start``/``end``, so they carry *their* time zone.
+            Passing UTC bounds enumerates UTC-day names, which only match an archive whose
+            timestamp column was UTC when it was written - see the note on :class:`ByTime`.
+
         :param start: Start of the time range (inclusive)
         :param end: End of the time range (inclusive)
         :return: Candidate paths - exact for a plain path or a purely time-based spec, glob

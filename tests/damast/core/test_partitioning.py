@@ -321,3 +321,63 @@ def test_expected_paths_time_plus_column_strategy_wildcards_the_column_per_bucke
 def test_expected_paths_rejects_malformed_spec(value):
     with pytest.raises(ValueError, match="SaveAs.expected_paths"):
         SaveAs.expected_paths(value, start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 2))
+
+
+def _zoned_adf(time_zone: str | None):
+    """The `timeseries_adf` frame with its timestamps as instants in `time_zone` (None: naive)."""
+    df = polars.DataFrame(
+        {
+            "mmsi": [1, 2],
+            # 2026-01-01 20:00 UTC is already 2026-01-02 in Tokyo (UTC+9)
+            "timestamp": [dt.datetime(2026, 1, 1, 20), dt.datetime(2026, 1, 1, 23)],
+            "x": [10.0, 20.0],
+        }
+    )
+    if time_zone is not None:
+        df = df.with_columns(
+            polars.col("timestamp").dt.replace_time_zone("UTC").dt.convert_time_zone(time_zone)
+        )
+    columns = [DataSpecification(name=name) for name in ("mmsi", "timestamp", "x")]
+    return AnnotatedDataFrame(df, MetaData(columns=columns))
+
+
+def test_by_time_buckets_follow_the_column_time_zone(tmp_path):
+    """A non-UTC column partitions by *its* days - the instants above are a Tokyo 02 Jan."""
+    written = _zoned_adf("Asia/Tokyo").export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
+
+    assert [p.name for p in written] == ["2026-01-02.parquet"]
+    assert [p.name for p in _zoned_adf("UTC").export_partitioned(tmp_path, ByTime("timestamp", every="1d"))] == [
+        "2026-01-01.parquet"
+    ]
+
+
+def test_export_partitioned_warns_only_for_a_non_utc_time_bucket(tmp_path, caplog):
+    for time_zone, expected in [("Asia/Tokyo", True), ("UTC", False), (None, False)]:
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="damast.core.partitioning"):
+            _zoned_adf(time_zone).export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
+        warned = any("not UTC days" in record.message for record in caplog.records)
+        assert warned is expected, f"{time_zone=} should {'' if expected else 'not '}warn"
+
+
+def test_export_partitioned_warns_for_a_non_utc_bucket_inside_a_struct_key(tmp_path, caplog):
+    """'time+column:' keys are a struct - the timestamp field still has to be checked."""
+    save_as = SaveAs.parse("time+column:timestamp+daily+mmsi:AIS_%Y_%m_%d")
+
+    with caplog.at_level("WARNING", logger="damast.core.partitioning"):
+        _zoned_adf("Asia/Tokyo").export_partitioned(tmp_path, save_as.strategy)
+
+    assert any("not UTC days" in record.message for record in caplog.records)
+
+
+def test_expected_paths_names_do_not_match_a_non_utc_archive(tmp_path):
+    """The mismatch the warning is about: UTC bounds predict a name the archive doesn't have."""
+    written = _zoned_adf("Asia/Tokyo").export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
+    predicted = SaveAs.expected_paths(
+        "time:timestamp+daily:%Y-%m-%d",
+        start=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 1, 23, 59, tzinfo=dt.UTC),
+    )
+
+    assert [p.name for p in predicted] == ["2026-01-01.parquet"]
+    assert [p.name for p in written] == ["2026-01-02.parquet"]

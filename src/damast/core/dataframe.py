@@ -28,7 +28,7 @@ from .constants import (
 )
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
-from .partitioning import PartitionStrategy
+from .partitioning import PartitionStrategy, warn_on_local_time_buckets
 from .polars_dataframe import scan_csv
 from .types import DataFrame, XDataFrame
 
@@ -279,6 +279,7 @@ class AnnotatedDataFrame(XDataFrame):
 
         key_col = "__damast_partition_key__"
         collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
+        warn_on_local_time_buckets(collected[key_col])
 
         written: list[Path] = []
         # as_dict=False + re-deriving the key from the partition itself (rather than
