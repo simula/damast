@@ -30,7 +30,7 @@ jobs:
         with:
           # this might remove tools that are actually needed,
           # when set to "true" but frees about 6 GB
-          tool-cache: true
+          preinstalled-runtimes: true
 
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
