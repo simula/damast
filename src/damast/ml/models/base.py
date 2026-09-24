@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import functools
 import gc
 import glob
 import importlib
 import inspect
 import logging
+import shutil
+import subprocess
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Generator
@@ -28,6 +31,32 @@ __all__ = [
 ]
 
 HISTORY_FILENAME = 'training-history.csv'
+
+#: How long the graphviz probe below waits before declaring the installation unusable
+GRAPHVIZ_PROBE_TIMEOUT = 10
+
+
+@functools.cache
+def graphviz_is_usable() -> bool:
+    """
+    Whether the graphviz ``dot`` executable is installed and answers, probed at most once.
+
+    `keras.utils.plot_model` probes graphviz by rendering a graph through `pydot`, and a
+    broken installation can leave that subprocess hanging instead of failing - e.g. a
+    chocolatey-installed graphviz on Windows whose plugins were never registered with
+    ``dot -c``. A hang cannot be caught like an exception, so bound the probe here and skip
+    plotting altogether when it does not come back.
+    """
+    dot = shutil.which("dot")
+    if dot is None:
+        return False
+
+    try:
+        return subprocess.run([dot, "-V"], capture_output=True,
+                              timeout=GRAPHVIZ_PROBE_TIMEOUT).returncode == 0
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning(f"graphviz_is_usable: '{dot} -V' did not answer -- {e}")
+        return False
 CHECKPOINT_BEST = "checkpoint.best.weights.h5"
 MODEL_TF_KERAS = "model.tf.keras"
 
@@ -170,6 +199,12 @@ class BaseModel(ABC):
         plots_outputdir.mkdir(parents=True, exist_ok=True)
 
         filename = plots_outputdir / f"{self.name}{suffix}"
+        if not graphviz_is_usable():
+            # the plot is for documentation only - do not hold up building the model for it
+            logger.warning(f"{self.__class__.__name__}.plot: graphviz is not usable, so"
+                           f" {self.name} is not plotted - see https://graphviz.org/download/")
+            return filename
+
         plot_options = {"show_shapes": True, "expand_nested": True}
         # graphviz' default orthogonal edge routing can abort ("Trapezoid-table overflow"),
         # e.g. for stacked residual blocks, so draw polyline edges instead - where keras

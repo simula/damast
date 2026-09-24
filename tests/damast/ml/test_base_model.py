@@ -1,5 +1,7 @@
 import inspect
 import shutil
+import subprocess
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -41,3 +43,30 @@ def test_plot_without_graphviz_does_not_raise(tmp_path):
     model = StackedAttentionModel(name="stacked", features=["a", "b"], targets=["a", "b"], output_dir=tmp_path)
 
     assert model.plot().name == "stacked.png"
+
+
+@pytest.mark.parametrize(
+    "which, run, expected",
+    [
+        (lambda _: None, None, False),                                   # graphviz not installed
+        (lambda _: "/usr/bin/dot", lambda *a, **kw: MagicMock(returncode=0), True),
+        (lambda _: "/usr/bin/dot", lambda *a, **kw: MagicMock(returncode=1), False),
+        (lambda _: "/usr/bin/dot",
+         lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired("dot", 10)), False),
+    ],
+    ids=["missing", "answers", "fails", "hangs"],
+)
+def test_graphviz_is_usable(monkeypatch, which, run, expected):
+    """A graphviz that does not answer must be reported unusable rather than block the caller -
+    `keras.utils.plot_model` probes it with a subprocess that can hang (see damast #windows-ci)."""
+    from damast.ml.models import base
+
+    base.graphviz_is_usable.cache_clear()
+    monkeypatch.setattr(base.shutil, "which", which)
+    if run is not None:
+        monkeypatch.setattr(base.subprocess, "run", run)
+
+    try:
+        assert base.graphviz_is_usable() is expected
+    finally:
+        base.graphviz_is_usable.cache_clear()
