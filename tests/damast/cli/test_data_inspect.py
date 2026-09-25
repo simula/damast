@@ -8,7 +8,7 @@ from astropy import units
 from damast.cli.data_inspect import DataInspectParser
 from damast.core.annotations import Annotation
 from damast.core.data_description import MinMax
-from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.dataframe import DAMAST_SPEC_SUFFIX, AnnotatedDataFrame
 from damast.core.metadata import DataCategory, DataSpecification, MetaData
 
 
@@ -124,3 +124,74 @@ def test_fill_missing_value_stats_computes_bool_stats():
     stats = adf.metadata["is_active"].value_stats
     assert (stats.true_count, stats.false_count, stats.null_count) == (2, 1, 1)
     assert adf.metadata["is_active"].value_range is None
+
+
+@pytest.fixture()
+def parquet_with_unit(tmp_path, metadata, polars_dataframe):
+    """A parquet file whose 'height' column has a unit - the row output labels it 'height (m)'"""
+    adf = AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata)
+    filename = tmp_path / "with_unit.parquet"
+    adf.export(filename)
+    adf.metadata.save_yaml(filename.with_suffix(DAMAST_SPEC_SUFFIX))
+    return filename
+
+
+@pytest.mark.parametrize("column", ["height", "height (m)"])
+def test_inspect_columns_accepts_plain_and_unit_annotated_name(parquet_with_unit, column, script_runner):
+    result = script_runner.run(['damast', 'inspect', '-f', str(parquet_with_unit), '--columns', column])
+
+    assert result.returncode == 0
+    assert "height (m)" in result.stdout
+    assert "letter" not in result.stdout
+
+
+def test_inspect_columns_reports_an_unknown_column(parquet_with_unit, script_runner):
+    result = script_runner.run(['damast', 'inspect', '-f', str(parquet_with_unit), '--columns', 'width'])
+
+    assert result.returncode != 0
+    assert "Column 'width' does not exist" in result.stdout
+
+
+def test_resolve_column_names(metadata, polars_dataframe):
+    adf = AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata)
+    parser = DataInspectParser(parser=ArgumentParser())
+
+    assert parser.resolve_column_names(adf, ["height (m)", "letter"]) == ["height", "letter"]
+
+    with pytest.raises(ValueError, match="does not exist"):
+        parser.resolve_column_names(adf, ["width"])
+
+
+@pytest.fixture()
+def csv_with_unit(tmp_path, metadata):
+    """A csv plus spec file whose 'height' column is annotated with a unit"""
+    csv_path = tmp_path / "with_unit.csv"
+    csv_path.write_text("height;letter\n0;a\n1;b\n2;c\n")
+    metadata.save_yaml(csv_path.with_suffix(DAMAST_SPEC_SUFFIX))
+    return csv_path
+
+
+def test_inspect_shows_the_unit_as_a_label_only(parquet_with_unit, script_runner):
+    result = script_runner.run(['damast', 'inspect', '-f', str(parquet_with_unit)])
+
+    assert result.returncode == 0
+    # the row output labels an annotated column with its unit ...
+    assert "height (m)" in result.stdout
+
+    # ... but that label is presentation only: the column is named 'height' on disk and in
+    # the metadata, and the unit is carried by the annotation
+    assert polars.scan_parquet(parquet_with_unit).collect_schema().names() == ["height", "letter"]
+    adf = AnnotatedDataFrame.from_files([str(parquet_with_unit)])
+    assert adf.column_names == ["height", "letter"]
+    assert adf.metadata["height"].unit == units.m
+
+
+def test_convert_keeps_the_unit_out_of_the_column_name(csv_with_unit, tmp_path, script_runner):
+    output_file = tmp_path / "converted.parquet"
+    result = script_runner.run(['damast', 'convert', '-f', str(csv_with_unit), '--save-as', str(output_file)])
+
+    assert result.returncode == 0
+    assert polars.scan_parquet(output_file).collect_schema().names() == ["height", "letter"]
+
+    converted = AnnotatedDataFrame.from_files([str(output_file)])
+    assert converted.metadata["height"].unit == units.m

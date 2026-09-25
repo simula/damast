@@ -116,6 +116,39 @@ class DataInspectParser(BaseParser):
 
         return generated_fields
 
+    def resolve_column_names(self, adf: AnnotatedDataFrame, columns: list[str]) -> list[str]:
+        """
+        Map user-given column names onto the dataframe's actual column names.
+
+        The row output labels annotated columns with their unit, e.g. 'latitude (deg)',
+        so accept that display form as well as the plain column name.
+
+        Args:
+            adf: The dataframe whose columns are being selected
+            columns: Column names as given on the command line
+
+        Returns:
+            The corresponding names in the dataframe
+
+        Raises:
+            ValueError: If a name matches no column
+        """
+        column_names = adf.column_names
+        resolved = []
+        for name in columns:
+            if name in column_names:
+                resolved.append(name)
+                continue
+
+            # strip a trailing unit annotation, e.g. 'latitude (deg)' -> 'latitude'
+            m = re.match(r"^(.*?)\s*\([^()]*\)$", name)
+            if m and m.group(1) in column_names:
+                resolved.append(m.group(1))
+            else:
+                raise ValueError(f"Column '{name}' does not exist."
+                                 f" Available columns are: {', '.join(column_names)}")
+        return resolved
+
     def expand_filter_arg(self, adf: AnnotatedDataFrame, arg: str):
         if arg in adf.column_names:
             return f"pl.col('{arg}')"
@@ -147,6 +180,8 @@ class DataInspectParser(BaseParser):
                                      f" Select from: {[x.value.lower() for x in ValidationMode]}")
 
                 adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False, validation_mode=validation_mode)
+
+                columns = self.resolve_column_names(adf, args.columns) if args.columns else None
 
                 if args.filter:
                     filter_values = ""
@@ -200,14 +235,16 @@ class DataInspectParser(BaseParser):
                     adf.validate_metadata(validation_mode=ValidationMode.UPDATE_METADATA)
 
                 generated_fields = self.fill_missing_value_stats(adf)
-                print(adf.metadata.to_str(columns=args.columns, generated_fields=generated_fields))
+                print(adf.metadata.to_str(columns=columns, generated_fields=generated_fields))
                 print(f"\n\nFirst {args.head} and last {args.tail} rows:")
                 df = adf.lazyframe
 
-                df = df.select(pl.all().name.map(lambda name: name + f" ({unit})" if name in adf.metadata and (unit := getattr(adf.metadata[name], "unit", None)) else name))
+                if columns:
+                    df = df.select(columns)
 
-                if args.columns:
-                    df = df.select(args.columns)
+                # label columns with their unit - after the selection, so that --columns can be
+                # given as plain column names
+                df = df.select(pl.all().name.map(lambda name: name + f" ({unit})" if name in adf.metadata and (unit := getattr(adf.metadata[name], "unit", None)) else name))
 
                 with pl.Config(tbl_rows=args.head, tbl_cols=args.column_count, fmt_str_lengths=args.column_width):
                     print(df.head(n=args.head).collect())
