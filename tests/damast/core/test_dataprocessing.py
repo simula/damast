@@ -702,6 +702,46 @@ def test_toplevel_decorators(tmp_path):
     p.transform(df=adf)
 
 
+def test_decorators_accept_string_return_annotation(tmp_path):
+    """
+    A module using 'from __future__ import annotations' (PEP 563) hands the decorators the
+    return annotation as a string - the transformer is valid all the same.
+    """
+    df = polars.LazyFrame([["10000000", 0]], ["mmsi", "status"], orient="row")
+    adf = AnnotatedDataFrame(df, MetaData(columns=[DataSpecification(name="mmsi"),
+                                                   DataSpecification(name="status", unit=units.deg)]))
+
+    class TransformX(PipelineElement):
+
+        @damast.describe("Generic transform of x")
+        @damast.input({"x": {"unit": units.deg}})
+        @damast.output({})
+        @damast.artifacts({"file": "string-annotation.damast"})
+        def transform(self, df: AnnotatedDataFrame) -> "AnnotatedDataFrame":
+            (self.parent_pipeline.base_dir / "string-annotation.damast").write_text("test")
+            return df
+
+    pipeline = DataProcessingPipeline(name="string-annotation-test", base_dir=tmp_path) \
+        .add(name="status-transform", transformer=TransformX(), name_mappings={"x": "status"})
+    pipeline.transform(df=adf)
+
+    assert (tmp_path / "string-annotation.damast").exists()
+
+
+@pytest.mark.parametrize("decorator", [damast.output({}), damast.artifacts({"file": "test.damast"})])
+def test_decorators_reject_other_return_annotation(decorator):
+    """Any other return annotation - string or not - remains an error."""
+    with pytest.raises(RuntimeError, match="AnnotatedDataFrame"):
+        @decorator
+        def transform(self, df: AnnotatedDataFrame) -> polars.LazyFrame:
+            return df
+
+    with pytest.raises(RuntimeError, match="AnnotatedDataFrame"):
+        @decorator
+        def transform_by_name(self, df: AnnotatedDataFrame) -> "polars.LazyFrame":
+            return df
+
+
 def test_save(tmp_path):
     pipeline = DataProcessingPipeline(name="abc",
                                       base_dir=tmp_path) \

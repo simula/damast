@@ -17,6 +17,26 @@ from .metadata import ArtifactSpecification, DataSpecification
 from .transformations import PipelineElement
 
 
+def _require_annotated_dataframe_return(func, *, decorator_name: str) -> None:
+    """
+    Ensure a decorated function is annotated as returning an :class:`AnnotatedDataFrame`.
+
+    The annotation is accepted both as the class itself and as the string ``'AnnotatedDataFrame'``,
+    since a module using ``from __future__ import annotations`` (PEP 563) only ever hands over
+    strings - the transformer is perfectly valid in that case.
+
+    :param func: the function being decorated
+    :param decorator_name: name of the calling decorator, for the error message
+    :raise RuntimeError: if the function is not annotated as returning an ``AnnotatedDataFrame``
+    """
+    return_type = inspect.signature(func).return_annotation
+    if return_type not in (AnnotatedDataFrame, "AnnotatedDataFrame"):
+        raise RuntimeError(
+            f"{decorator_name}: decorator requires 'AnnotatedDataFrame' to be returned by"
+            f" function - but was '{return_type}'"
+        )
+
+
 def _get_dataframe(*args, **kwargs) -> AnnotatedDataFrame:
     """
     Extract the dataframe from positional or keyword arguments
@@ -169,11 +189,7 @@ def output(requirements: dict[str, Any], exclusive: bool = False):
     )
 
     def decorator(func):
-        return_type = inspect.signature(func).return_annotation
-        if return_type != AnnotatedDataFrame and return_type != 'AnnotatedDataFrame':
-            raise RuntimeError(
-                f"output: decorator requires 'AnnotatedDataFrame' to be returned by function - but was '{return_type}'"
-            )
+        _require_annotated_dataframe_return(func, decorator_name="output")
 
         setattr(func, DECORATED_OUTPUT_SPECS, required_output_specs)
         setattr(func, DECORATED_OUTPUT_EXCLUSIVE, exclusive)
@@ -262,11 +278,7 @@ def artifacts(requirements: dict[str, Any]):
     required_artifact_specs = ArtifactSpecification(requirements=requirements)
 
     def decorator(func):
-        return_type = inspect.signature(func).return_annotation
-        if return_type != AnnotatedDataFrame:
-            raise RuntimeError(
-                "artifacts: decorator requires 'AnnotatedDataFrame' to be returned by function"
-            )
+        _require_annotated_dataframe_return(func, decorator_name="artifacts")
 
         setattr(func, DECORATED_ARTIFACT_SPECS, required_artifact_specs)
 
