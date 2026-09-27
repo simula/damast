@@ -128,6 +128,7 @@ version = {attr = "damast.version.__version__"}
 
 [tool.setuptools.package-data]
 "damast.viz" = ["templates/mermaid/*.j2"]
+"damast.domains" = ["maritime/ais/mmsi_categories.yaml"]
 
 [tool.mypy]
 ignore_missing_imports = true
