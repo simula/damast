@@ -214,7 +214,8 @@ class DataInspectParser(BaseParser):
                                 elif op == "!=":
                                     new_filter = lhs
                             elif op == "=~":
-                                new_filter = f"{lhs}.str.contains(r'{rhs}')"
+                                # cast to string if this is not already a string
+                                new_filter = f"{lhs}.cast(pl.String).str.contains(r'{rhs}')"
                             else:
                                 rhs = self.expand_filter_arg(adf, rhs)
                                 new_filter = f"{lhs} {op} {rhs}"
