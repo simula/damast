@@ -195,7 +195,16 @@ class DataProcessingPipeline(PipelineElement):
         transformer.set_parent(pipeline=self)
         if name_mappings is not None:
             if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
+                known_spec = set([x.name for x in transformer.input_specs[DAMAST_DEFAULT_DATASOURCE]]).union(set([x.name for x in transformer.output_specs]))
                 transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings.copy() }
+
+                unknown = set(name_mappings.keys()) - known_spec
+                unassigned = known_spec - set(name_mappings.keys())
+                if unknown:
+                    msg = f"{transformer.__class__.__name__}: cannot map from: {', '.join(unknown)}"
+                    if unassigned:
+                        msg += f", did you mean to map from one of: {', '.join(unassigned)}?"
+                    raise ValueError(msg)
 
         self.processing_graph.add_node(
                 Node(name=name,
