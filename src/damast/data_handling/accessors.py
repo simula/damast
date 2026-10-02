@@ -403,20 +403,50 @@ class GroupSequenceAccessor(_GroupAccessorBase):
 
 
 class GroupWindowAccessor(_GroupAccessorBase):
-    """
+    r"""
     A generator of fixed-duration windows of a group, resampled onto a regular time grid.
 
-    Unlike :class:`GroupSequenceAccessor`, which takes a fixed *number* of rows, this accessor takes a
-    fixed *duration*: the input covers ``window`` and the targets lie up to ``forecast_horizon`` beyond it,
-    independent of how often a group reports. Each window is linearly interpolated onto equidistant
-    time points, so that the resulting dataset (X) has a shape of
+    While :class:`GroupSequenceAccessor` takes a fixed *number of samples* (aka rows in a timeseries),
+    this accessor account for a fixed *time window* for inputs and output for a ``forecast_horizon``.
+    This is independent of how many sample a group hold for this time window: each windows samples are interpolated onto equidistant
+    time points.
+    The resulting dataset (X) has a shape of
     :code:`(<batch_size>, <sequence_length>, <number-of-features>)`, and the targets (y) a shape of
     :code:`(<batch_size>, <forecast_length>, <number-of-targets>)`.
 
-    A window is only used if no two consecutive rows of the group within it - including the forecast
-    horizon - are further apart than ``max_gap``, so that interpolation never bridges more than ``max_gap``.
+    Usage of a window is constrained: a window is only used if all consecutive rows of the group (including the forecast
+    horizon) lie no further apart than ``max_gap``. Hence, an interpolation never bridges more than ``max_gap``.
     Window starts are drawn uniformly in time, not per row, so that periods of a high reporting rate are
     not favoured.
+
+    Formally, let :math:`t_1 < \dots < t_n` be the observation times of a group, and
+
+    * :math:`\Delta` = maximum admissible gap (``max_gap``)
+    * :math:`H^{-}` = input window duration (``window``)
+    * :math:`H^{+}` = forecast horizon (``forecast_horizon``)
+    * :math:`L^{-}` = input sequence length (``sequence_length``)
+    * :math:`L^{+}` = forecast sequence length (``forecast_length``)
+    * :math:`H = H^{-} + H^{+}` = total horizon spanned by one window
+
+    The group is split into maximal *segments* :math:`[a, b]` whose consecutive observations satisfy
+    :math:`t_i - t_{i-1} \le \Delta`, and only those with :math:`b - a \ge H` are used.
+    A window is a start :math:`t_0 \in [a, b - H]`, sampled on the grid
+
+    .. math::
+        \tau_l = \frac{l-1}{L^{-} - 1} H^{-}, \quad l = 1 \dots L^{-},
+        \qquad
+        \sigma_k = H^{-} + \frac{k}{L^{+}} H^{+}, \quad k = 1 \dots L^{+}
+
+    so that the input spans the closed interval :math:`[t_0, t_0 + H^{-}]` and the targets lie in
+    :math:`(t_0 + H^{-}, t_0 + H]`. Each value is the linear interpolation of the two observations
+    bracketing its grid point; since :math:`[t_0, t_0 + H] \subseteq [a, b]`, those are never more
+    than :math:`\Delta` apart, which bounds the resampling error by :math:`M \Delta^2 / 8` for a signal
+    with :math:`|v''| \le M`.
+
+    With ``infinite=True`` the group is drawn uniformly and :math:`t_0` uniformly over the union of its
+    valid start intervals, i.e. uniformly in time rather than per row. With ``infinite=False`` each
+    segment is tiled by its :math:`\lfloor (b - a) / H \rfloor` non-overlapping windows
+    :math:`t_0 = a + jH`, so that every observation contributes to at most one target.
 
     .. warning::
         All features and targets are interpolated linearly. Angular values such as course or heading
