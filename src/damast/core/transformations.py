@@ -712,6 +712,25 @@ class PipelineElement(Transformer):
         return specs
 
     @property
+    def declared_names(self) -> set[str]:
+        """
+        The input and output names exactly as the decorators declare them, i.e. before name
+        mappings and ``{{...}}`` patterns are resolved - unlike :attr:`input_specs` and
+        :attr:`output_specs`, whose names are already resolved.
+
+        These are the keys a ``name_mappings`` can map *from*: :func:`get_name` looks a declared
+        name up in the mappings first, and only resolves a pattern when it finds none, so mapping
+        from the resolved form of a pattern would have no effect.
+
+        :return: The declared input and output names
+        """
+        names = set()
+        for speclist in getattr(self.transform, DECORATED_INPUT_SPECS, {}).values():
+            names.update(spec.name for spec in speclist)
+        names.update(spec.name for spec in getattr(self.transform, DECORATED_OUTPUT_SPECS, []))
+        return names
+
+    @property
     def exclusive_output(self) -> bool:
         """Whether the output consists of exactly :attr:`output_specs`, see :func:`damast.core.decorators.output`"""
         return getattr(self.transform, DECORATED_OUTPUT_EXCLUSIVE, False)

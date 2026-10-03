@@ -195,7 +195,10 @@ class DataProcessingPipeline(PipelineElement):
         transformer.set_parent(pipeline=self)
         if name_mappings is not None:
             if len(transformer.input_specs) == 1 and DAMAST_DEFAULT_DATASOURCE not in name_mappings:
-                known_spec = set([x.name for x in transformer.input_specs[DAMAST_DEFAULT_DATASOURCE]]).union(set([x.name for x in transformer.output_specs]))
+                # the declared names, not input_specs/output_specs: a mapping maps from the name
+                # as declared, so a pattern like 'reverse_{{local_index}}' must be matched in that
+                # form - its resolved form is not a key one can map from
+                known_spec = transformer.declared_names
                 transformer._name_mappings = { DAMAST_DEFAULT_DATASOURCE: name_mappings.copy() }
 
                 unknown = set(name_mappings.keys()) - known_spec

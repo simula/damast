@@ -668,6 +668,39 @@ def test_decorator_renaming(varname, tmp_path):
     assert getattr(TransformX.transform, DECORATED_OUTPUT_SPECS)[0].name == "{{" + varname + "}}_suffix"
 
 
+class TransformPattern(PipelineElement):
+    """A transformer whose output name is derived from a renameable input."""
+
+    @damast.core.describe("Generic transform of x")
+    @damast.core.input({"x": {"unit": units.deg}})
+    @damast.core.output({"reverse_{{x}}": {"unit": units.deg}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df[self.get_name("reverse_{{x}}")] = df[self.get_name("x")]
+        return df
+
+
+def test_name_mappings_map_from_the_declared_pattern(tmp_path):
+    """A '{{...}}' output is mapped from the pattern itself, not from its resolved form."""
+    assert TransformPattern().declared_names == {"x", "reverse_{{x}}"}
+
+    element = TransformPattern()
+    DataProcessingPipeline(name="pattern", base_dir=tmp_path).add(
+        "transform", element, name_mappings={"x": "status", "reverse_{{x}}": "status_reversed"})
+
+    # the mapping took effect - without it the name would resolve to 'reverse_status'
+    assert element.output_specs[0].name == "status_reversed"
+
+
+def test_name_mappings_reject_an_unknown_name(tmp_path):
+    """The resolved form of a pattern is not a key one can map from, so it is still a typo."""
+    with pytest.raises(ValueError, match=re.escape("cannot map from: reverse_x")) as exc_info:
+        DataProcessingPipeline(name="pattern-typo", base_dir=tmp_path).add(
+            "transform", TransformPattern(),
+            name_mappings={"x": "status", "reverse_x": "status_reversed"})
+
+    assert "did you mean to map from one of: reverse_{{x}}?" in str(exc_info.value)
+
+
 def test_toplevel_decorators(tmp_path):
     data = [["10000000", 0]]
     column_names = ["mmsi", "status"]
