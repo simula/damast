@@ -798,6 +798,14 @@ class PipelineElement(Transformer):
             the ``DAMAST_PLUGIN_PATH`` environment variable are scanned for a matching
             '<module_name>.py' file before giving up - see :func:`list_plugins`.
 
+        .. note::
+            If ``module_name`` itself is unavailable, ``class_name`` is resolved within its
+            plugin package - the top-level package of ``module_name``, see
+            :func:`PluginManager.plugin_package`. A transformer is saved under the module it
+            was resolved from, which differs between a local plugin directory and the same
+            code installed as a package, so this keeps a saved pipeline replayable across
+            both. The substitution is logged as a warning.
+
         :raise ValueError: If module or class with given name is not specified
         :raise ImportError: If class could not be loaded
         """
@@ -812,15 +820,28 @@ class PipelineElement(Transformer):
 
         plugin_manager.load_local_plugins()
 
+        klass = None
         try:
-            p_module = importlib.import_module(module_name)
+            klass = getattr(importlib.import_module(module_name), class_name, None)
         except ImportError:
-            raise ImportError(cls._missing_plugin_message(module_name, class_name, requires))
+            # only an unavailable module is recoverable below - a module that fails to import
+            # on its own (SyntaxError, missing dependency) must still surface its real error
+            pass
 
-        if hasattr(p_module, class_name):
-            klass = getattr(p_module, class_name)
-        else:
-            raise ImportError(cls._missing_plugin_message(module_name, class_name, requires))
+        if klass is None:
+            # The module a transformer was saved under depends on how its plugin package was
+            # resolved then - a local plugin directory and the same code installed as a package
+            # give different paths. Resolve the class within its plugin package instead.
+            package = plugin_manager.plugin_package(module_name)
+            try:
+                klass = plugin_manager.resolve_plugin(package, class_name)
+            except AttributeError:
+                raise ImportError(cls._missing_plugin_message(module_name, class_name, requires))
+
+            logger.warning(f"{cls.__name__}.create_new: '{class_name}' was saved as '{module_name}',"
+                           f" which is not available - using '{klass.__module__}' from plugin"
+                           f" package '{package}' instead")
+
         if parameters:
             instance = klass(**parameters)
         else:

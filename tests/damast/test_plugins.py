@@ -441,3 +441,34 @@ def test_pipeline_saved_from_named_plugin_dir_replays_against_installed_package(
     instance = PipelineElement.create_new(**saved_step)
     assert type(instance).__module__ == "acme_named.main"
     assert "site" in Path(sys.modules["acme_named.main"].__file__).parts
+
+
+def test_pipeline_replays_when_the_installed_module_path_differs(
+        named_plugin_dir, installed_package, fake_entry_points, monkeypatch, caplog):
+    saved_step = dict(PipelineElement.create_new(module_name="acme_named.main", class_name="LocalDoubler"))
+
+    # elsewhere: the same code sits one level deeper, as 'acme_named.transformers.main' - the
+    # module the transformer was saved under does not exist there
+    monkeypatch.delenv(PluginManager.PLUGIN_PATH_ENV)
+    plugin_manager.reload()
+    installed_package("acme_named", {"__init__.py": "",
+                                     "transformers/__init__.py": "",
+                                     "transformers/main.py": LOCAL_TRANSFORMER_SOURCE})
+    fake_entry_points("acme_named", "acme_named.transformers")
+
+    with caplog.at_level("WARNING"):
+        instance = PipelineElement.create_new(**saved_step)
+
+    assert type(instance).__module__ == "acme_named.transformers.main"
+    assert any("was saved as 'acme_named.main'" in record.message for record in caplog.records)
+
+
+def test_unresolvable_plugin_package_still_raises(named_plugin_dir, monkeypatch):
+    """The fallback resolves within the saved plugin package - it must not mask a missing one."""
+    saved_step = dict(PipelineElement.create_new(module_name="acme_named.main", class_name="LocalDoubler"))
+
+    monkeypatch.delenv(PluginManager.PLUGIN_PATH_ENV)
+    plugin_manager.reload()
+
+    with pytest.raises(ImportError, match="could not load 'LocalDoubler' from 'acme_named.main'"):
+        PipelineElement.create_new(**saved_step)
