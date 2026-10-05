@@ -1,4 +1,7 @@
 import importlib
+import numpy as np
+import polars as pl
+import random
 import sys
 
 if sys.version_info < (3,11):
@@ -27,3 +30,10 @@ def ensure_packages(pkgs: list[str], required_for: str, hint: str | None = None,
 
         if not importlib.util.find_spec(pkg):
             raise RuntimeError(msg)
+
+
+def set_random_seed(seed: int | None = 23):
+    """Set the random seed for all involved modules"""
+    random.seed(seed)
+    np.random.seed(seed)
+    pl.set_random_seed(seed)
