@@ -7,8 +7,10 @@ statistics) alongside per-step timing, for audit trails of scientific runs.
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from abc import ABC, abstractmethod
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +18,71 @@ if TYPE_CHECKING:
     from damast.core.dataframe import AnnotatedDataFrame
     from damast.core.metadata import MetaData
 
-__all__ = ["ExperimentTracker", "flatten_metadata", "flatten_step_stats"]
+__all__ = [
+    "ExperimentTracker",
+    "flatten_metadata",
+    "flatten_step_params",
+    "flatten_step_stats",
+]
+
+#: Characters MLflow rejects in a metric or parameter name - it permits alphanumerics,
+#: underscore, dash, period, space and slash
+_UNSAFE_NAME = re.compile(r"[^0-9a-zA-Z_\-./ ]")
+
+
+def _safe_name(path: str) -> str:
+    """
+    Make a dotted path usable as a metric or parameter name.
+
+    A tracker names its own statistics, and a name can reach here from data - a tracked column,
+    for instance, which damast itself may label `latitude (deg)`. Sanitising here keeps such a
+    name from failing the run when it is logged.
+
+    Args:
+        path: The dotted path to sanitise.
+
+    Returns:
+        The path with every character MLflow rejects replaced by an underscore.
+    """
+    return _UNSAFE_NAME.sub("_", path)
+
+
+def _leaves(value: Any, prefix: str = "") -> Iterator[tuple[str, Any]]:
+    """
+    Every non-mapping leaf of a nested mapping, with its dotted path.
+
+    A list is a leaf rather than something to descend into, so that e.g. a sample of removed
+    values stays a single entry.
+
+    Args:
+        value: The value to walk.
+        prefix: The path accumulated so far.
+
+    Yields:
+        A `(dotted path, leaf value)` pair per leaf.
+    """
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            yield from _leaves(child, f"{prefix}.{key}" if prefix else str(key))
+    else:
+        yield prefix, value
+
+
+def _is_metric(value: Any) -> bool:
+    """
+    Whether a leaf is a measurement rather than something to record as a parameter.
+
+    `bool` is excluded although `isinstance(True, int)` holds in Python: a flag such as "the
+    sample was truncated" is not a quantity to plot. :func:`flatten_step_params` takes exactly
+    the leaves this rejects, so nothing a tracker reports is dropped.
+
+    Args:
+        value: The leaf value to classify.
+
+    Returns:
+        `True` if the value belongs in metrics.
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def flatten_metadata(
@@ -71,7 +137,20 @@ def flatten_metadata(
 
 def flatten_step_stats(processing_stats: dict[str, dict[str, Any]]) -> dict[str, float]:
     """
-    Flatten `DataProcessingPipeline.processing_stats` into tracker-agnostic metrics.
+    Flatten the numeric part of `DataProcessingPipeline.processing_stats` into metrics.
+
+    Every numeric leaf becomes `step.<step name>.<dotted path>`, whatever
+    `damast.core.tracking.PipelineElementTracker` produced it - so a new tracker's measurements
+    are reported without a change here. Non-numeric leaves and flags go to
+    :func:`flatten_step_params`.
+
+    Example:
+
+    ```python
+    metrics = flatten_step_stats(pipeline.processing_stats)
+    # {"step.valid_mmsi.rows_removed": 4.0,
+    #  "step.valid_mmsi.keys.mmsi.unique_removed": 4.0, ...}
+    ```
 
     Args:
         processing_stats: Per-step stats, as returned by
@@ -82,14 +161,39 @@ def flatten_step_stats(processing_stats: dict[str, dict[str, Any]]) -> dict[str,
     """
     metrics: dict[str, float] = {}
     for step_name, stats in processing_stats.items():
-        for key in ("processing_time_in_s", "output_dataframe_length"):
-            if key in stats:
-                metrics[f"step.{step_name}.{key}"] = float(stats[key])
-
-        for source, length in stats.get("input_dataframe_length", {}).items():
-            metrics[f"step.{step_name}.input_dataframe_length.{source}"] = float(length)
+        for path, value in _leaves(stats):
+            if _is_metric(value):
+                metrics[_safe_name(f"step.{step_name}.{path}")] = float(value)
 
     return metrics
+
+
+def flatten_step_params(processing_stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """
+    Flatten the non-numeric part of `DataProcessingPipeline.processing_stats` into parameters.
+
+    The counterpart of :func:`flatten_step_stats`: it takes exactly the leaves that are not
+    measurements - timestamps, flags such as whether a sample was truncated, and the sampled
+    values themselves - so that nothing a tracker reports is lost. Containers are JSON-encoded,
+    as in :func:`flatten_metadata`.
+
+    Args:
+        processing_stats: Per-step stats, as returned by
+            `DataProcessingPipeline.processing_stats`.
+
+    Returns:
+        A flat mapping of parameter name to value.
+    """
+    params: dict[str, Any] = {}
+    for step_name, stats in processing_stats.items():
+        for path, value in _leaves(stats):
+            if _is_metric(value):
+                continue
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, default=str)
+            params[_safe_name(f"step.{step_name}.{path}")] = value
+
+    return params
 
 
 class ExperimentTracker(ABC):
