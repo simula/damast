@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from damast.utils import ensure_packages
 
-from .tracking import ExperimentTracker, flatten_step_stats
+from .tracking import ExperimentTracker, flatten_step_params, flatten_step_stats
 
 if TYPE_CHECKING:
     from damast.core.dataprocessing import DataProcessingPipeline
@@ -71,10 +71,10 @@ def track_pipeline(
     Report a `DataProcessingPipeline` run to MLflow.
 
     Starts an MLflow run, yields a `MLflowTracker` to log the result against (call
-    `tracker.log_result(adf)` on the transformed dataframe), and on exit always logs the
-    pipeline's per-step timing/row-count stats (`DataProcessingPipeline.processing_stats`,
-    partial if the pipeline raised) and ends the run - `FAILED` if the `with` block raised,
-    `FINISHED` otherwise.
+    `tracker.log_result(adf)` on the transformed dataframe), and on exit always logs whatever
+    the pipeline's trackers reported about each step (`DataProcessingPipeline.processing_stats`,
+    partial if the pipeline raised) - the measurements as metrics, the rest as parameters - and
+    ends the run: `FAILED` if the `with` block raised, `FINISHED` otherwise.
 
     Example:
 
@@ -116,4 +116,7 @@ def track_pipeline(
         step_metrics = flatten_step_stats(pipeline.processing_stats)
         if step_metrics:
             tracker.log_metrics(step_metrics)
+        step_params = flatten_step_params(pipeline.processing_stats)
+        if step_params:
+            tracker.log_params(step_params)
         tracker.end_run(status=status)

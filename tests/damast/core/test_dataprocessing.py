@@ -10,6 +10,7 @@ import damast
 from damast.core.data_description import CyclicMinMax, MinMax
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline, PipelineElement
+from damast.core.tracking import KeyTracker, RowCountTracker
 from damast.core.decorators import (
     DAMAST_DEFAULT_DATASOURCE,
     DECORATED_INPUT_SPECS,
@@ -1125,3 +1126,116 @@ def test_exclusive_output_join(tmp_path):
 
     adf = pipeline.transform(df=_annotated(key=[1], x=[2]), other=_annotated(key=[3], y=[4]))
     assert adf.column_names == ["key"]
+
+
+# --- per-step effect statistics -------------------------------------------------------------
+
+def _keyed_adf(mmsis: list[int]) -> AnnotatedDataFrame:
+    return AnnotatedDataFrame(
+        polars.LazyFrame({"mmsi": mmsis}),
+        metadata=MetaData([DataSpecification(name="mmsi")]),
+        validation_mode=damast.core.ValidationMode.IGNORE,
+    )
+
+
+def _keep_valid_mmsi(tmp_path, **kwargs) -> DataProcessingPipeline:
+    from damast.data_handling.transformers.filters import Filter
+
+    return DataProcessingPipeline(name="prepare", base_dir=tmp_path, **kwargs).add(
+        "valid_mmsi", Filter(operator=">=", value=999999), name_mappings={"x": "mmsi"})
+
+
+def test_default_trackers_report_timing_and_rows(tmp_path):
+    """The out-of-the-box tracker set covers what a pipeline reported before trackers existed."""
+    pipeline = _keep_valid_mmsi(tmp_path)
+    pipeline.transform(df=_keyed_adf([0, 1, 2, 3, 999999, 1000000, 1000000, 227991212]))
+
+    stats = pipeline.processing_stats["valid_mmsi"]
+    assert set(stats) == {"start_time", "end_time", "processing_time_in_s",
+                          "input_dataframe_length", "output_dataframe_length", "rows_removed"}
+    assert stats["input_dataframe_length"] == {"df": 8}
+    assert stats["output_dataframe_length"] == 4
+    assert stats["rows_removed"] == 4
+
+
+def test_trackers_can_be_replaced(tmp_path):
+    """A given list replaces the defaults rather than adding to them."""
+    pipeline = _keep_valid_mmsi(tmp_path, trackers=[RowCountTracker()])
+    pipeline.transform(df=_keyed_adf([0, 999999]))
+
+    stats = pipeline.processing_stats["valid_mmsi"]
+    assert "rows_removed" in stats
+    assert "processing_time_in_s" not in stats
+
+
+def test_without_trackers_nothing_is_collected(tmp_path):
+    pipeline = _keep_valid_mmsi(tmp_path, trackers=[])
+    pipeline.transform(df=_keyed_adf([0, 999999]))
+
+    assert pipeline.processing_stats["valid_mmsi"] == {}
+
+
+def test_key_tracker_reports_removed_entities_through_the_pipeline(tmp_path):
+    pipeline = _keep_valid_mmsi(
+        tmp_path, trackers=[RowCountTracker(), KeyTracker(["mmsi"], max_removed_keys=3)])
+    pipeline.transform(df=_keyed_adf([0, 1, 2, 3, 999999, 1000000, 1000000, 227991212]))
+
+    keys = pipeline.processing_stats["valid_mmsi"]["keys"]["mmsi"]
+    assert keys["unique_in"] == 7
+    assert keys["unique_out"] == 3
+    assert keys["unique_removed"] == 4
+    assert keys["removed_sample"] == [0, 1, 2]
+    assert keys["removed_truncated"] is True
+
+
+def test_the_callers_own_tracker_instance_is_the_one_that_runs(tmp_path):
+    """
+    'prepare' deep-copies the pipeline, so a copied tracker would silently collect instead -
+    leaving the instance the caller holds empty.
+    """
+    tracker = KeyTracker(["mmsi"])
+    pipeline = _keep_valid_mmsi(tmp_path, trackers=[tracker])
+    pipeline.transform(df=_keyed_adf([0, 999999]))
+
+    assert pipeline.trackers[0] is tracker
+
+
+def test_trackers_can_be_set_on_a_loaded_pipeline(tmp_path):
+    """A pipeline from load() is built from the file alone, so its trackers are the defaults."""
+    _keep_valid_mmsi(tmp_path).save(tmp_path)
+
+    pipeline = DataProcessingPipeline.load(tmp_path / "prepare.damast.ppl")
+    pipeline.base_dir = tmp_path
+    pipeline.trackers = [KeyTracker(["mmsi"])]
+    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+
+    assert pipeline.processing_stats["valid_mmsi"]["keys"]["mmsi"]["unique_removed"] == 2
+
+
+def test_processing_stats_are_reset_per_run(tmp_path):
+    """The stats describe the last run, as the property documents."""
+    pipeline = _keep_valid_mmsi(tmp_path, trackers=[RowCountTracker(), KeyTracker(["mmsi"])])
+
+    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+    assert pipeline.processing_stats["valid_mmsi"]["rows_removed"] == 2
+
+    pipeline.transform(df=_keyed_adf([999999, 1000000]))
+    assert pipeline.processing_stats["valid_mmsi"]["rows_removed"] == 0
+    # reported even when nothing was removed, so the counts are a series across runs
+    assert pipeline.processing_stats["valid_mmsi"]["keys"]["mmsi"]["unique_removed"] == 0
+
+
+def test_transform_writes_a_statistics_report(tmp_path):
+    """A run leaves an audit trail on disk, without needing an experiment tracker."""
+    import yaml
+
+    pipeline = _keep_valid_mmsi(tmp_path, trackers=[RowCountTracker(), KeyTracker(["mmsi"])])
+    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+
+    report_file = tmp_path / "prepare.stats.yaml"
+    assert report_file.exists()
+
+    report = yaml.safe_load(report_file.read_text())
+    assert report["name"] == "prepare"
+    assert report["steps"]["valid_mmsi"]["rows_removed"] == 2
+    assert report["steps"]["valid_mmsi"]["keys"]["mmsi"]["removed_sample"] == [0, 1]

@@ -9,7 +9,6 @@ import os
 import tempfile
 import traceback as tc
 from collections import OrderedDict
-from datetime import datetime, timezone
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from .constants import DAMAST_DEFAULT_DATASOURCE
 from .dataframe import AnnotatedDataFrame
 from .metadata import DataSpecification, MetaData
 from .pydantic_export import PydanticExporter
+from .tracking import PipelineElementTracker, RowCountTracker, TimingTracker
 
 __all__ = [
     "DataProcessingPipeline",
@@ -37,6 +37,9 @@ logger: Logger = getLogger(__name__)
 DAMAST_PIPELINE_SUFFIX: str = ".damast.ppl"
 """Suffix of :class:`DataProcessingPipeline` files created in :func:`DataProcessingPipeline.save`
 and used by :func:`DataProcessingPipeline.load`"""
+
+DAMAST_STATS_SUFFIX: str = ".stats.yaml"
+"""Suffix of the per-run report created by :func:`DataProcessingPipeline.save_stats`"""
 
 VAEX_STATE_SUFFIX: str = ".vaex-state.json"
 """Suffix of :class:`DataProcessingPipeline` files created in :func:`DataProcessingPipeline.save_state`
@@ -53,6 +56,12 @@ class DataProcessingPipeline(PipelineElement):
     :param inplace_transformation: If true, the input :class:`damast.core.dataframe.AnnotatedDataFrame` is not
         copied when calling :func:`transform`. Else input data-frame is untouched
     :param name_mappings: Name mappings that should be applied to individual transformations.
+    :param trackers: Observers of what each step does to the data, see
+        :class:`damast.core.tracking.PipelineElementTracker`. What they report ends up in
+        :func:`processing_stats`. Defaults to a :class:`damast.core.tracking.TimingTracker` and a
+        :class:`damast.core.tracking.RowCountTracker`; pass a list to add to or replace those, e.g.
+        a :class:`damast.core.tracking.KeyTracker` to also count distinct entities. An empty list
+        collects nothing.
 
     :raises ValueError: If any of the transformer names are `None`
     :raises AttributeError: If the transformer is missing the :func:`transform` function
@@ -80,6 +89,11 @@ class DataProcessingPipeline(PipelineElement):
     _name_mappings: dict[str, dict[str, str]]
     _processing_stats: dict[str, dict[str, Any]]
 
+    #: Observers of what each step does to the data
+    _trackers: list[PipelineElementTracker]
+    #: uuids of the steps between their start and their end, to keep a tracker from seeing one twice
+    _steps_in_flight: set[Any]
+
     _meta: dict[str, str]
 
     def __init__(self, *,
@@ -90,6 +104,7 @@ class DataProcessingPipeline(PipelineElement):
                  inplace_transformation: bool = False,
                  name_mappings: dict[str, dict[str, str]] = { DAMAST_DEFAULT_DATASOURCE: {}},
                  meta: dict[str, str] | None = None,
+                 trackers: list[PipelineElementTracker] | None = None,
                  ):
         super().__init__()
 
@@ -102,6 +117,9 @@ class DataProcessingPipeline(PipelineElement):
 
         self._name_mappings = name_mappings
         self._processing_stats = {}
+
+        self._trackers = list(trackers) if trackers is not None else [TimingTracker(), RowCountTracker()]
+        self._steps_in_flight = set()
 
         self.processing_graph = ProcessingGraph()
         if processing_graph:
@@ -159,14 +177,29 @@ class DataProcessingPipeline(PipelineElement):
     @property
     def processing_stats(self) -> dict[str, dict[str, Any]]:
         """
-        Per-step timing and row-count statistics collected by the last :func:`transform` run.
+        What the :attr:`trackers` reported about each step of the last :func:`transform` run.
 
-        Keyed by step name, e.g. ``{"my_step": {"processing_time_in_s": 0.1,
-        "input_dataframe_length": {...}, "output_dataframe_length": 123, ...}}``. Populated
-        incrementally by :func:`on_transform_start`/:func:`on_transform_end` as steps run, so
-        it also reflects partial progress if a pipeline fails mid-run.
+        Keyed by step name, holding the merged result of every tracker, e.g.
+        ``{"my_step": {"processing_time_in_s": 0.1, "input_dataframe_length": {...},
+        "output_dataframe_length": 123, "rows_removed": 7, ...}}``. Filled in as steps run, so it
+        also reflects partial progress if a pipeline fails mid-run.
         """
         return self._processing_stats
+
+    @property
+    def trackers(self) -> list[PipelineElementTracker]:
+        """
+        The observers of what each step does to the data, see
+        :class:`damast.core.tracking.PipelineElementTracker`.
+
+        Settable, so that a pipeline from :func:`load` - which is built from the saved file alone,
+        and whose trackers are therefore the defaults - can be given different ones.
+        """
+        return self._trackers
+
+    @trackers.setter
+    def trackers(self, value: list[PipelineElementTracker]):
+        self._trackers = list(value)
 
     @property
     def output_specs(self):
@@ -512,6 +545,24 @@ class DataProcessingPipeline(PipelineElement):
             yaml.dump(dict(self), f)
         return filename
 
+    def save_stats(self, dir: str | Path | None = None) -> Path:
+        """
+        Save the statistics of the last :func:`transform` run - see :func:`processing_stats`.
+
+        Written automatically at the end of :func:`transform`, so that a run leaves an audit trail
+        of what each step did even without an experiment tracker.
+
+        :param dir: Directory to write to, :attr:`base_dir` if not given
+        :return: The path of the written report
+        """
+        base_dir = Path(dir) if dir is not None else self.base_dir
+        base_dir.mkdir(parents=True, exist_ok=True)
+        filename = base_dir / f"{self.name}{DAMAST_STATS_SUFFIX}"
+
+        with open(filename, "w") as f:
+            yaml.dump({"name": self.name, "steps": self._processing_stats}, f)
+        return filename
+
     def __iter__(self):
         yield "name", self.name
         yield "description", self.description
@@ -675,6 +726,10 @@ class DataProcessingPipeline(PipelineElement):
         :param df: The input dataframe
         :returns: The transformed dataframe
         """
+        # the statistics describe this run, so anything a previous one left behind has to go
+        self._processing_stats = {}
+        self._steps_in_flight = set()
+
         dataframes = { DAMAST_DEFAULT_DATASOURCE: df }
         for x in self.processing_graph.get_joins():
             if x.name not in kwargs:
@@ -707,6 +762,8 @@ class DataProcessingPipeline(PipelineElement):
         adf = pipeline._run(in_dataframes, verbose=verbose)
         assert isinstance(adf, AnnotatedDataFrame)
         adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
+
+        self.save_stats()
         return adf
 
     def _run(self,
@@ -760,47 +817,49 @@ class DataProcessingPipeline(PipelineElement):
                            step: PipelineElement,
                            dataframes: dict[str, AnnotatedDataFrame]):
         """
-        Default implementation of the on_transform_start callback.
+        Let every tracker see a step's input before it runs - see :attr:`trackers`.
 
-        This output is a message in INFO log level
+        This also outputs a message in INFO log level.
         """
-        if hasattr(step, "transform_start"):
+        # a step is announced once per datasource, so without this a tracker would see a join twice
+        if step.uuid in self._steps_in_flight:
             return
+        self._steps_in_flight.add(step.uuid)
 
         logger.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
-        start_time = datetime.now(timezone.utc)
-        step.transform_start = start_time
 
         step_name = self.processing_graph[step.uuid].name
-        self._processing_stats[step_name] = {
-            "input_dataframe_length": {x: y.shape[0] for x,y in dataframes.items()},
-            "start_time": start_time
-        }
+        self._processing_stats[step_name] = {}
+        for tracker in self._trackers:
+            tracker.on_step_start(step, dataframes)
 
     def on_transform_end(self,
                          step: PipelineElement,
                          adf: AnnotatedDataFrame):
         """
-        Default implementation of the on_transform_end callback.
+        Collect what every tracker has to report about a step that just ran - see :attr:`trackers`.
 
-        This outputs a message in INFO log level
+        The trackers' results are merged into :func:`processing_stats` under the step's name.
+        This also outputs a message in INFO log level.
         """
-        if not hasattr(step, "transform_start"):
+        if step.uuid not in self._steps_in_flight:
             return
-
-        start = step.transform_start
-        end_time = datetime.now(timezone.utc)
-        delta = (end_time - start).total_seconds()
-        delattr(step, "transform_start")
-        logger.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}: "
-                  f"{delta} seconds, {adf.shape[0]} remaining rows)")
+        self._steps_in_flight.discard(step.uuid)
 
         step_name = self.processing_graph[step.uuid].name
-        self._processing_stats[step_name].update({
-            "processing_time_in_s": delta,
-            "output_dataframe_length": adf.shape[0],
-            "end_time": end_time
-        })
+        statistics = self._processing_stats.setdefault(step_name, {})
+        for tracker in self._trackers:
+            statistics.update(tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf}))
+
+        # Report whatever the trackers happened to measure, so that a custom set of them degrades
+        # the message instead of breaking it
+        details = []
+        if "processing_time_in_s" in statistics:
+            details.append(f"{statistics['processing_time_in_s']} seconds")
+        if "output_dataframe_length" in statistics:
+            details.append(f"{statistics['output_dataframe_length']} remaining rows")
+        logger.info(f"[transform] end: {step.__class__.__name__} - {step.name_mappings}"
+                    f"{': ' + ', '.join(details) if details else ''}")
 
     def __repr__(self) -> str:
         """
@@ -820,6 +879,9 @@ class DataProcessingPipeline(PipelineElement):
         pipeline._processing_stats = copy.deepcopy(self._processing_stats)
         pipeline.processing_graph = copy.deepcopy(self.processing_graph)
         pipeline._output_specs = [copy.deepcopy(x) for x in self._output_specs]
+        # '_trackers' stays shared on purpose: 'prepare' copies the pipeline, but the transformers
+        # keep calling the original's hooks, so the caller's own tracker instances are the ones
+        # that run and hold state
         return pipeline
 
     def describe(self) -> str:
