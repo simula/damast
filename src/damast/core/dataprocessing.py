@@ -560,7 +560,9 @@ class DataProcessingPipeline(PipelineElement):
         filename = base_dir / f"{self.name}{DAMAST_STATS_SUFFIX}"
 
         with open(filename, "w") as f:
-            yaml.dump({"name": self.name, "steps": self._processing_stats}, f)
+            # sort_keys=False: the steps are a sequence of events, so alphabetising them would
+            # lose the execution order the statistics only make sense in
+            yaml.dump({"name": self.name, "steps": self._processing_stats}, f, sort_keys=False)
         return filename
 
     def __iter__(self):

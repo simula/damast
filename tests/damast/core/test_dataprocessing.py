@@ -1239,3 +1239,46 @@ def test_transform_writes_a_statistics_report(tmp_path):
     assert report["name"] == "prepare"
     assert report["steps"]["valid_mmsi"]["rows_removed"] == 2
     assert report["steps"]["valid_mmsi"]["keys"]["mmsi"]["removed_sample"] == [0, 1]
+
+
+def _two_step_pipeline(tmp_path, name: str) -> DataProcessingPipeline:
+    """A pipeline whose steps are named so that alphabetical order is not execution order."""
+    from damast.data_handling.transformers.filters import Filter
+
+    pipeline = DataProcessingPipeline(name=name, base_dir=tmp_path)
+    pipeline.add("zzz_first", Filter(operator=">=", value=1), name_mappings={"x": "mmsi"})
+    pipeline.add("aaa_second", Filter(operator=">=", value=999999), name_mappings={"x": "mmsi"})
+    return pipeline
+
+
+def test_statistics_report_keeps_the_steps_in_execution_order(tmp_path):
+    """
+    The steps are a sequence of events, and 'yaml.dump' alphabetises keys unless told not to.
+    Sorted, anything read back cumulatively - a running duration, say - adds up in an order the
+    pipeline never ran in.
+    """
+    import yaml
+
+    pipeline = _two_step_pipeline(tmp_path, name="ordered")
+    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+
+    report = yaml.safe_load((tmp_path / "ordered.stats.yaml").read_text())
+
+    assert list(report["steps"]) == ["df", "zzz_first", "aaa_second"]
+    assert list(report["steps"]) == list(pipeline.processing_stats)
+    # guards the test itself: these names have to discriminate, or it would pass either way
+    assert list(report["steps"]) != sorted(report["steps"])
+
+
+def test_save_stats_writes_to_a_given_directory(tmp_path):
+    """Without an argument the report lands in base_dir, which transform relies on."""
+    import yaml
+
+    pipeline = _two_step_pipeline(tmp_path, name="elsewhere")
+    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+
+    target = tmp_path / "reports" / "nested"
+    written = pipeline.save_stats(target)
+
+    assert written == target / "elsewhere.stats.yaml"
+    assert list(yaml.safe_load(written.read_text())["steps"]) == list(pipeline.processing_stats)

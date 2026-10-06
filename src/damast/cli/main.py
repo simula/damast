@@ -13,6 +13,7 @@ from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
 from damast.cli.data_processing import DataProcessingParser
+from damast.cli.data_visualize import DataVisualizeParser
 from damast.cli.data_watch import DataWatchParser
 from damast.cli.experiment import ExperimentParser
 from damast.cli.plugins import PluginsParser
@@ -88,6 +89,10 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data by running a predefined pipeline",
                                          parser_klass=DataProcessingParser)
+
+    main_parser.attach_subcommand_parser(subcommand="viz",
+                                         help="Visualize a pipeline, or what a run of it did to the data",
+                                         parser_klass=DataVisualizeParser)
 
     main_parser.attach_subcommand_parser(subcommand="plugins",
                                          help="List transformer plugins registered by installed packages",
