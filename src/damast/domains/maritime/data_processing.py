@@ -16,8 +16,7 @@ from damast.data_handling.transformers import (
     AddUndefinedValue,
     ChangeTypeColumn,
     DropMissingOrNan,
-    FilterWithin,
-    RemoveValueRows,
+    Filter,
 )
 from damast.data_handling.transformers.augmenters import AddLocalIndex
 from damast.domains.maritime.ais import vessel_types
@@ -81,11 +80,11 @@ class CleanseAndSanitise(DataProcessingPipeline):
                          base_dir=workdir,
                          name_mappings=name_mappings)
 
-        self.add("Remove rows with ground as source", RemoveValueRows("g"),
+        self.add("Remove rows with ground as source", Filter("!=", "g"),
                  name_mappings={"x": ColumnName.SOURCE})
         self.add("Remove rows with null dates", DropMissingOrNan(),
                  name_mappings={"x": ColumnName.DATE_TIME_UTC})
-        self.add("Filter rows within message types", FilterWithin(message_types),
+        self.add("Filter rows within message types", Filter("in", message_types),
                  name_mappings={"x": ColumnName.MESSAGE_TYPE})
         self.add("Add Timestamp column to each row", AddTimestamp(),
                  name_mappings={"from": ColumnName.DATE_TIME_UTC, "to": ColumnName.TIMESTAMP})

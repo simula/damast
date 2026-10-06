@@ -193,8 +193,8 @@ class GroupSequenceAccessor(_GroupAccessorBase):
     def __init__(self,
                  df: DataFrame,
                  group_column: str,
-                 sort_columns: list[str] = None,
-                 timeout_in_s: int = DEFAULT_TIMEOUT_IN_S):
+                 sort_columns: list[str] | None = None,
+                 timeout_in_s: float = DEFAULT_TIMEOUT_IN_S):
         super().__init__(df=df, group_column=group_column, groups=df.unique(group_column))
 
         if sort_columns is not None:
@@ -205,8 +205,8 @@ class GroupSequenceAccessor(_GroupAccessorBase):
         self.timeout_in_s = timeout_in_s
 
     def to_keras_generator(self, features: list[str],
-                           target: list[str] = None,
-                           groups: list[str] = None,
+                           target: list[str] | None = None,
+                           groups: list[str] | None = None,
                            sequence_length: int = 50,
                            sequence_forecast: int = 0,
                            batch_size: int = 1024,
@@ -474,11 +474,11 @@ class GroupWindowAccessor(_GroupAccessorBase):
         self.timestamp_column = timestamp_column
 
     def to_keras_generator(self, features: list[str],
-                           target: list[str] = None,
-                           groups: list[Any] = None,
+                           target: list[str] | None = None,
+                           groups: list[Any] | None = None,
                            window: str | timedelta | float = "30m",
                            sequence_length: int = 50,
-                           forecast_horizon: str | timedelta | float = None,
+                           forecast_horizon: str | timedelta | float | None = None,
                            forecast_length: int = 1,
                            max_gap: str | timedelta | float = "5m",
                            batch_size: int = 1024,

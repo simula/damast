@@ -10,7 +10,7 @@ from .augmenters import (
     JoinDataFrameByColumn,
     MultiplyValue,
 )
-from .filters import DropMissingOrNan, FilterWithin, RemoveValueRows
+from .filters import DropMissingOrNan, Filter, FilterWithin, RemoveValueRows
 from .normalizers import normalize
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "BallTreeAugmenter",
     "ChangeTypeColumn",
     "DropMissingOrNan",
+    "Filter",
     "FilterWithin",
     "JoinDataFrameByColumn",
     "MultiplyValue",

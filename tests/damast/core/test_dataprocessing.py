@@ -1125,5 +1125,3 @@ def test_exclusive_output_join(tmp_path):
 
     adf = pipeline.transform(df=_annotated(key=[1], x=[2]), other=_annotated(key=[3], y=[4]))
     assert adf.column_names == ["key"]
-
-
