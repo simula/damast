@@ -429,6 +429,73 @@ def test_infer_annotation_collects_once_per_kind(monkeypatch):
     assert metadata["x"].value_range == MinMax(1.0, 3.0)
 
 
+@pytest.fixture()
+def metadata_less_csv(tmp_path):
+    path = tmp_path / "data.csv"
+    path.write_text("a,b\n" + "".join(f"{i},x\n" for i in range(20)))
+    return path
+
+
+def reads_from_file(adf) -> bool:
+    """Whether the frame still has to read its input, rather than data already in memory."""
+    return "SCAN" in adf.lazyframe.explain()
+
+
+def test_from_files_materializes_once_to_infer_metadata(metadata_less_csv, monkeypatch):
+    """Regression: inferring the metadata used to re-read the input once per kind of statistic."""
+    monkeypatch.setenv(AnnotatedDataFrame.MATERIALIZE_BUDGET_ENV, str(10 * 1024 ** 3))
+
+    adf = AnnotatedDataFrame.from_file(metadata_less_csv, metadata_required=False)
+
+    # the statistics came off memory, and exporting will not read the input either
+    assert not reads_from_file(adf)
+    assert adf.metadata["a"].value_range == MinMax(0, 19)
+    assert adf.metadata["b"].value_range == ListOfValues(["x"])
+
+
+def test_from_files_stays_lazy_and_infers_the_same_metadata(metadata_less_csv, monkeypatch):
+    monkeypatch.setenv(AnnotatedDataFrame.MATERIALIZE_BUDGET_ENV, "0")
+
+    adf = AnnotatedDataFrame.from_file(metadata_less_csv, metadata_required=False)
+
+    assert reads_from_file(adf)
+    # which way it went is a question of memory, never of the result
+    assert adf.metadata["a"].value_range == MinMax(0, 19)
+    assert adf.metadata["b"].value_range == ListOfValues(["x"])
+
+
+def test_materialize_if_it_fits_declines_what_it_cannot_size(tmp_path, monkeypatch):
+    monkeypatch.setenv(AnnotatedDataFrame.MATERIALIZE_BUDGET_ENV, str(10 * 1024 ** 3))
+
+    # an hdf5 input has no assumed size factor, so it is never materialised
+    hdf5_path = tmp_path / "data.hdf5"
+    hdf5_path.write_bytes(b"")
+    lazy = polars.LazyFrame({"a": [1, 2]})
+    assert AnnotatedDataFrame.materialize_if_it_fits(lazy, [hdf5_path]) is lazy
+
+    # nor is a csv whose estimate exceeds the budget
+    monkeypatch.setenv(AnnotatedDataFrame.MATERIALIZE_BUDGET_ENV, "1")
+    csv_path = tmp_path / "sized.csv"
+    csv_path.write_text("a,b\n1,2\n")
+    assert AnnotatedDataFrame.materialize_if_it_fits(lazy, [csv_path]) is lazy
+
+
+def test_from_files_keeps_a_lazy_frame_lazy_unless_asked(metadata_less_csv, tmp_path, monkeypatch):
+    """`materialize` only applies where it is wanted - a plain load stays lazy."""
+    monkeypatch.setenv(AnnotatedDataFrame.MATERIALIZE_BUDGET_ENV, str(10 * 1024 ** 3))
+    spec_path = metadata_less_csv.with_suffix(".spec.yaml")
+    MetaData([DataSpecification(name="a"), DataSpecification(name="b")]).save_yaml(spec_path)
+
+    # metadata comes from the spec file, so nothing has to be inferred from the data
+    adf = AnnotatedDataFrame.from_file(metadata_less_csv, metadata_required=False)
+    assert reads_from_file(adf)
+
+    # the convert subcommand passes materialize=True, because it reads all of the data anyway
+    adf = AnnotatedDataFrame.from_file(metadata_less_csv, metadata_required=False,
+                                       materialize=True)
+    assert not reads_from_file(adf)
+
+
 def test_scan_csv_infers_schema_once(tmp_path, monkeypatch):
     """Regression: with full schema inference polars re-read the whole csv on every collect()."""
     csv_file = tmp_path / "data.csv"

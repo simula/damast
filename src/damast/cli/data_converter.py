@@ -132,9 +132,12 @@ class DataConvertParser(BaseParser):
                 # construct SaveAs directly rather than through SaveAs.parse().
                 save_as = SaveAs.parse(args.save_as) if args.save_as else SaveAs(Path(args.output_file))
 
+                # this conversion reads all of the data to write it out, so materialising it
+                # up front keeps the metadata and the validation from reading it again
                 adf = AnnotatedDataFrame.from_files(
                         files=files,
                         metadata_required=False,
+                        materialize=True,
                     )
 
                 self.validate(adf, args)
@@ -157,6 +160,7 @@ class DataConvertParser(BaseParser):
                     adf = AnnotatedDataFrame.from_file(
                             filename=file,
                             metadata_required=False,
+                            materialize=True,
                         )
 
                     # One output file per input file, named by that file's own stem - not a

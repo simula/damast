@@ -6,11 +6,13 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 from collections.abc import Callable
 from logging import INFO, Logger, getLogger
 from pathlib import Path
 
 import polars
+import psutil
 import pyarrow
 import pyarrow.parquet as pq
 from tqdm import tqdm
@@ -325,12 +327,77 @@ class AnnotatedDataFrame(XDataFrame):
 
         return None
 
+    #: Share of the memory psutil reports as available that a materialised dataframe may take.
+    #: The remaining share absorbs the transient peak of the collect itself, measured at 1.3-2.3
+    #: times the resulting frame.
+    MATERIALIZE_MEMORY_FRACTION: float = 0.5
+
+    #: Assumed ratio between an input's size on disk and the dataframe it becomes in memory, per
+    #: format. Measured: a 258 MB csv produces a 306 MB frame (1.2x), while a 116 MB zstd
+    #: parquet produces a 1073 MB one (9.3x), the frame expanding both the compression and the
+    #: dictionary encoding. A format that is not listed is never materialised. Over-estimating
+    #: only forgoes the optimisation, so both of these round up.
+    MATERIALIZE_SIZE_FACTORS: dict[str, float] = {"csv": 1.5, "parquet": 10.0}
+
+    #: Byte count overriding the budget derived from the available memory. '0' never materialises
+    MATERIALIZE_BUDGET_ENV: str = "DAMAST_MATERIALIZE_BUDGET"
+
+    @classmethod
+    def materialize_if_it_fits(cls, df: DataFrame, files: list[str | Path]) -> DataFrame:
+        """
+        Collect `df` up front if it is expected to fit in memory, else return it unchanged.
+
+        Every statistic that :func:`infer_annotation` derives, and every check that
+        :attr:`damast.core.ValidationMode.UPDATE_METADATA` performs, aggregates over a column -
+        and a lazy frame re-reads and re-parses its input for each such aggregation. Against a
+        frame that is already in memory those aggregations cost no further read and no further
+        memory, polars taking them straight from the resident data. Since :meth:`export`
+        collects the frame regardless, materialising it here can make this the only read of the
+        input the whole conversion needs.
+
+        :param df: The freshly loaded, still lazy dataframe
+        :param files: The files it was loaded from, used to estimate its size in memory
+        :return: An in-memory-backed dataframe, or `df` unchanged if it looks too large
+        """
+        budget = os.environ.get(cls.MATERIALIZE_BUDGET_ENV)
+        if budget is not None:
+            try:
+                budget = int(budget)
+            except ValueError:
+                _log.warning(f"{cls.__name__}.materialize_if_it_fits: ignoring"
+                             f" {cls.MATERIALIZE_BUDGET_ENV}='{budget}', which is not"
+                             " a number of bytes")
+                budget = None
+        if budget is None:
+            budget = int(psutil.virtual_memory().available * cls.MATERIALIZE_MEMORY_FRACTION)
+
+        file_format = cls.get_supported_format(Path(files[0]).suffix)
+        factor = cls.MATERIALIZE_SIZE_FACTORS.get(file_format)
+        if factor is None:
+            return df
+
+        try:
+            estimate = int(sum(Path(f).stat().st_size for f in files) * factor)
+        except OSError as e:
+            _log.debug(f"{cls.__name__}.materialize_if_it_fits: cannot size {files} -- {e}")
+            return df
+
+        if estimate > budget:
+            _log.info(f"{cls.__name__}: keeping the dataframe lazy - an estimated {estimate}"
+                      f" bytes in memory exceeds the {budget} byte budget")
+            return df
+
+        _log.info(f"{cls.__name__}: materialising the dataframe once, so that the metadata"
+                  " does not need another read of the input")
+        return df.collect().lazy()
+
     @classmethod
     def from_files(cls,
             files: list[str|Path],
             metadata_required: bool = True,
             validation_mode: ValidationMode = ValidationMode.READONLY,
-            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS,
+            materialize: bool | None = None
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe by loading given files
@@ -339,6 +406,10 @@ class AnnotatedDataFrame(XDataFrame):
         :param metadata_required metadata needs to be available either as spec.yaml file or embedded into the file
         :param validation_mode metadata will be validated, updated or ignored according to this mode
         :param merge_strategy for combining the metadata of multiple files, select the merge strategy
+        :param materialize: Whether to collect the data up front if it fits in memory - see
+            :meth:`materialize_if_it_fits`. The default, `None`, does so only when the metadata
+            has to be inferred from the data, which aggregates over every column anyway; pass
+            `True` when the caller is going to read all of the data regardless
 
         """
         metadata = None
@@ -366,6 +437,8 @@ class AnnotatedDataFrame(XDataFrame):
 
         if load_fn:
             df, metadata = load_fn(files)
+            if materialize:
+                df = cls.materialize_if_it_fits(df, files)
         else:
             raise RuntimeError(
                 f"Could not load {files} - supported are currently {DAMAST_SUPPORTED_FILE_FORMATS}"
@@ -389,6 +462,8 @@ class AnnotatedDataFrame(XDataFrame):
                     )
                 else:
                     _log.info("Metadata is not available and not required, so inferring annotation")
+                    if materialize is None:
+                        df = cls.materialize_if_it_fits(df, files)
                     metadata = cls.infer_annotation(df)
                     _log.info("Metadata inferring completed")
                     return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE,
@@ -397,6 +472,8 @@ class AnnotatedDataFrame(XDataFrame):
                 _log.info(f"Found metadata: {[str(x) for x in metadata_file_candidates]}")
         elif len(metadata) != len(files):
             _log.info("Metadata is not available for all files, so inferring annotation")
+            if materialize is None:
+                df = cls.materialize_if_it_fits(df, files)
             metadata = cls.infer_annotation(df)
             _log.info("Metadata inferring completed")
             return cls(dataframe=df, metadata=metadata, validation_mode=ValidationMode.IGNORE,
@@ -466,18 +543,21 @@ class AnnotatedDataFrame(XDataFrame):
             filename: str | Path,
             metadata_required: bool = True,
             validation_mode: ValidationMode = ValidationMode.READONLY,
-            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS
+            merge_strategy: DataSpecification.MergeStrategy = DataSpecification.MergeStrategy.THIS,
+            materialize: bool | None = None
         ) -> AnnotatedDataFrame:
         """
         Create an annotated dataframe from an hdf5 file.
 
         :param filename: Filename to use for importing and creating the annotated dataframe
+        :param materialize: See :meth:`from_files`
 
         """
         return cls.from_files([filename],
                               metadata_required=metadata_required,
                               validation_mode=validation_mode,
-                              merge_strategy=merge_strategy)
+                              merge_strategy=merge_strategy,
+                              materialize=materialize)
 
     # declared fields that remain valid for a column when its data is filtered or reshaped -
     # unlike type and value range/stats, they cannot be observed from a subset of the data.
