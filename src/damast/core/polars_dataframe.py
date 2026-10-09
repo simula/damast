@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import ast
+import csv
 import logging
 import math
 import os
 import re
+from collections import Counter
+from itertools import islice
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -43,25 +46,6 @@ POLARS_TYPE_DICT = {
 }
 POLARS_TYPE_DICT["DataType"] = polars.DataType
 
-
-def scan_csv(files: str | Path | list[str | Path], separator: str = ",", **kwargs) -> LazyFrame:
-    """
-    Lazily scan csv file(s) with damast's default arguments (`DAMAST_CSV_DEFAULT_ARGS`).
-
-    The schema is inferred once and then passed on explicitly: with full schema inference
-    (``infer_schema_length=None``) polars would otherwise re-read the entire input on every
-    collect() just to infer the schema again.
-
-    :param files: csv file(s) to scan
-    :param separator: Column separator
-    :param kwargs: Further arguments for ``polars.scan_csv``, overriding the damast defaults
-    :return: The lazyframe
-    """
-    csv_args = {**DAMAST_CSV_DEFAULT_ARGS, **kwargs, "separator": separator}
-    schema = polars.scan_csv(files, **csv_args).collect_schema()
-
-    csv_args.pop("infer_schema_length", None)
-    return polars.scan_csv(files, schema=schema, **csv_args)
 
 class Meta(type):
     _base_impl: ClassVar[str] = "polars"
@@ -542,11 +526,91 @@ class PolarsDataFrame(metaclass=Meta):
     def equals(self, other: PolarsDataFrame) -> bool:
         return self.collected().equals(other.collected())
 
+    #: Column separators tried when loading a csv file whose separator is not given, ordered
+    #: by preference for an input that none of them splits
+    CSV_SEPARATOR_CANDIDATES: ClassVar[tuple[str, ...]] = (";", ",")
+
+    #: Number of lines `sniff_csv_separator` inspects by default
+    CSV_SNIFF_MAX_LINES: ClassVar[int] = 100
+
+    @classmethod
+    def sniff_csv_separator(cls,
+                            file: str | Path,
+                            candidates: tuple[str, ...] = CSV_SEPARATOR_CANDIDATES,
+                            max_lines: int = CSV_SNIFF_MAX_LINES) -> str:
+        """
+        Guess the column separator of a csv file from its first lines.
+
+        The separator a file was written with splits all of its rows into the same number of
+        columns, so the candidate with the largest share of equally wide rows wins, ties going
+        to the one that yields more columns. A candidate that leaves most rows in a single
+        column did not split the file and is never chosen; if that holds for all of them, the
+        first candidate is returned.
+
+        :param file: The csv file whose first lines should be inspected
+        :param candidates: Separators to consider, most-preferred first
+        :param max_lines: Number of lines to inspect. More lines make a separator that also
+            occurs inside quoted fields easier to rule out - it splits those rows into a width
+            of their own - at the cost of reading further into the file
+        :return: The most likely separator
+        """
+        # Path.open, not the builtin - this class defines an `open` of its own
+        with Path(file).open(newline="", encoding="utf-8", errors="replace") as f:
+            lines = list(islice(f, max_lines))
+
+        separator = candidates[0]
+        # share of equally wide rows, number of columns - compared as a whole, so a separator
+        # is judged on how consistently it splits the file before it is judged on how finely
+        best_score = (0.0, 1)
+        for candidate in candidates:
+            try:
+                # a quoted field may span lines, so the reader gets all of them in sequence
+                rows = [row for row in csv.reader(lines, delimiter=candidate) if row]
+            except csv.Error as e:
+                logger.debug(f"{cls.__name__}.sniff_csv_separator:"
+                             f" '{candidate}' does not parse {file} -- {e}")
+                continue
+
+            if not rows:
+                continue
+
+            if len(rows) == 1 and any(csv.excel.quotechar in column for column in rows[0]):
+                # A single row offers no widths to compare, so fall back on the quote
+                # characters that a split inside a quoted field leaves behind in the columns.
+                continue
+
+            column_count, matching_rows = Counter(len(row) for row in rows).most_common(1)[0]
+            score = (matching_rows / len(rows), column_count)
+            if column_count > 1 and score > best_score:
+                separator, best_score = candidate, score
+
+        return separator
+
+    @classmethod
+    def scan_csv(cls, files: str | Path | list[str | Path], separator: str = ",", **kwargs) -> LazyFrame:
+        """
+        Lazily scan csv file(s) with damast's default arguments (`DAMAST_CSV_DEFAULT_ARGS`).
+
+        The schema is inferred once and then passed on explicitly: with full schema inference
+        (``infer_schema_length=None``) polars would otherwise re-read the entire input on every
+        collect() just to infer the schema again.
+
+        :param files: csv file(s) to scan
+        :param separator: Column separator
+        :param kwargs: Further arguments for ``polars.scan_csv``, overriding the damast defaults
+        :return: The lazyframe
+        """
+        csv_args = {**DAMAST_CSV_DEFAULT_ARGS, **kwargs, "separator": separator}
+        schema = polars.scan_csv(files, **csv_args).collect_schema()
+
+        csv_args.pop("infer_schema_length", None)
+        return polars.scan_csv(files, schema=schema, **csv_args)
+
     @classmethod
     def open(cls, path: str | Path, sep = ',') -> polars.LazyFrame:
         path = Path(path)
         if path.suffix == ".csv":
-            return scan_csv(path, separator=sep)
+            return cls.scan_csv(path, separator=sep)
         elif path.suffix in [".h5", ".hdf5"]:
             import pandas as pd
 

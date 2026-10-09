@@ -29,7 +29,6 @@ from .constants import (
 from .data_description import ListOfValues, MinMax
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .partitioning import PartitionStrategy, warn_on_local_time_buckets
-from .polars_dataframe import scan_csv
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
@@ -455,11 +454,12 @@ class AnnotatedDataFrame(XDataFrame):
     @classmethod
     def load_csv(cls, files) -> tuple[polars.LazyFrame, dict[str, MetaData]]:
         _log.info(f"Loading csv: {files=}")
-        df = scan_csv(files, separator=";")
-        if len(df.compat.column_names) <= 1:
-            # unlikely that this frame has only one column, so trying with comma
-            df = scan_csv(files, separator=",")
-        return df, {}
+        # The separator is sniffed from the header line rather than by scanning with each
+        # candidate in turn: scan_csv infers the schema from the complete input, so a wrong
+        # guess costs a full read of the data that is then thrown away - for a multi-GB csv
+        # that is a substantial part of the total load time.
+        separator = XDataFrame.sniff_csv_separator(files[0])
+        return XDataFrame.scan_csv(files, separator=separator), {}
 
     @classmethod
     def from_file(cls,
@@ -590,7 +590,7 @@ class AnnotatedDataFrame(XDataFrame):
         :param csv_sep: Separator to use when loading csv files
         """
         metadata = MetaData.load_yaml(filename=metadata_filename)
-        df = scan_csv(sorted(csv_filenames), separator=csv_sep)
+        df = XDataFrame.scan_csv(sorted(csv_filenames), separator=csv_sep)
         adf = cls(dataframe=df, metadata=metadata)
 
         _log.info(f"Metadata: {dict(metadata)}")

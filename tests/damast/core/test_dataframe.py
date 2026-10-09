@@ -19,7 +19,6 @@ from damast.core.metadata import (
     MetaData,
     ValidationMode,
 )
-from damast.core.polars_dataframe import scan_csv
 from damast.core.types import XDataFrame
 
 
@@ -445,12 +444,62 @@ def test_scan_csv_infers_schema_once(tmp_path, monkeypatch):
 
     monkeypatch.setattr(polars, "scan_csv", recording_scan_csv)
 
-    lf = scan_csv(csv_file)
+    lf = XDataFrame.scan_csv(csv_file)
 
     # the returned scan carries the inferred schema, so collect() does not infer it again
     assert "infer_schema_length" not in scan_calls[-1]
     assert scan_calls[-1]["schema"]["a"] == polars.Float64
     assert lf.collect()["a"].dtype == polars.Float64
+
+
+@pytest.mark.parametrize("content,expected_separator", [
+    ("a;b;c\n1;2;3\n", ";"),
+    ("a,b,c\n1,2,3\n", ","),
+    # the other candidate also occurs inside a quoted field, so it splits those rows into a
+    # width of their own instead of the width shared by the whole file
+    ('id,name\n0,"a;b;c"\n1,"d;e"\n', ","),
+    ('id;name\n0;"a,b,c"\n1;"d,e"\n', ";"),
+    # a single column: no candidate splits the file, so the preferred one is kept
+    ("a\n1\n2\n", ";"),
+    # only the header to go on - the quote characters left behind rule out ';'
+    ('id,"a;b;c"\n', ","),
+])
+def test_sniff_csv_separator(tmp_path, content, expected_separator):
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text(content)
+
+    assert XDataFrame.sniff_csv_separator(csv_file) == expected_separator
+
+
+def test_sniff_csv_separator_stops_after_max_lines(tmp_path):
+    csv_file = tmp_path / "data.csv"
+    # ';' splits the bulk of this file consistently, ',' only its first two lines
+    csv_file.write_text("a,b\n1,2\n" + "".join(f"{i};{i};{i}\n" for i in range(50)))
+
+    assert XDataFrame.sniff_csv_separator(csv_file) == ";"
+    # the lines that make ';' win are never read
+    assert XDataFrame.sniff_csv_separator(csv_file, max_lines=2) == ","
+
+
+def test_load_csv_reads_data_once_per_separator(tmp_path, monkeypatch):
+    """Regression: probing separators by scanning cost a full read of the data per candidate."""
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("a,b\n" + "".join(f"{i},x\n" for i in range(10)))
+
+    separators = []
+    original_scan_csv = polars.scan_csv
+
+    def recording_scan_csv(*args, **kwargs):
+        separators.append(kwargs.get("separator"))
+        return original_scan_csv(*args, **kwargs)
+
+    monkeypatch.setattr(polars, "scan_csv", recording_scan_csv)
+
+    df, _ = AnnotatedDataFrame.load_csv([csv_file])
+
+    # only the sniffed separator is ever scanned - ';' is never tried against the data
+    assert set(separators) == {","}
+    assert df.compat.column_names == ["a", "b"]
 
 
 def test_convert_csv_to_adf(tmp_path):
