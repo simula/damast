@@ -264,7 +264,7 @@ class DataSpecification:
         name: str,
         description: str | None = None,
         category: str | DataCategory | None = None,
-        is_optional: bool = False,
+        is_optional: bool | None = None,
         abbreviation: str | None = None,
         representation_type: Any = None,
         missing_value: Any = None,
@@ -289,7 +289,9 @@ class DataSpecification:
         else:
             self.category = category
 
-        self.is_optional = is_optional
+        if is_optional is not None:
+            self.is_optional = is_optional
+
         if abbreviation is not None and abbreviation != "":
             self.abbreviation = abbreviation
 
@@ -391,8 +393,7 @@ class DataSpecification:
 
     def __iter__(self):
         yield "name", self.name
-        if self.is_optional is not None:
-            yield "is_optional", self.is_optional
+        yield "is_optional", self.is_optional
 
         if self.abbreviation is not None:
             yield "abbreviation", self.abbreviation
@@ -792,7 +793,7 @@ class DataSpecification:
                 else:
                     fulfillment.status[key] = {
                         "status": Status.FAIL,
-                        "message": f"unit '{spec_value}' is not convertible to expected unit '{expected_value}'",
+                        "message": f"{key.value} '{spec_value}' is not convertible to expected unit '{expected_value}'",
                     }
             else:
                 expected_value = getattr(self, key.value)
@@ -801,14 +802,14 @@ class DataSpecification:
                     if spec_value is None:
                         fulfillment.status[key] = {
                             "status": Status.FAIL,
-                            "message": f"Expected '{spec_value=}' == '{expected_value=}'",
+                            "message": f"{key.value}: '{spec_value=}' == '{expected_value=}'",
                         }
                         continue
 
                     if expected_value != spec_value:
                         fulfillment.status[key] = {
                             "status": Status.FAIL,
-                            "message": f"Expected '{spec_value=}' == '{expected_value=}'",
+                            "message": f"{key.value} '{spec_value=}' == '{expected_value=}'",
                         }
                         continue
 
