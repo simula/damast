@@ -236,12 +236,15 @@ class AnnotatedDataFrame(XDataFrame):
                 compression_level = 5
         # this sets explicitly no compression
         elif compression == "NONE":
-            compression = None
+            compression = "uncompressed"
 
-        arrow_table = self.lazyframe.compat.collected().to_arrow()
-        new_schema = arrow_table.schema.with_metadata({b'annotated_dataframe': json.dumps(dict(self._metadata), default=str).encode('UTF-8')})
-        arrow_table = pyarrow.Table.from_arrays(arrow_table.columns, schema=new_schema)
-        pq.write_table(arrow_table, filename, compression=compression, compression_level=compression_level)
+        # The metadata ends up as plain parquet key/value metadata
+        self.lazyframe.sink_parquet(
+            filename,
+            compression=compression,
+            compression_level=compression_level,
+            metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
+        )
 
     def export_partitioned(
         self,
@@ -500,15 +503,15 @@ class AnnotatedDataFrame(XDataFrame):
 
             pyarrow_schemas = []
             for file in files:
-                schema = pq.read_schema(file)
+                parquet_file = pq.ParquetFile(file)
+                schema = parquet_file.schema_arrow
                 pyarrow_schemas.append(schema)
-                if schema and hasattr(schema, "metadata"):
-                    if schema.metadata is not None:
-                        if b"annotated_dataframe" in schema.metadata:
-                            data = schema.metadata[b"annotated_dataframe"]
-                            m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
-                            m.set_annotation(Annotation(name=Annotation.Key.Source, value=Path(file).name))
-                            metadata_per_file[file] = m
+                raw_metadata = parquet_file.metadata.metadata
+                if raw_metadata and b"annotated_dataframe" in raw_metadata:
+                    data = raw_metadata[b"annotated_dataframe"]
+                    m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
+                    m.set_annotation(Annotation(name=Annotation.Key.Source, value=Path(file).name))
+                    metadata_per_file[file] = m
 
             # https://github.com/pola-rs/polars/issues/27280
             arrow_schema = pyarrow.unify_schemas(pyarrow_schemas)

@@ -143,6 +143,37 @@ def test_annotated_dataframe_export_hdf5(metadata, polars_dataframe, tmp_path):
 
 
 
+def test_annotated_dataframe_export_parquet(metadata, polars_dataframe, tmp_path):
+    """
+    export() writes 'annotated_dataframe' as plain parquet key/value metadata (via
+    sink_parquet) rather than inside the embedded Arrow schema a pyarrow-based writer would
+    produce - this checks it still round-trips through from_file()/load_parquet(), which reads
+    it back from that same place.
+
+    :param metadata: metadata to use
+    :param polars_dataframe: polars dataframe to use
+    :param tmp_path: where to temporarily save the data to parquet
+    """
+    adf = AnnotatedDataFrame(dataframe=polars_dataframe,
+                             metadata=metadata)
+
+    test_file = tmp_path / "test_dataframe.parquet"
+    adf.export(test_file)
+    assert test_file.exists()
+
+    loaded_adf = AnnotatedDataFrame.from_file(filename=test_file)
+    assert loaded_adf.dataframe.collect().equals(polars_dataframe)
+    # not a full MetaData equality check: is_optional currently round-trips as False rather
+    # than None regardless of file format (hdf5/csv have the same gap - see
+    # test_annotated_dataframe_export_hdf5), which is unrelated to what this test is about
+    assert [c.name for c in loaded_adf.metadata.columns] == [c.name for c in metadata.columns]
+    # load_parquet() adds its own 'source' annotation recording the file path, on top of
+    # whatever the file carried - so this checks the original annotations survive, not that
+    # no annotation was added
+    for name, value in metadata.annotations.items():
+        assert loaded_adf.metadata.annotations[name] == value
+
+
 def test_annotated_dataframe_export_csv(metadata, polars_dataframe, tmp_path):
     """
     Simple test of the annotated dataframe export to csv
