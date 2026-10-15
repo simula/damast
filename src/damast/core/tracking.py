@@ -75,8 +75,7 @@ class TimingTracker(PipelineElementTracker):
 
     Reports ``start_time``, ``end_time`` and ``processing_time_in_s``. Since a pipeline run only
     builds a lazy plan and executes it in one pass at the end, this is the time a step took to
-    build its part of the plan - plus whatever a step executes eagerly itself, e.g. a narrow
-    input (see :func:`damast.core.decorators.input`).
+    build its part of the plan - plus whatever a step executes eagerly itself.
     """
 
     def __init__(self):
