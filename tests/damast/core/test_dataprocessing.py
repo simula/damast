@@ -1128,6 +1128,86 @@ def test_exclusive_output_join(tmp_path):
     assert adf.column_names == ["key"]
 
 
+# --- checks and statistics deferred to one pass -----------------------------------------------
+
+class _Double(PipelineElement):
+    """Declares its output to stay within 0..10 - true for inputs up to 5."""
+    @damast.core.input({"x": {"representation_type": int}})
+    @damast.core.output({"x2": {"representation_type": int, "value_range": MinMax(0, 10)}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df.lazyframe = df.lazyframe.with_columns((polars.col("x") * 2).alias("x2"))
+        return df
+
+
+class _CountRows(PipelineElement):
+    """Counts the rows that flow through it, i.e. how often the pipeline up to here executes."""
+    rows: list[int] = []
+
+    @damast.core.input({"x": {"representation_type": int}})
+    @damast.core.output({"y": {"representation_type": int}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        def count(batch: polars.Series) -> polars.Series:
+            type(self).rows.append(len(batch))
+            return batch
+
+        df.lazyframe = df.lazyframe.with_columns(
+            polars.col("x").map_batches(count, return_dtype=polars.Int64).alias("y"))
+        return df
+
+
+@pytest.mark.parametrize("execute", ["export", "collect", "execute"])
+def test_a_violated_output_range_raises_when_the_run_executes_naming_the_step(tmp_path, execute):
+    pipeline = DataProcessingPipeline(name="deferred", base_dir=tmp_path).add("double", _Double())
+    adf = pipeline.transform(df=_annotated(x=[1, 8]))  # x2 = 16 > 10, not checked yet
+
+    with pytest.raises(RuntimeError, match=r"step 'double'.*maximum value '16'"):
+        if execute == "export":
+            adf.export(tmp_path / "out.parquet")
+        else:
+            getattr(adf, execute)()
+    # nothing written, not even the unfinished file
+    assert not list(tmp_path.glob("*out.parquet*"))
+
+
+def test_export_runs_the_pipeline_once_for_result_checks_and_statistics(tmp_path):
+    _CountRows.rows = []
+    pipeline = DataProcessingPipeline(name="deferred", base_dir=tmp_path) \
+        .add("count", _CountRows()).add("double", _Double())
+    adf = pipeline.transform(df=_annotated(x=[1, 2, 3, 4, 5]))
+    assert _CountRows.rows == []
+
+    adf.export(tmp_path / "out.parquet")
+    # range checks of both steps, the row counts and the statistics, all in the export's pass
+    assert sum(_CountRows.rows) == 5
+    assert pipeline.processing_stats["double"]["output_dataframe_length"] == 5
+
+
+def test_export_writes_the_statistics_computed_in_its_pass(tmp_path):
+    pipeline = DataProcessingPipeline(name="deferred", base_dir=tmp_path).add("double", _Double())
+    pipeline.transform(df=_annotated(x=[1, 2, 3])).export(tmp_path / "out.parquet")
+
+    spec = AnnotatedDataFrame.from_file(tmp_path / "out.parquet").metadata["x2"]
+    assert (spec.value_range.min, spec.value_range.max) == (2, 6)
+    assert spec.value_stats.total_count == 3
+    assert spec.value_stats.mean == 4.0
+    assert spec.value_stats.median == 4.0
+    # three rows are too few for a sample, so the quantiles are exact
+    assert spec.value_stats.quantile_sample_fraction is None
+
+
+def test_large_results_take_quantiles_from_a_sample(tmp_path):
+    rows = 2_000_000
+    pipeline = DataProcessingPipeline(name="deferred", base_dir=tmp_path).add("double", _Double())
+    adf = pipeline.transform(df=_annotated(x=[i % 6 for i in range(rows)])).execute()
+
+    stats = adf.metadata["x2"].value_stats
+    assert stats.quantile_sample_fraction == 0.01
+    assert stats.total_count == rows  # counts and means are exact, from all rows
+    assert stats.mean == pytest.approx(5.0)
+    # x2 takes the values 0, 2, ..., 10 equally often
+    assert 4.0 <= stats.median <= 6.0
+    assert stats.lower_quantile == pytest.approx(2.0, abs=0.5)
+    assert stats.upper_quantile == pytest.approx(8.0, abs=0.5)
 # --- per-step effect statistics -------------------------------------------------------------
 
 def _keyed_adf(mmsis: list[int]) -> AnnotatedDataFrame:
@@ -1230,9 +1310,12 @@ def test_transform_writes_a_statistics_report(tmp_path):
     import yaml
 
     pipeline = _keep_valid_mmsi(tmp_path, trackers=[RowCountTracker(), KeyTracker(["mmsi"])])
-    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+    adf = pipeline.transform(df=_keyed_adf([0, 1, 999999]))
 
+    # the statistics need the data, so the report is written once the run is executed
     report_file = tmp_path / "prepare.stats.yaml"
+    assert not report_file.exists()
+    adf.execute()
     assert report_file.exists()
 
     report = yaml.safe_load(report_file.read_text())
@@ -1260,7 +1343,7 @@ def test_statistics_report_keeps_the_steps_in_execution_order(tmp_path):
     import yaml
 
     pipeline = _two_step_pipeline(tmp_path, name="ordered")
-    pipeline.transform(df=_keyed_adf([0, 1, 999999]))
+    pipeline.transform(df=_keyed_adf([0, 1, 999999])).execute()
 
     report = yaml.safe_load((tmp_path / "ordered.stats.yaml").read_text())
 

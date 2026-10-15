@@ -4,6 +4,7 @@ import pytest
 import damast.core
 from damast.core.constants import DAMAST_DEFAULT_DATASOURCE
 from damast.core.dataframe import AnnotatedDataFrame
+from damast.core.deferred import Deferred
 from damast.core.metadata import DataSpecification, MetaData
 from damast.core.tracking import KeyTracker, RowCountTracker, TimingTracker
 
@@ -21,6 +22,12 @@ class FakeStep:
 
     def __init__(self, uuid: str = "step-1"):
         self.uuid = uuid
+
+
+def end(tracker, step, dataframes) -> dict:
+    """A tracker's report for a step - resolved, if the tracker deferred it to the run's pass."""
+    stats = tracker.on_step_end(step, dataframes)
+    return stats.resolve() if isinstance(stats, Deferred) else stats
 
 
 def test_timing_tracker_reports_a_duration():
@@ -49,7 +56,7 @@ def test_row_count_tracker_reports_removed_rows():
     tracker = RowCountTracker()
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 3, 4])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2])})
 
     assert stats["input_dataframe_length"] == {DAMAST_DEFAULT_DATASOURCE: 4}
     assert stats["output_dataframe_length"] == 2
@@ -63,7 +70,7 @@ def test_row_count_tracker_totals_the_inputs_of_a_join():
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 3]),
                                  "other": adf_of(x=[4, 5])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 3, 4, 5])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 3, 4, 5])})
 
     assert stats["input_dataframe_length"] == {DAMAST_DEFAULT_DATASOURCE: 3, "other": 2}
     assert stats["output_dataframe_length"] == 5
@@ -76,7 +83,7 @@ def test_key_tracker_counts_distinct_entities():
     tracker = KeyTracker(["mmsi"])
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2, 3, 1000000, 1000000])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1000000, 1000000])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1000000, 1000000])})
 
     assert stats["keys"]["mmsi"] == {
         "unique_in": 4,
@@ -92,7 +99,7 @@ def test_key_tracker_bounds_the_removed_sample():
     tracker = KeyTracker(["mmsi"], max_removed_keys=2)
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2, 3, 4, 9])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[9])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[9])})
 
     assert stats["keys"]["mmsi"]["unique_removed"] == 4
     assert stats["keys"]["mmsi"]["removed_sample"] == [1, 2]
@@ -105,7 +112,7 @@ def test_key_tracker_ignores_nulls():
     tracker = KeyTracker(["mmsi"])
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, None, 2])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, None])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, None])})
 
     assert stats["keys"]["mmsi"]["unique_in"] == 2
     assert stats["keys"]["mmsi"]["unique_out"] == 1
@@ -118,7 +125,7 @@ def test_key_tracker_skips_a_key_the_step_drops():
     tracker = KeyTracker(["mmsi"])
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2], value=[3, 4])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(value=[3, 4])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(value=[3, 4])})
 
     assert stats == {}
 
@@ -129,7 +136,7 @@ def test_key_tracker_skips_a_key_that_was_never_there():
     tracker = KeyTracker(["mmsi"])
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(value=[1, 2])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(value=[1])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(value=[1])})
 
     assert stats == {}
 
@@ -140,7 +147,7 @@ def test_key_tracker_unions_the_keys_of_a_join():
 
     tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2]),
                                  "other": adf_of(mmsi=[2, 3])})
-    stats = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2, 3])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2, 3])})
 
     assert stats["keys"]["mmsi"]["unique_in"] == 3
     assert stats["keys"]["mmsi"]["unique_removed"] == 0
@@ -154,9 +161,9 @@ def test_key_tracker_tracks_each_step_separately():
     tracker.on_step_start(first, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1, 2, 3])})
     tracker.on_step_start(second, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[7, 8])})
 
-    assert tracker.on_step_end(second, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[7])})[
+    assert end(tracker, second, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[7])})[
         "keys"]["mmsi"]["removed_sample"] == [8]
-    assert tracker.on_step_end(first, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1])})[
+    assert end(tracker, first, {DAMAST_DEFAULT_DATASOURCE: adf_of(mmsi=[1])})[
         "keys"]["mmsi"]["removed_sample"] == [2, 3]
 
 

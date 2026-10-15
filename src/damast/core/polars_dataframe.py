@@ -56,6 +56,52 @@ class Meta(type):
 
         raise AttributeError(f"'{cls.__name__}' has not attribute '{attr_name}'")
 
+#: Most distinct values a string column may have to be described by a ListOfValues
+MAX_CATEGORIES: int = 100
+
+
+def row_position() -> polars.Expr:
+    """
+    Each row's position, 0-based, as UInt64.
+
+    A running sum over a column of ones rather than ``with_row_index``, ``row_index`` or
+    ``int_range``: those use polars' index type (32 bits in standard builds, so overflowing past
+    2**32 rows), and unlike them the sum streams instead of holding the frame in memory.
+
+    :return: The expression, for a frame with at least one column
+    """
+    ones = polars.first().is_null().cast(polars.UInt64) * 0 + 1
+    return ones.cum_sum() - 1
+
+
+def usable_categories(column_name: str, values: list, max_count: int = MAX_CATEGORIES) -> list | None:
+    """
+    The distinct values of a string column if they make a sensible list of categories.
+
+    :param column_name: The column, for the error message
+    :param values: Its distinct values, sorted
+    :param max_count: Most values a list of categories may have
+    :return: The values, or None if there are too many or they look like time points
+    :raise ValueError: If a value is not a string
+    """
+    if len(values) > max_count:
+        return None
+
+    # do not count every timepoint as category
+    timepoint_like = 0
+    for c in values[:10]:
+        if c is None:
+            continue
+
+        if type(c) is not str:
+            raise ValueError(f"Column {column_name} with unexpected category: {c}")
+
+        if c and re.search(r"[0-9]{2}:[0-9]{2}", c) is not None:
+            timepoint_like += 1
+
+    return values if timepoint_like < 3 else None
+
+
 @polars.api.register_dataframe_namespace("compat")
 @polars.api.register_lazyframe_namespace("compat")
 class PolarsDataFrame(metaclass=Meta):
@@ -371,30 +417,12 @@ class PolarsDataFrame(metaclass=Meta):
         for column_name in column_names:
             self._categories_cache[column_name] = result[column_name][0].to_list()
 
-    def categories(self, column_name: str, max_count: int = 100) -> list[str]:
+    def categories(self, column_name: str, max_count: int = MAX_CATEGORIES) -> list[str]:
         self.ensure_column(column_name)
 
         if column_name not in self._categories_cache:
             self.precompute_categories([column_name])
-        categories = self._categories_cache[column_name]
-
-        if len(categories) <= max_count:
-            # do not count every timepoint as category
-            timepoint_like = 0
-            for c in categories[:10]:
-                if c is None:
-                    continue
-
-                if type(c) is not str:
-                    raise ValueError(f"Column {column_name} with unexpected category: {c}")
-
-                if c and re.search(r"[0-9]{2}:[0-9]{2}", c) is not None:
-                    timepoint_like += 1
-
-            if timepoint_like < 3:
-                return categories
-
-        return None
+        return usable_categories(column_name, self._categories_cache[column_name], max_count)
 
 
     def minmax_stats(self, column_names: list[str]) -> dict[str, dict[str, Any]]:
@@ -521,7 +549,10 @@ class PolarsDataFrame(metaclass=Meta):
 
         :return: Length of the dataframe
         """
-        return len(self.collected())
+        if self._dataframe_collected is not None:
+            return len(self._dataframe_collected)
+        # counting needs no column, so this runs the plan without materialising the frame
+        return self.lazyframe.select(polars.len()).collect().item()
 
     def equals(self, other: PolarsDataFrame) -> bool:
         return self.collected().equals(other.collected())

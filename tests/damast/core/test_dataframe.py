@@ -392,6 +392,7 @@ def test_readonly_validation_batches_minmax_into_single_collect(monkeypatch):
     metadata = MetaData(column_specs)
 
     original_collect = polars.LazyFrame.collect
+    original_collect_all = polars.collect_all
     call_count = 0
 
     def counting_collect(self, *args, **kwargs):
@@ -399,7 +400,13 @@ def test_readonly_validation_batches_minmax_into_single_collect(monkeypatch):
         call_count += 1
         return original_collect(self, *args, **kwargs)
 
+    def counting_collect_all(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_collect_all(*args, **kwargs)
+
     monkeypatch.setattr(polars.LazyFrame, "collect", counting_collect)
+    monkeypatch.setattr(polars, "collect_all", counting_collect_all)
 
     metadata.apply(df=df, validation_mode=ValidationMode.READONLY)
 
@@ -949,3 +956,14 @@ def test_scan_netcdf_reads_nothing_until_collected_and_stops_early(tmp_path, mon
     assert lazy_query.collect().height == 1
     # far fewer than the 500 grid cells
     assert 0 < sum(rows_read) < 50
+
+
+def test_shape_counts_rows_without_collecting_the_frame():
+    adf = AnnotatedDataFrame(polars.LazyFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}),
+                             MetaData([DataSpecification(name="a"), DataSpecification(name="b")]),
+                             validation_mode=ValidationMode.IGNORE)
+
+    assert adf.shape == (3, 2)
+    assert len(adf) == 3
+    assert adf._dataframe_collected is None
+    assert adf.lazyframe.compat._dataframe_collected is None

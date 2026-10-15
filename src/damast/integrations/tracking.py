@@ -236,8 +236,10 @@ class ExperimentTracker(ABC):
         metadata, saved as a YAML artifact for anyone who needs more than the flattened view.
 
         Args:
-            adf: The (typically pipeline output) dataframe whose metadata to log.
+            adf: The (typically pipeline output) dataframe whose metadata to log - a pipeline
+                result's statistics are computed first if the run has not executed yet.
         """
+        adf.execute()
         params, metrics, tags = flatten_metadata(adf.metadata)
         if params:
             self.log_params(params)

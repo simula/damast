@@ -49,7 +49,7 @@ dependencies = [
     "numpy>=2",
     "packaging",
     "pandas",
-    "polars>=1.36.1",
+    "polars>=2.0",
     "polars_h3",
     "psutil",
     "pyais",

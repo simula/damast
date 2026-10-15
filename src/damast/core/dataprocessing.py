@@ -4,6 +4,7 @@ Module containing decorators and classes to model data processing pipelines
 from __future__ import annotations
 
 import copy
+import gc
 import importlib
 import os
 import tempfile
@@ -21,8 +22,10 @@ import damast.version
 from damast.core.processing_graph import Node, ProcessingGraph
 from damast.core.transformations import PipelineElement
 
+from . import deferred
 from .constants import DAMAST_DEFAULT_DATASOURCE
 from .dataframe import AnnotatedDataFrame
+from .deferred import Deferred, PendingQueries
 from .metadata import DataSpecification, MetaData
 from .pydantic_export import PydanticExporter
 from .tracking import PipelineElementTracker, RowCountTracker, TimingTracker
@@ -117,6 +120,8 @@ class DataProcessingPipeline(PipelineElement):
 
         self._name_mappings = name_mappings
         self._processing_stats = {}
+        #: What the last transform() run still has to compute, see damast.core.deferred
+        self._pending: PendingQueries | None = None
 
         self._trackers = list(trackers) if trackers is not None else [TimingTracker(), RowCountTracker()]
         self._steps_in_flight = set()
@@ -183,7 +188,14 @@ class DataProcessingPipeline(PipelineElement):
         ``{"my_step": {"processing_time_in_s": 0.1, "input_dataframe_length": {...},
         "output_dataframe_length": 123, "rows_removed": 7, ...}}``. Filled in as steps run, so it
         also reflects partial progress if a pipeline fails mid-run.
+
+        Statistics that need the data are computed when the result is - by
+        :func:`AnnotatedDataFrame.export`, :func:`AnnotatedDataFrame.collect` or
+        :func:`AnnotatedDataFrame.execute`. If that has not happened yet, accessing this runs the
+        pipeline to compute them (but not the result).
         """
+        if self._pending is not None and not self._pending.done:
+            self._pending.run()
         return self._processing_stats
 
     @property
@@ -721,6 +733,13 @@ class DataProcessingPipeline(PipelineElement):
         """
         Apply pipeline on given annotated dataframe
 
+        This only builds the lazy plan of the result. What needs the data - checking each step's
+        output against its metadata, the trackers' statistics and the result's updated metadata -
+        is computed together with the result, in the single streaming pass of
+        :func:`AnnotatedDataFrame.export`, :func:`AnnotatedDataFrame.collect` or
+        :func:`AnnotatedDataFrame.execute` on the returned frame. A violation is raised from there,
+        naming the step, and the statistics report (:func:`save_stats`) is written then.
+
         .. note::
             If any filters are applied by the pipeline, these are executed at the end of the
             transformation.
@@ -731,6 +750,21 @@ class DataProcessingPipeline(PipelineElement):
         # the statistics describe this run, so anything a previous one left behind has to go
         self._processing_stats = {}
         self._steps_in_flight = set()
+        self._pending = PendingQueries()
+        with deferred.running(self._pending):
+            adf = self._transform(df, name_mappings=name_mappings, verbose=verbose, **kwargs)
+
+        self._pending.on_complete(self.save_stats)
+        adf.pending = self._pending
+        return adf
+
+    def _transform(self,
+                   df: AnnotatedDataFrame,
+                   name_mappings: dict[str, dict[str, any]] | None,
+                   verbose: bool,
+                   **kwargs) -> AnnotatedDataFrame:
+        """See :func:`transform` - runs with the pending queries of the run in place."""
+        self._pending.label = "input"
 
         dataframes = { DAMAST_DEFAULT_DATASOURCE: df }
         for x in self.processing_graph.get_joins():
@@ -763,9 +797,8 @@ class DataProcessingPipeline(PipelineElement):
 
         adf = pipeline._run(in_dataframes, verbose=verbose)
         assert isinstance(adf, AnnotatedDataFrame)
+        self._pending.label = "result metadata"
         adf.validate_metadata(validation_mode=damast.core.ValidationMode.UPDATE_METADATA)
-
-        self.save_stats()
         return adf
 
     def _run(self,
@@ -791,6 +824,9 @@ class DataProcessingPipeline(PipelineElement):
                 if verbose:
                     print(f"Preview step #{idx} {node} (1 row)")
                     print(f"{node.result.head(1).collect()}")
+
+                # Ensure to cleanup after each step
+                gc.collect()
             except Exception as e:
                 # Keep the full original traceback - truncating to the last frames only
                 # hides exactly where in the pipeline element (not in damast internals) the
@@ -831,6 +867,10 @@ class DataProcessingPipeline(PipelineElement):
         logger.info(f"[transform] start: {step.__class__.__name__} - {step.name_mappings}")
 
         step_name = self.processing_graph[step.uuid].name
+        pending = deferred.current()
+        if pending is not None:
+            pending.label = f"step '{step_name}' ({step.__class__.__name__})"
+
         self._processing_stats[step_name] = {}
         for tracker in self._trackers:
             tracker.on_step_start(step, dataframes)
@@ -850,8 +890,15 @@ class DataProcessingPipeline(PipelineElement):
 
         step_name = self.processing_graph[step.uuid].name
         statistics = self._processing_stats.setdefault(step_name, {})
+        pending = deferred.current()
         for tracker in self._trackers:
-            statistics.update(tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf}))
+            report = tracker.on_step_end(step, {DAMAST_DEFAULT_DATASOURCE: adf})
+            if not isinstance(report, Deferred):
+                statistics.update(report)
+            elif pending is not None:
+                pending.add(report, statistics.update)
+            else:
+                statistics.update(report.resolve())
 
         # Report whatever the trackers happened to measure, so that a custom set of them degrades
         # the message instead of breaking it

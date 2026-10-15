@@ -29,6 +29,7 @@ from .constants import (
     DAMAST_SUPPORTED_FILE_FORMATS,
 )
 from .data_description import ListOfValues, MinMax
+from .deferred import PendingQueries
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .partitioning import PartitionStrategy, warn_on_local_time_buckets
 from .types import DataFrame, XDataFrame
@@ -60,6 +61,11 @@ class AnnotatedDataFrame(XDataFrame):
 
     #: Metadata associated with the dataframe
     _metadata: MetaData
+
+    #: What the pipeline run that produced this frame still has to compute - checks, statistics
+    #: and the metadata update, see :func:`damast.core.dataprocessing.DataProcessingPipeline.transform`.
+    #: :func:`export`, :func:`collect` and :func:`execute` compute it in the same pass as the frame.
+    pending: PendingQueries | None = None
 
     def __init__(
         self,
@@ -209,17 +215,17 @@ class AnnotatedDataFrame(XDataFrame):
         if self.lazyframe is None:
             raise ValueError(f"{self.__class__.__name__}.save: no dataframe to save")
 
-        metadata_filename = Path(filename).with_suffix(DAMAST_SPEC_SUFFIX)
-        self._metadata.save_yaml(filename=metadata_filename)
-
+        # the data first: for a pipeline result that is what computes the statistics the
+        # metadata written below includes (see 'pending')
         if Path(filename).suffix not in [".hdf5", ".h5"]:
             self.export(filename)
-            return self
+        else:
+            self.execute()
+            # First save the hdf5 file in order to add then the metadata to it
+            XDataFrame.export_hdf5(self.lazyframe, filename)
+            self._metadata.append_to_hdf(filename)
 
-        # First save the hdf5 file in order to add then the metadata to it
-        XDataFrame.export_hdf5(self.lazyframe, filename)
-        self._metadata.append_to_hdf(filename)
-
+        self._metadata.save_yaml(filename=Path(filename).with_suffix(DAMAST_SPEC_SUFFIX))
         return self
 
     def export(self, filename: str | Path, compression: str | None = None, compression_level: int | None = None):
@@ -228,6 +234,12 @@ class AnnotatedDataFrame(XDataFrame):
         By default the format is parquet.
 
         Compression is applied when possible, e.g., for parquet.
+
+        If this frame is the result of a pipeline run, the run's checks and statistics are
+        computed in the same streaming pass as the data (see :attr:`pending`). Since the metadata
+        embedded in the file includes those statistics, the data is first written to a temporary
+        file next to `filename` and then copied - streamed, without running the pipeline again -
+        into `filename` with the final metadata.
         """
         # this sets the default
         if compression is None:
@@ -238,13 +250,54 @@ class AnnotatedDataFrame(XDataFrame):
         elif compression == "NONE":
             compression = "uncompressed"
 
-        # The metadata ends up as plain parquet key/value metadata
-        self.lazyframe.sink_parquet(
-            filename,
-            compression=compression,
-            compression_level=compression_level,
-            metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
-        )
+        def write(lazyframe: polars.LazyFrame, path: Path) -> None:
+            # The metadata ends up as plain parquet key/value metadata
+            lazyframe.sink_parquet(
+                path,
+                compression=compression,
+                compression_level=compression_level,
+                metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
+            )
+
+        filename = Path(filename)
+        if self.pending is None or self.pending.done:
+            write(self.lazyframe, filename)
+            return
+
+        unfinished = filename.with_name(f".{filename.name}.{os.getpid()}.unfinished")
+        try:
+            self.pending.run(self.lazyframe.sink_parquet(unfinished, compression="zstd",
+                                                         compression_level=1, lazy=True))
+            write(polars.scan_parquet(unfinished), filename)
+        finally:
+            unfinished.unlink(missing_ok=True)
+
+    def collect(self, **kwargs) -> polars.DataFrame:
+        """
+        Collect the frame - with the pending checks and statistics of the pipeline run that
+        produced it (see :attr:`pending`) computed in the same pass.
+
+        :param kwargs: Passed to :func:`polars.LazyFrame.collect` when nothing is pending
+        :return: The collected frame
+        """
+        if self.pending is None or self.pending.done:
+            return self.lazyframe.collect(**kwargs)
+        return self.pending.run(self.lazyframe)[0]
+
+    def execute(self) -> AnnotatedDataFrame:
+        """
+        Compute the pending checks and statistics of the pipeline run that produced this frame
+        (see :attr:`pending`) without the frame itself - e.g. to inspect the updated
+        :attr:`metadata` before deciding where to export.
+
+        Runs the pipeline once; exporting afterwards runs it again.
+
+        :return: This frame
+        :raise RuntimeError: If a step's output violates its metadata
+        """
+        if self.pending is not None:
+            self.pending.run()
+        return self
 
     def export_partitioned(
         self,
@@ -292,7 +345,13 @@ class AnnotatedDataFrame(XDataFrame):
             suffix = f".{suffix}"
 
         key_col = "__damast_partition_key__"
-        collected = self.lazyframe.with_columns(strategy.key_expr().alias(key_col)).collect()
+        keyed = self.lazyframe.with_columns(strategy.key_expr().alias(key_col))
+        if self.pending is None or self.pending.done:
+            collected = keyed.collect()
+        else:
+            # ensure that pending queries, e.g., for stats are computed
+            collected = self.pending.run(keyed)[0]
+
         if strategy.time_zone is None:
             # only an accidental local-time bucketing is worth a warning
             warn_on_local_time_buckets(collected[key_col])
@@ -690,8 +749,9 @@ class AnnotatedDataFrame(XDataFrame):
         return copy.deepcopy(self)
 
     @property
-    def shape(self):
-        return self.lazyframe.compat.collected().shape
+    def shape(self) -> tuple[int, int]:
+        # counting needs no column, so this runs the plan without materialising the frame
+        return len(self), len(self.column_names)
 
     def __deepcopy__(self, memo=None):
         # ignore validation, also erroneous frames should be copyable

@@ -389,6 +389,9 @@ class NumericValueStats(BaseModel):
     upper_quantile: float | None = None  #: Q3 (75th percentile)
     total_count: int  = 0
     null_count: int = 0
+    #: Share of the rows median and quartiles were computed from - a deterministic sample, so they
+    #: can be computed without holding the column; None if computed from all rows
+    quantile_sample_fraction: float | None = None
 
     def merge(self, other: NumericValueStats) -> NumericValueStats:
         combined_mean = (

@@ -463,7 +463,8 @@ class Experiment:
 
         :param adf: The input dataframe
         """
-        adf_with_features = self.learning_task.pipeline.transform(adf)
+        # executed now: training reads the frame directly, which would skip the run's checks
+        adf_with_features = self.learning_task.pipeline.transform(adf).execute()
 
         self.learning_task.pipeline.save(dir=self.output_directory)
         self.learning_task.pipeline.save_state(

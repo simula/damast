@@ -17,7 +17,9 @@ from typing import Any
 
 import polars as pl
 import yaml
+from pydantic import ValidationError
 
+from . import deferred
 from .annotations import Annotation, History
 from .constants import DAMAST_HDF5_COLUMNS, DAMAST_HDF5_ROOT, DAMAST_SPEC_SUFFIX
 from .data_description import (
@@ -29,6 +31,7 @@ from .data_description import (
     NumericValueStats,
 )
 from .formatting import DEFAULT_INDENT
+from .polars_dataframe import MAX_CATEGORIES, row_position, usable_categories
 from .types import DataFrame, XDataFrame
 from .units import Unit, units
 
@@ -42,6 +45,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+#: Share of the rows median and quartiles are computed from, see MetaData.statistics
+QUANTILE_SAMPLE_FRACTION: float = 0.01
+
+#: Up to this many rows median and quartiles are computed exactly, see MetaData.statistics
+EXACT_QUANTILE_MAX_ROWS: int = 1_000_000
 
 
 class DataCategory(str, Enum):
@@ -556,14 +565,186 @@ class DataSpecification:
             data += "\n"
         return data
 
+    def range_check_exprs(self, column_name: str, prefix: str) -> list[pl.Expr]:
+        """
+        Aggregations a READONLY check of :attr:`value_range` needs, see :func:`verify_range`.
+
+        :param column_name: The column the specification applies to
+        :param prefix: Prefix for the aggregations' names, unique per column
+        :return: The aggregations - none without a value range
+        """
+        if not self.value_range:
+            return []
+        if isinstance(self.value_range, ListOfValues):
+            return [self._valid_values_expr(column_name).all().alias(f"{prefix}valid")]
+        return [pl.col(column_name).min().alias(f"{prefix}min"),
+                pl.col(column_name).max().alias(f"{prefix}max")]
+
+    def verify_range(self, result: dict[str, Any], column_name: str, prefix: str, df: pl.LazyFrame) -> None:
+        """
+        Check the aggregations of :func:`range_check_exprs` against :attr:`value_range`.
+
+        :param result: The aggregations' values by name
+        :param column_name: The column the specification applies to
+        :param prefix: The prefix given to :func:`range_check_exprs`
+        :param df: The frame, to name the offending values if a :class:`ListOfValues` is violated
+        :raise ValueError: If the data lies outside of the value range
+        """
+        if not self.value_range:
+            return
+        if isinstance(self.value_range, ListOfValues):
+            # Membership check across all distinct values - unlike MinMax, the allowed set isn't
+            # contiguous, so checking only the sorted extremes would miss an invalid value in the
+            # middle.
+            if not result[f"{prefix}valid"]:
+                valid_expr = self._valid_values_expr(column_name)
+                invalid = (
+                    df.select(pl.col(column_name).filter(~valid_expr).unique())
+                    .collect()[column_name].to_list()
+                )
+                raise ValueError(
+                    f"{self.__class__.__name__}.apply: value(s) {invalid} lie outside"
+                    f" of range {self.value_range} for column '{column_name}'"
+                )
+            return
+
+        for bound in ("min", "max"):
+            value = result[f"{prefix}{bound}"]
+            if not self.value_range.is_in_range(value):
+                raise ValueError(
+                    f"{self.__class__.__name__}.apply: {bound}imum value '{value}'"
+                    f" lies outside of range {self.value_range} for column '{column_name}'"
+                )
+
+    @staticmethod
+    def statistics_exprs(column_name: str, dtype: pl.DataType, prefix: str) -> list[pl.Expr]:
+        """
+        Aggregations an UPDATE_METADATA update needs, see :func:`update_statistics`.
+
+        Only aggregations that stream, i.e. that don't have to hold the column's values -
+        quantiles come from a sample, see :func:`quantile_exprs`.
+
+        :param column_name: The column
+        :param dtype: Its type
+        :param prefix: Prefix for the aggregations' names, unique per column
+        :return: The aggregations - none for a type that has no statistics
+        """
+        col = pl.col(column_name)
+        if dtype == pl.String:
+            return [
+                # at most one more than a list of categories may have, to tell whether it does
+                col.unique().sort().head(MAX_CATEGORIES + 1).implode().alias(f"{prefix}categories"),
+                col.min().alias(f"{prefix}min"),
+                col.max().alias(f"{prefix}max"),
+            ]
+        if dtype == pl.Boolean:
+            return [
+                col.sum().alias(f"{prefix}true_count"),
+                (~col).sum().alias(f"{prefix}false_count"),
+                col.count().alias(f"{prefix}total_count"),
+                col.null_count().alias(f"{prefix}null_count"),
+            ]
+        if dtype.is_numeric() or isinstance(dtype, pl.Datetime):
+            values = col.dt.timestamp("us") / 1_000_000 if isinstance(dtype, pl.Datetime) else col
+            return [
+                col.min().alias(f"{prefix}min"),
+                col.max().alias(f"{prefix}max"),
+                col.count().alias(f"{prefix}total_count"),
+                col.null_count().alias(f"{prefix}null_count"),
+                values.mean().alias(f"{prefix}mean"),
+                values.std().alias(f"{prefix}stddev"),
+            ]
+        return []
+
+    @staticmethod
+    def quantile_exprs(column_name: str, prefix: str) -> list[pl.Expr]:
+        """
+        Median and quartiles of a numeric column, see :func:`update_statistics`.
+
+        :param column_name: The column
+        :param prefix: Prefix for the aggregations' names, unique per column
+        :return: The aggregations
+        """
+        col = pl.col(column_name)
+        return [
+            col.median().alias(f"{prefix}median"),
+            col.quantile(0.25, interpolation="linear").alias(f"{prefix}lower_quantile"),
+            col.quantile(0.75, interpolation="linear").alias(f"{prefix}upper_quantile"),
+        ]
+
+    def update_statistics(self, result: dict[str, Any], column_name: str, dtype: pl.DataType,
+                          prefix: str, quantile_sample_fraction: float | None) -> None:
+        """
+        Set :attr:`value_range` and :attr:`value_stats` from the aggregations of
+        :func:`statistics_exprs` and, for a numeric column, :func:`quantile_exprs`.
+
+        The same rules as :func:`update_datarange_and_stats`.
+
+        :param result: The aggregations' values by name
+        :param column_name: The column
+        :param dtype: Its type
+        :param prefix: The prefix given to the expression builders
+        :param quantile_sample_fraction: Share of the rows the quantiles were computed from,
+            None if from all of them
+        """
+        if dtype == pl.String:
+            categories = usable_categories(column_name, result[f"{prefix}categories"])
+            if categories:
+                self.value_range = ListOfValues(categories)
+            elif result[f"{prefix}min"] is not None and result[f"{prefix}max"] is not None:
+                self.value_range = MinMax(result[f"{prefix}min"], result[f"{prefix}max"])
+            return
+
+        if dtype == pl.Boolean:
+            # No value_range here - a min/max of True/False adds nothing representation_type=bool
+            # doesn't already say
+            self.value_stats = BooleanValueStats(**{
+                key: result[f"{prefix}{key}"] or 0
+                for key in ("true_count", "false_count", "total_count", "null_count")
+            })
+            return
+
+        if f"{prefix}min" not in result:
+            return
+        min_value, max_value = result[f"{prefix}min"], result[f"{prefix}max"]
+        if min_value is None or max_value is None:
+            return
+
+        self.value_range = MinMax(min_value, max_value)
+        quantiles = {key: result.get(f"{prefix}{key}")
+                     for key in ("median", "lower_quantile", "upper_quantile")}
+        try:
+            self.value_stats = NumericValueStats(
+                mean=result[f"{prefix}mean"],
+                stddev=result[f"{prefix}stddev"],
+                total_count=result[f"{prefix}total_count"],
+                null_count=result[f"{prefix}null_count"],
+                quantile_sample_fraction=quantile_sample_fraction if quantiles["median"] is not None else None,
+                **quantiles,
+            )
+        except ValidationError as e:
+            logger.warning(f"Unable to compute stats for {column_name=}")
+            logger.debug(f"Validation error for {column_name=} -- {e}")
+            self.value_stats = None
+
+    def _valid_values_expr(self, column_name: str) -> pl.Expr:
+        allowed = [v for v in self.value_range.values if v is not None]
+        valid_expr = pl.col(column_name).is_in(allowed)
+        if None in self.value_range.values:
+            valid_expr = valid_expr | pl.col(column_name).is_null()
+        return valid_expr
+
     def apply(
         self,
         df: DataFrame | XDataFrame,
         column_name: str,
-        validation_mode: ValidationMode
+        validation_mode: ValidationMode,
         ) -> DataFrame:
         """
         Apply the metadata object to the dataframe
+
+        What needs the data itself - the READONLY value range check and the UPDATE_METADATA
+        statistics - is left to :func:`MetaData.apply`, which computes it for all columns at once.
 
         :param df: Dataframe that should be associated with the data-specification
         :param column_name: Name of the column that need to be validated/checked
@@ -601,38 +782,7 @@ class DataSpecification:
                         f" but got '{dtype}'"
                     )
 
-            if self.value_range:
-                if isinstance(self.value_range, ListOfValues):
-                    # Membership check across all distinct values - unlike MinMax, the
-                    # allowed set isn't contiguous, so checking only the sorted extremes
-                    # (as done below for MinMax) would miss an invalid value in the middle.
-                    allowed = [v for v in self.value_range.values if v is not None]
-                    valid_expr = pl.col(column_name).is_in(allowed)
-                    if None in self.value_range.values:
-                        valid_expr = valid_expr | pl.col(column_name).is_null()
-
-                    is_valid = xdf.lazyframe.select(valid_expr.all()).collect().item()
-                    if not is_valid:
-                        invalid = (
-                            xdf.lazyframe.select(pl.col(column_name).filter(~valid_expr).unique())
-                            .collect()[column_name].to_list()
-                        )
-                        raise ValueError(
-                            f"{self.__class__.__name__}.apply: value(s) {invalid} lie outside"
-                            f" of range {self.value_range} for column '{column_name}'"
-                        )
-                else:
-                    min_value, max_value = xdf.minmax(column_name)
-                    if not self.value_range.is_in_range(min_value):
-                        raise ValueError(
-                            f"{self.__class__.__name__}.apply: minimum value '{min_value}'"
-                            f" lies outside of range {self.value_range} for column '{column_name}'"
-                        )
-                    if not self.value_range.is_in_range(max_value):
-                        raise ValueError(
-                            f"{self.__class__.__name__}.apply: maximum value '{max_value}'"
-                            f" lies outside of range {self.value_range} for column '{column_name}'"
-                        )
+            # the value range needs the data, see range_check_exprs()
             return df
 
         if validation_mode == ValidationMode.UPDATE_DATA:
@@ -677,7 +827,7 @@ class DataSpecification:
         if validation_mode == ValidationMode.UPDATE_METADATA:
             if self.representation_type is None:
                 self.representation_type = xdf.dtype(column_name)
-            return self.update_datarange_and_stats(df, column_name)
+            return df
 
     def update_datarange_and_stats(self, df, column_name: str):
         xdf = XDataFrame(df)
@@ -1169,6 +1319,9 @@ class MetaData:
                 txt += f", median={median:.2f}"
             if lower_quantile is not None and upper_quantile is not None:
                 txt += f", iqr={upper_quantile - lower_quantile:.2f} [{lower_quantile:.2f}, {upper_quantile:.2f}]"
+            fraction = value.get("quantile_sample_fraction")
+            if fraction is not None and median is not None:
+                txt += f" (quantiles from a {fraction:.0%} sample)"
             return txt
 
         generated_fields = generated_fields or {}
@@ -1333,6 +1486,12 @@ class MetaData:
         """Check that each column in the :class:`polars.LazyFrame` fulfills the
         data-specifications.
 
+        What needs the data - the value range checks (READONLY) and the statistics
+        (UPDATE_METADATA) - is computed for all columns in one query. Inside a pipeline run that
+        query is only registered with the run (see :mod:`damast.core.deferred`), so it is computed
+        in the pass that produces the result rather than by running the pipeline here; a
+        violation is then raised from there.
+
         :param df: The dataframe
         :param validation_mode: If a column does not comply to the spec, force the spec, e.g.,
             for a given range specification, map data within range.
@@ -1341,17 +1500,6 @@ class MetaData:
         assert isinstance(df, pl.LazyFrame), f"Expected polars.LazyFrame, got {type(df)}"
 
         columns = df.compat.column_names
-
-        if validation_mode == ValidationMode.READONLY:
-            # Batch all MinMax value_range aggregates into a single collect() up front -
-            # DataSpecification.apply() below picks these up from the xdf minmax cache
-            # (df.compat is memoized per-frame by polars) instead of collecting per column.
-            minmax_columns = [
-                spec.name for spec in self.columns
-                if spec.name in columns and isinstance(spec.value_range, MinMax)
-            ]
-            if minmax_columns:
-                df.compat.precompute_minmax(minmax_columns)
 
         for column_spec in self.columns:
             if column_spec.name in columns:
@@ -1379,7 +1527,95 @@ class MetaData:
                     f"Column data exists in dataframe, but no metadata is available"
                 )
 
+        if validation_mode == ValidationMode.READONLY:
+            data_dependent = self.range_checks(df, columns)
+        elif validation_mode == ValidationMode.UPDATE_METADATA:
+            data_dependent = self.statistics(df, columns)
+        else:
+            data_dependent = None
+
+        if data_dependent is not None:
+            pending = deferred.current()
+            if pending is not None:
+                pending.add(data_dependent)
+            else:
+                try:
+                    data_dependent.resolve()
+                except pl.exceptions.InvalidOperationError as e:
+                    raise ValueError(f"{self.__class__.__name__}.apply: cannot evaluate the data -- {e}") from e
+
         return df
+
+    def range_checks(self, df: pl.LazyFrame, columns: list[str]) -> deferred.Deferred | None:
+        """
+        The value range checks of all columns, as one query.
+
+        :param df: The dataframe
+        :param columns: Its columns
+        :return: The checks - their result raises ValueError on a violation; None if no column has
+            a value range
+        """
+        specs = [(f"{i}::", spec) for i, spec in enumerate(self.columns)
+                 if spec.name in columns and spec.value_range]
+        exprs = [expr for prefix, spec in specs for expr in spec.range_check_exprs(spec.name, prefix)]
+        if not exprs:
+            return None
+
+        def verify(results: list[pl.DataFrame]) -> None:
+            row = results[0].row(0, named=True)
+            for prefix, spec in specs:
+                spec.verify_range(row, spec.name, prefix, df)
+
+        return deferred.Deferred([df.select(exprs)], verify)
+
+    def statistics(self, df: pl.LazyFrame, columns: list[str]) -> deferred.Deferred | None:
+        """
+        Value ranges and statistics of all columns, as one query - see
+        :func:`DataSpecification.update_statistics`.
+
+        Median and quartiles are taken from a deterministic sample of
+        :data:`QUANTILE_SAMPLE_FRACTION` of the rows, since computing them exactly means holding
+        every value of the column. The sample is chosen by a hash of each row's position, not of
+        its values - rows with equal values would otherwise all be in or all be out. A frame of at
+        most :data:`EXACT_QUANTILE_MAX_ROWS` rows gets them exactly instead: they are also computed
+        over that many first rows in the same pass, which bounds the values held.
+
+        :param df: The dataframe
+        :param columns: Its columns
+        :return: The query; resolving it updates the specifications - None if no column has
+            statistics
+        """
+        schema = df.collect_schema()
+        specs = [(f"{i}::", spec, schema[spec.name]) for i, spec in enumerate(self.columns)
+                 if spec.name in columns]
+        exprs = [expr for prefix, spec, dtype in specs
+                 for expr in DataSpecification.statistics_exprs(spec.name, dtype, prefix)]
+        if not exprs:
+            return None
+
+        numeric = [(prefix, spec) for prefix, spec, dtype in specs if dtype.is_numeric()]
+        quantiles = [expr for prefix, spec in numeric
+                     for expr in DataSpecification.quantile_exprs(spec.name, prefix)]
+        queries = [df.select(pl.len().alias("::rows"), *exprs)]
+        if quantiles:
+            modulo = round(1 / QUANTILE_SAMPLE_FRACTION)
+            queries.append(df.filter(row_position().hash() % modulo == 0).select(quantiles))
+            queries.append(df.head(EXACT_QUANTILE_MAX_ROWS).select(quantiles))
+
+        def update(results: list[pl.DataFrame]) -> None:
+            row = results[0].row(0, named=True)
+            fraction = None
+            if quantiles:
+                if row["::rows"] <= EXACT_QUANTILE_MAX_ROWS:
+                    # the first rows were all rows
+                    row |= results[2].row(0, named=True)
+                else:
+                    row |= results[1].row(0, named=True)
+                    fraction = QUANTILE_SAMPLE_FRACTION
+            for prefix, spec, dtype in specs:
+                spec.update_statistics(row, spec.name, dtype, prefix, fraction)
+
+        return deferred.Deferred(queries, update)
 
     def __contains__(self, column_name: str):
         """"""
