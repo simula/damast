@@ -155,29 +155,33 @@ class Heading(PipelineElement):
         angular_velocity = self.get_name("angular_velocity")
 
         delta_lon = "delta_lon"
-        shift_lat = "shift_lat" # from this latitude
+        next_lat = "next_lat"
 
+        # The initial bearing from each position to the same object's next one - so an object's
+        # last position, having no next one, has no heading and is dropped
         dataframe = dataframe.sort(group, sort_column).with_columns(
-                    pl.col(in_lon).diff().over(group).alias(delta_lon),
-                    pl.col(in_lat).shift(-1).over(group).alias(shift_lat)
+                    (pl.col(in_lon).shift(-1).over(group) - pl.col(in_lon)).alias(delta_lon),
+                    pl.col(in_lat).shift(-1).over(group).alias(next_lat)
                 ).filter(
-                    pl.col(delta_lon).is_not_null()
-                ).filter(
-                    pl.col(shift_lat).is_not_null()
+                    pl.col(next_lat).is_not_null()
                 )
 
         dataframe = dataframe.with_columns(
             pl.arctan2(
-                pl.col(delta_lon).radians().sin() * pl.col(in_lat).radians().cos(),
+                # X component
+                pl.col(delta_lon).radians().sin() * pl.col(next_lat).radians().cos(),
                 # Y component
-                pl.col(shift_lat).radians().cos() * pl.col(in_lat).radians().sin() -
-                pl.col(shift_lat).radians().sin() * pl.col(in_lat).radians().cos() * pl.col(delta_lon).radians().cos()
+                pl.col(in_lat).radians().cos() * pl.col(next_lat).radians().sin() -
+                pl.col(in_lat).radians().sin() * pl.col(next_lat).radians().cos() * pl.col(delta_lon).radians().cos()
             ).alias(heading)
-        ).drop(delta_lon, shift_lat)
+        ).drop(delta_lon, next_lat)
 
+        # per object: the first heading of an object has nothing to change from, so it is dropped
+        # below rather than compared with the previous object's last one
         dataframe = dataframe.sort(group, sort_column).with_columns(
-                    pl.col(heading).diff().alias(delta_heading),
-                    pl.col(sort_column).diff().dt.total_seconds(fractional=True).alias("_delta_time")
+                    pl.col(heading).diff().over(group).alias(delta_heading),
+                    pl.col(sort_column).diff().dt.total_seconds(fractional=True).over(group)
+                      .alias("_delta_time")
                 )
 
         dataframe = dataframe.with_columns(
