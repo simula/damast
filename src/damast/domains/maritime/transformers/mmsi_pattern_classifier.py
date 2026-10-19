@@ -11,6 +11,10 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.decorators import describe, input, output
 from damast.core.transformations import PipelineElement
 
+#: Range of the Maritime Identification Digits (MID) the ITU allocates to countries - not every
+#: value in between is assigned
+VALID_MIDS: range = range(201, 776)
+
 
 def load_pattern_rules(mapping_file: str | Path) -> dict[str, str]:
     """
@@ -59,8 +63,16 @@ class MMSIPatternClassifier(PipelineElement):
     navigation, per Recommendation ITU-R M.585-10 (04/2026) - see
     examples/mmsi_categories.yaml for the full set of patterns it defines. This transformer
     looks up each MMSI's category from a user-supplied pattern -> label mapping (see
-    `load_pattern_rules`) and adds it as a new column; it never drops rows - a MMSI matching no
-    rule gets `default_category`.
+    `load_pattern_rules`) and adds it as a new column - a MMSI matching no rule is a ship
+    station and gets `default_category`.
+
+    A MMSI that cannot be a real one gets `invalid_category` instead, and with `drop_invalid`
+    its rows are removed: a missing MMSI, one of more than 9 digits, and one whose Maritime
+    Identification Digits (MID, the country) lie outside 201-775 - for a ship station its first
+    three digits, for a rule with a named group ``(?P<mid>...)`` that group. Rules without one
+    are not checked for a MID; the default mapping file gives every rule whose pattern contains
+    a MID the group. Transmitters misusing the MMSI field, e.g. fishing-gear buoys sending
+    ``97000103``, are caught this way: zero-padded it is a group ship call with MID 970.
 
     Example:
         ```python
@@ -79,19 +91,24 @@ class MMSIPatternClassifier(PipelineElement):
             when a saved pipeline using it is loaded elsewhere, so keep it alongside the
             pipeline (or use an absolute path)
         default_category: Category assigned to a MMSI that matches no rule in `mapping_file`
+        invalid_category: Category assigned to a MMSI that cannot be a real one, see above
+        drop_invalid: Remove the rows whose MMSI cannot be a real one
 
     Raises:
         ValueError: If `mapping_file` contains a pattern that is not a valid regular
             expression
     """
 
-    def __init__(self, mapping_file: str | Path | None = None, default_category: str = "unknown"):
+    def __init__(self, mapping_file: str | Path | None = None, default_category: str = "unknown",
+                 invalid_category: str = "invalid", drop_invalid: bool = False):
         if mapping_file is None:
             self.mapping_file = Path(__file__).parent.parent / "ais" / "mmsi_categories.yaml"
         else:
             self.mapping_file = str(mapping_file)
 
         self.default_category = default_category
+        self.invalid_category = invalid_category
+        self.drop_invalid = drop_invalid
         self._rules = load_pattern_rules(self.mapping_file)
 
         # tried in file order - first match wins, see load_pattern_rules
@@ -108,19 +125,30 @@ class MMSIPatternClassifier(PipelineElement):
                 ) from e
             self._compiled_patterns.append((compiled, category))
 
-    def _categorize(self, mmsi: int | None) -> str:
-        if mmsi is None:
-            return self.default_category
+    def _categorize(self, mmsi: int | str | None) -> str:
+        try:
+            number = int(mmsi)
+        except (TypeError, ValueError):
+            return self.invalid_category
+        if not 0 <= number <= 999_999_999:
+            return self.invalid_category
 
         # A MMSI is always 9 digits, but two categories (group ship call, coast station)
         # start with a "0" that a plain integer column silently drops - zfill it back before
         # matching patterns, or those two categories (and the all-coast-stations identity)
         # could never match.
-        mmsi_str = str(mmsi).zfill(9)
+        mmsi_str = str(number).zfill(9)
         for pattern, category in self._compiled_patterns:
-            if pattern.match(mmsi_str):
+            match = pattern.match(mmsi_str)
+            if match:
+                mid = match.groupdict().get("mid")
+                if mid is not None and int(mid) not in VALID_MIDS:
+                    return self.invalid_category
                 return category
 
+        # a ship station: its first three digits are its MID (Annex 1, S1)
+        if int(mmsi_str[:3]) not in VALID_MIDS:
+            return self.invalid_category
         return self.default_category
 
     @describe("Classify a MMSI column by matching it against patterns from a mapping file")
@@ -129,9 +157,17 @@ class MMSIPatternClassifier(PipelineElement):
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         feature = self.get_name("x")
         result = self.get_name("{{x}}_category")
-        df.lazyframe = df.lazyframe.with_columns(
+
+        # each distinct MMSI is classified once and joined back - a feed has far fewer
+        # transmitters than rows, and the classification runs in Python
+        categories = df.lazyframe.select(feature).unique().with_columns(
             polars.col(feature)
-            .map_elements(self._categorize, return_dtype=polars.String)
+            .map_elements(self._categorize, return_dtype=polars.String, skip_nulls=False)
             .alias(result)
         )
+        lazyframe = df.lazyframe.join(categories, on=feature, how="left", nulls_equal=True,
+                                      maintain_order="left")
+        if self.drop_invalid:
+            lazyframe = lazyframe.filter(polars.col(result) != self.invalid_category)
+        df.lazyframe = lazyframe
         return df

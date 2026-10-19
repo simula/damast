@@ -121,6 +121,52 @@ def test_a_pattern_listed_after_a_more_general_one_is_shadowed(tmp_path):
     assert result.lazyframe.collect()["mmsi_category"].to_list() == ["coast-station"]
 
 
+def _classify(tmp_path, mmsis: list, **options) -> polars.DataFrame:
+    """Classify with the default mapping file."""
+    df = polars.DataFrame({"mmsi": mmsis, "row": list(range(len(mmsis)))},
+                          schema={"mmsi": polars.Int64, "row": polars.Int64})
+    metadata = MetaData(columns=[DataSpecification("mmsi", representation_type=int),
+                                 DataSpecification("row", representation_type=int)])
+    pipeline = DataProcessingPipeline(name="example", base_dir=str(tmp_path))
+    pipeline.add("classify mmsi", MMSIPatternClassifier(default_category="ship", **options),
+                 name_mappings={"x": "mmsi"})
+    return pipeline.transform(df=AnnotatedDataFrame(df, metadata)).collect()
+
+
+INVALID_MMSIS = [
+    None,
+    1_000_000_000,  # 10 digits
+    -5,
+    123456789,      # a ship station with MID 123
+    97000103,       # 097000103: a group ship call with MID 970 - a fishing-gear buoy
+    989912345,      # craft associated with a parent ship, MID 991
+    992001234,      # aid to navigation, MID 200
+]
+VALID_MMSIS = [
+    257123456,      # ship station, Norway
+    992579234,      # aid to navigation, Norway (6th digit 9: the generic rule)
+    2191234,        # 002191234: coast station, Denmark
+    970010055,      # AIS-SART - no MID
+]
+
+
+def test_invalid_mmsis_get_the_invalid_category(tmp_path):
+    result = _classify(tmp_path, INVALID_MMSIS + VALID_MMSIS)
+
+    assert result["mmsi_category"].to_list() == ["invalid"] * len(INVALID_MMSIS) + [
+        "ship", "aid-to-navigation", "coast-station", "ais-sart"]
+    # one row per input row, in input order
+    assert result["row"].to_list() == list(range(len(INVALID_MMSIS) + len(VALID_MMSIS)))
+
+
+def test_drop_invalid_removes_their_rows(tmp_path):
+    result = _classify(tmp_path, VALID_MMSIS[:2] + INVALID_MMSIS + VALID_MMSIS[2:] + [257123456],
+                       drop_invalid=True, invalid_category="bad")
+
+    assert result["mmsi"].to_list() == VALID_MMSIS + [257123456]
+    assert "bad" not in result["mmsi_category"].to_list()
+
+
 def test_invalid_pattern_raises_value_error(tmp_path):
     mapping_file = write_mapping_file(tmp_path / "mmsi_categories.yaml", {"(": "broken"})
 
