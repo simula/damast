@@ -4,9 +4,11 @@ Module to define an annotated dataframe, i.e. the combination of data and metada
 from __future__ import annotations
 
 import copy
+import itertools
 import json
 import logging
 import os
+import shutil
 from collections.abc import Callable
 from logging import INFO, Logger, getLogger
 from pathlib import Path
@@ -311,12 +313,15 @@ class AnnotatedDataFrame(XDataFrame):
         """
         Export this dataframe as one file per partition, as determined by `strategy`.
 
-        Each partition is written via :meth:`save`/:meth:`export`, so the result round-trips
-        through :meth:`from_files` exactly like any other multi-file dataset.
+        Each partition is written via :meth:`export`, so the result round-trips through
+        :meth:`from_files` exactly like any other multi-file dataset. Every file carries the
+        metadata of its own rows.
 
-        .. note::
-            This collects the full dataframe before splitting it (`polars.DataFrame.partition_by`
-            requires an eager dataframe) - not suited for data too large to fit in memory.
+        The frame is streamed into one file per partition (polars' ``PartitionBy`` sink) in a
+        hidden directory below `directory`, together with the pending checks and statistics of
+        the pipeline run that produced it (see :attr:`pending`). Each file is then copied into
+        place with its metadata, inferred from its rows alone - one more pass per partition, but
+        nothing is ever held in memory as a whole.
 
         :param directory: Directory to write partition files into (created if missing)
         :param strategy: Determines the per-row partition key and its filename
@@ -345,36 +350,51 @@ class AnnotatedDataFrame(XDataFrame):
             suffix = f".{suffix}"
 
         key_col = "__damast_partition_key__"
-        keyed = self.lazyframe.with_columns(strategy.key_expr().alias(key_col))
-        if self.pending is None or self.pending.done:
-            collected = keyed.collect()
-        else:
-            # ensure that pending queries, e.g., for stats are computed
-            collected = self.pending.run(keyed)[0]
-
+        key_expr = strategy.key_expr().alias(key_col)
         if strategy.time_zone is None:
-            # only an accidental local-time bucketing is worth a warning
-            warn_on_local_time_buckets(collected[key_col])
+            # only an accidental local-time bucketing is worth a warning - the key's type tells
+            key_dtype = self.lazyframe.select(key_expr).collect_schema()[key_col]
+            warn_on_local_time_buckets(polars.Series(key_col, [], dtype=key_dtype))
 
+        # staged file name -> target file name; staged under a neutral name, since the target
+        # may be absolute or nested, which the sink does not accept below its base path
+        targets: dict[str, str] = {}
+        counter = itertools.count()
+
+        def file_path(args) -> str:
+            # the key's value - for a struct-valued key_expr() (a composite of several columns)
+            # a dict, as strategy.filename() expects
+            staged = f"{next(counter)}.parquet"
+            targets[staged] = f"{strategy.filename(args.partition_keys.item())}{suffix}"
+            return staged
+
+        unfinished = directory / f".partitions-{os.getpid()}"
+        sink = self.lazyframe.sink_parquet(
+            # no size limit per file: one file per partition
+            polars.PartitionBy(unfinished, key=key_expr, include_key=False,
+                               file_path_provider=file_path, approximate_bytes_per_file=None),
+            compression="zstd", compression_level=1, mkdir=True, lazy=True,
+        )
         written: list[Path] = []
-        # as_dict=False + re-deriving the key from the partition itself (rather than
-        # as_dict=True, which needs the key as a dict key) also works for a struct-valued
-        # key_expr() (e.g. a composite of several columns) - a dict isn't hashable.
-        partitions = collected.partition_by(key_col, as_dict=False, include_key=True, maintain_order=True)
-        with tqdm(partitions, unit="partition") as pbar:
-            for part in pbar:
-                key = part[key_col][0]
-                part = part.drop(key_col)
-                filename = directory / f"{strategy.filename(key)}{suffix}"
-                pbar.set_description(f"Exporting {filename}")
-                filename.parent.mkdir(parents=True, exist_ok=True)
-                # The file should be self-consistent, so update the metadata
-                metadata = AnnotatedDataFrame.infer_annotation(df=part.lazy(), reference=self._metadata)
-                part_adf = AnnotatedDataFrame(part, metadata, validation_mode=ValidationMode.IGNORE)
-                part_adf.export(filename,
-                                compression=compression,
-                                compression_level=compression_level)
-                written.append(filename)
+        try:
+            if self.pending is None or self.pending.done:
+                polars.collect_all([sink], engine="streaming")
+            else:
+                self.pending.run(sink)
+
+            with tqdm(sorted(targets.items(), key=lambda item: item[1]), unit="partition") as pbar:
+                for staged, name in pbar:
+                    filename = directory / name
+                    pbar.set_description(f"Exporting {filename}")
+                    filename.parent.mkdir(parents=True, exist_ok=True)
+                    part = polars.scan_parquet(unfinished / staged)
+                    # The file should be self-consistent, so update the metadata
+                    metadata = AnnotatedDataFrame.infer_annotation(df=part, reference=self._metadata)
+                    AnnotatedDataFrame(part, metadata, validation_mode=ValidationMode.IGNORE) \
+                        .export(filename, compression=compression, compression_level=compression_level)
+                    written.append(filename)
+        finally:
+            shutil.rmtree(unfinished, ignore_errors=True)
 
         return written
 

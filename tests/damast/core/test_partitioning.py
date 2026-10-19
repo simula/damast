@@ -463,3 +463,26 @@ def test_by_time_explicit_local_time_zone_is_not_warned_about(tmp_path, caplog):
 
     assert [p.name for p in written] == ["2026-01-02.parquet"]
     assert caplog.records == []
+
+
+def test_export_partitioned_leaves_no_intermediate_files(timeseries_adf, tmp_path):
+    timeseries_adf.export_partitioned(tmp_path, ByTime("timestamp", every="1d", time_zone="UTC"))
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "2026-01-01.parquet", "2026-01-02.parquet", "2026-01-03.parquet"]
+
+
+def test_export_partitioned_of_a_pipeline_result_runs_its_checks_in_the_same_pass(timeseries_adf, tmp_path):
+    from damast.core.dataprocessing import DataProcessingPipeline
+    from damast.data_handling.transformers.filters import Filter
+
+    pipeline = DataProcessingPipeline(name="p", base_dir=tmp_path).add(
+        "keep", Filter(">=", 2), name_mappings={"x": "mmsi"})
+    result = pipeline.transform(df=timeseries_adf)
+    assert not result.pending.done
+
+    written = result.export_partitioned(tmp_path / "out", ByTime("timestamp", every="1d", time_zone="UTC"))
+
+    assert result.pending.done
+    assert [p.name for p in written] == ["2026-01-02.parquet", "2026-01-03.parquet"]
+    assert pipeline.processing_stats["keep"]["output_dataframe_length"] == 3
