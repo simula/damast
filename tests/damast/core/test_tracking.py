@@ -170,3 +170,15 @@ def test_key_tracker_tracks_each_step_separately():
 def test_key_tracker_rejects_a_negative_bound():
     with pytest.raises(ValueError, match="max_removed_keys must not be negative"):
         KeyTracker(["mmsi"], max_removed_keys=-1)
+
+
+def test_row_count_tracker_counts_only_the_rows_matching_where():
+    step = FakeStep()
+    tracker = RowCountTracker(where=~polars.col("helper"))
+
+    tracker.on_step_start(step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 3, 4], helper=[True, False, False, True])})
+    stats = end(tracker, step, {DAMAST_DEFAULT_DATASOURCE: adf_of(x=[1, 2, 4], helper=[True, False, True])})
+
+    assert stats["input_dataframe_length"] == {DAMAST_DEFAULT_DATASOURCE: 2}
+    assert stats["output_dataframe_length"] == 1
+    assert stats["rows_removed"] == 1

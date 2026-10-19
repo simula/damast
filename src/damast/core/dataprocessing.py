@@ -751,6 +751,10 @@ class DataProcessingPipeline(PipelineElement):
         self._processing_stats = {}
         self._steps_in_flight = set()
         self._pending = PendingQueries()
+        # an input still pending from another pipeline's run is computed in this run's pass
+        for dataframe in [df, *kwargs.values()]:
+            if isinstance(dataframe, AnnotatedDataFrame) and dataframe.pending is not None:
+                self._pending.absorb(dataframe.pending)
         with deferred.running(self._pending):
             adf = self._transform(df, name_mappings=name_mappings, verbose=verbose, **kwargs)
 

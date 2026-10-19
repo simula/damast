@@ -49,11 +49,37 @@ class PendingQueries:
         self._on_complete: list[Callable[[], None]] = []
         #: Label of what is currently registering queries, e.g. the step being run
         self.label: str = ""
-        #: Whether :func:`run` has computed the registered queries
-        self.done: bool = False
+        self._done: bool = False
+        #: Set by :func:`absorb` - the queries that took over this one's
+        self._absorbed_by: PendingQueries | None = None
+
+    @property
+    def done(self) -> bool:
+        """Whether :func:`run` has computed the registered queries."""
+        if self._absorbed_by is not None:
+            return self._absorbed_by.done
+        return self._done
 
     def __len__(self) -> int:
         return len(self._entries)
+
+    def absorb(self, other: PendingQueries) -> None:
+        """
+        Take over the queries and callbacks of another, not yet executed run.
+
+        Used when a pipeline runs on the result of another one, so that both runs are computed
+        in a single pass. Running `other` afterwards runs this one.
+
+        :param other: The other run's queries
+        """
+        if other is self or other.done:
+            return
+        while other._absorbed_by is not None:
+            other = other._absorbed_by
+        self._entries = other._entries + self._entries
+        self._on_complete = other._on_complete + self._on_complete
+        other._entries, other._on_complete = [], []
+        other._absorbed_by = self
 
     def add(self, deferred: Deferred, on_value: Callable[[Any], None] = lambda value: None) -> None:
         """
@@ -85,9 +111,11 @@ class PendingQueries:
         :return: The results of `outputs`, in the given order
         :raise RuntimeError: If a registered check fails, naming what registered it
         """
+        if self._absorbed_by is not None:
+            return self._absorbed_by.run(*outputs)
         if self.done:
             return polars.collect_all(list(outputs), engine="streaming") if outputs else []
-        self.done = True
+        self._done = True
 
         queries = [query for deferred, _, _ in self._entries for query in deferred.queries]
         if not queries and not outputs:

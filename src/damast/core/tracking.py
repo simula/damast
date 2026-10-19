@@ -108,19 +108,26 @@ class RowCountTracker(PipelineElementTracker):
 
     The counts are deferred: within a pipeline run they are computed in the pass that produces the
     result, so counting runs neither the pipeline nor materialises a frame per step.
+
+    :param where: Count only the rows matching this predicate, e.g. to leave out helper rows
+        that are not part of the data; all rows if not given
     """
 
-    def __init__(self):
+    def __init__(self, where: polars.Expr | None = None):
+        self.where = where
         #: step uuid -> row count queries of the inputs, held only while that step runs
         self._input_counts: dict[Any, dict[str, polars.LazyFrame]] = {}
 
+    def _count(self, adf: AnnotatedDataFrame) -> polars.LazyFrame:
+        lazyframe = adf.lazyframe if self.where is None else adf.lazyframe.filter(self.where)
+        return lazyframe.select(polars.len())
+
     def on_step_start(self, step: PipelineElement, dataframes: dict[str, AnnotatedDataFrame]) -> None:
-        self._input_counts[step.uuid] = {label: adf.lazyframe.select(polars.len())
-                                         for label, adf in dataframes.items()}
+        self._input_counts[step.uuid] = {label: self._count(adf) for label, adf in dataframes.items()}
 
     def on_step_end(self, step: PipelineElement, dataframes: dict[str, AnnotatedDataFrame]) -> Deferred:
         inputs = self._input_counts.pop(step.uuid, {})
-        outputs = [adf.lazyframe.select(polars.len()) for adf in dataframes.values()]
+        outputs = [self._count(adf) for adf in dataframes.values()]
 
         def report(results: list[polars.DataFrame]) -> dict[str, Any]:
             counts = [result.item() for result in results]

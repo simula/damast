@@ -1365,3 +1365,21 @@ def test_save_stats_writes_to_a_given_directory(tmp_path):
 
     assert written == target / "elsewhere.stats.yaml"
     assert list(yaml.safe_load(written.read_text())["steps"]) == list(pipeline.processing_stats)
+
+
+def test_a_pipeline_on_another_runs_result_computes_both_runs_in_one_pass(tmp_path):
+    """The first run's checks and statistics are not lost when its result is processed further."""
+    from damast.data_handling.transformers.filters import Filter
+
+    first = _keep_valid_mmsi(tmp_path)
+    second = DataProcessingPipeline(name="second", base_dir=tmp_path).add(
+        "large_mmsi", Filter(operator=">=", value=1000000), name_mappings={"x": "mmsi"})
+
+    adf = second.transform(df=first.transform(df=_keyed_adf([0, 1, 999999, 1000000])))
+    assert adf.collect()["mmsi"].to_list() == [1000000]
+
+    # both reports are written by the one collect - nothing of the first run is left to compute
+    assert (tmp_path / "prepare.stats.yaml").exists()
+    assert (tmp_path / "second.stats.yaml").exists()
+    assert first.processing_stats["valid_mmsi"]["rows_removed"] == 2
+    assert second.processing_stats["large_mmsi"]["rows_removed"] == 1
