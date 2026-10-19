@@ -51,6 +51,12 @@ jobs:
           python -m pip install -e .[dev,test]
           python -m pip install ${{ matrix.backend }}
 
+      - name: Use Chocolatey V3 Source
+        if: runner.os == 'Windows'
+        run: |
+          choco source disable -n=chocolatey
+          choco source add -n=chocolatey-v3 -s="https://community.chocolatey.org/api/v3/index.json"
+
       # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#runner-context
       - name: Set Env (Windows)
         if: runner.os == 'Windows'
