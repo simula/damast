@@ -10,6 +10,7 @@ from damast.core.annotations import Annotation, Change, History
 from damast.core.data_description import (
     BooleanValueStats,
     CyclicMinMax,
+    ListOfValues,
     MinMax,
     NumericValueStats,
 )
@@ -375,6 +376,35 @@ def test_data_specification_merge_drops_value_range_if_either_side_unknown():
 
     merged = without_range.merge(other=with_range)
     assert merged.value_range is None
+
+
+@pytest.mark.parametrize("listed_first", [True, False])
+def test_value_ranges_of_a_string_column_merge_in_either_order(listed_first, caplog):
+    """
+    Regression test: a string column has a ListOfValues in a file with few distinct values and a
+    MinMax in one with many, and MinMax.merge(ListOfValues) used to fail on '.min' - logging
+    'Merge failed' - while ListOfValues.merge(MinMax) worked, so it depended on the file order.
+    """
+    listed = DataSpecification(name="name", value_range=ListOfValues(["B", "A", None]))
+    ranged = DataSpecification(name="name", value_range=MinMax(min="vessel 0", max="vessel 99"))
+
+    merged = (listed.merge(other=ranged) if listed_first else ranged.merge(other=listed))
+
+    assert merged.value_range == MinMax(min="A", max="vessel 99")
+    assert "Merge failed" not in caplog.text
+
+
+def test_a_range_merged_with_a_list_of_nothing_stays_as_it_is():
+    nothing = ListOfValues([None])
+
+    assert MinMax(1, 5).merge(nothing) == MinMax(1, 5)
+    assert nothing.merge(MinMax(1, 5)) == MinMax(1, 5)
+
+
+def test_a_range_merged_with_a_list_extends_to_its_values_and_keeps_missing_disallowed():
+    merged = MinMax(min="C", max="D", allow_missing=False).merge(ListOfValues(["A", "Z"]))
+
+    assert (merged.min, merged.max, merged.allow_missing) == ("A", "Z", False)
 
 
 def test_data_specification_merge_combines_both_value_range_and_value_stats():

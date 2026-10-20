@@ -213,10 +213,19 @@ class ListOfValues:
         """
         return dict(self)
 
-    def merge(self, other: ListOfValues | MinMax) -> ListOfValues:
+    def as_min_max(self) -> MinMax | None:
+        """
+        The smallest range holding all of the values, e.g. to combine them with a :class:`MinMax`.
+
+        :return: The range, None if there is no value but None
+        """
+        values = [value for value in self.values if value is not None]
+        return MinMax(min(values), max(values)) if values else None
+
+    def merge(self, other: ListOfValues | MinMax) -> ListOfValues | MinMax:
         if type(other) is MinMax:
-            this_min_max = MinMax(min(self.values), max(self.values))
-            return this_min_max.merge(other)
+            this_min_max = self.as_min_max()
+            return other if this_min_max is None else this_min_max.merge(other)
         elif type(other) is not ListOfValues:
             raise ValueError(f"ListOfValues.merge: cannot merge with other (type: {type(other)})")
 
@@ -347,7 +356,7 @@ class MinMax(DataRange):
         """
         return f"{self.__class__.__name__}[{self.min}, {self.max}]"
 
-    def merge(self, other: MinMax) -> MinMax:
+    def merge(self, other: MinMax | ListOfValues) -> MinMax:
         """
         Extend the range based on another range definition.
 
@@ -356,6 +365,11 @@ class MinMax(DataRange):
 
         :param other: MinMax object to extend the bound of the current one
         """
+        if isinstance(other, ListOfValues):
+            other = other.as_min_max()
+            if other is None:
+                return self
+
         return MinMax(
                 min=min(self.min, other.min),
                 max=max(self.max, other.max),
