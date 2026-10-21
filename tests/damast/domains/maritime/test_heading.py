@@ -66,3 +66,34 @@ def test_heading_changes_are_never_taken_across_objects(tmp_path):
     assert result["mmsi"].to_list() == [1, 2]
     # both: due north after heading east - the same change, independent of the other object
     assert result["delta_heading"].to_list() == pytest.approx([-math.pi / 2, -1.5708], abs=2e-2)
+
+
+def test_a_turn_across_south_is_a_small_heading_change(tmp_path):
+    # heading south, first slightly east of south (bearing ~ +179.4 deg), then slightly west of
+    # it (~ -179.4 deg): a turn of ~1.2 degrees, not of ~358
+    result = _headings(tmp_path, [
+        (1, 0, 0.0, 0.0),
+        (1, 60, -1.0, 0.01),
+        (1, 120, -2.0, 0.0),
+        (1, 180, -3.0, 0.0),
+    ])
+
+    assert all(abs(h) > math.radians(179) for h in result["heading"])
+    assert result["delta_heading"].abs().max() < math.radians(2)
+    assert result["angular_velocity"].abs().max() < math.radians(2) / 60
+
+
+@pytest.mark.parametrize("angle, expected", [
+    (0.0, 0.0),
+    (math.radians(358), math.radians(-2)),
+    (math.radians(-358), math.radians(2)),
+    (math.radians(90), math.radians(90)),
+    (3 * math.pi, -math.pi),
+])
+def test_wrapped_angle_lies_within_a_half_turn(angle, expected):
+    from damast.domains.maritime.transformers.features import wrapped_angle
+
+    value = pl.select(wrapped_angle(pl.lit(angle))).item()
+
+    assert value == pytest.approx(expected)
+    assert -math.pi <= value < math.pi

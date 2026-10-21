@@ -1,3 +1,5 @@
+import math
+
 import polars as pl
 import polars_h3
 
@@ -9,8 +11,22 @@ __all__ = [
     "AngularVelocity",
     "DeltaDistance",
     "Heading",
-    "Speed"
+    "Speed",
+    "wrapped_angle",
 ]
+
+
+def wrapped_angle(angle: pl.Expr) -> pl.Expr:
+    """
+    An angle in radians wrapped into [-pi, pi).
+
+    A change of heading taken as a plain difference is off by a full turn whenever it crosses
+    the direction where the angle jumps - a turn from 179 to -179 degrees is 2 degrees, not -358.
+
+    :param angle: The angle, in radians
+    :return: The same angle in [-pi, pi)
+    """
+    return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
 class DeltaDistance(PipelineElement):
@@ -179,7 +195,7 @@ class Heading(PipelineElement):
         # per object: the first heading of an object has nothing to change from, so it is dropped
         # below rather than compared with the previous object's last one
         dataframe = dataframe.sort(group, sort_column).with_columns(
-                    pl.col(heading).diff().over(group).alias(delta_heading),
+                    wrapped_angle(pl.col(heading).diff()).over(group).alias(delta_heading),
                     pl.col(sort_column).diff().dt.total_seconds(fractional=True).over(group)
                       .alias("_delta_time")
                 )
@@ -215,7 +231,7 @@ class AngularVelocity(PipelineElement):
         time = self.get_name("time")
 
         dataframe = df.with_columns(
-            pl.col(heading).diff().over(group).alias("_delta_heading"),
+            wrapped_angle(pl.col(heading).diff()).over(group).alias("_delta_heading"),
             pl.col(time).diff().dt.total_seconds().over(group).alias("_delta_time")
         )
 
