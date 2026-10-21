@@ -454,3 +454,152 @@ def test_group_window_accessor_invalid_features(irregular_dataframe):
     gwa = GroupWindowAccessor(df, group_column="id", timestamp_column="timestamp")
     with pytest.raises(ValueError, match="Column 'label' must be numeric"):
         gwa.to_keras_generator(["label"], window=WINDOW, max_gap=MAX_GAP)
+
+
+# --- GroupWindowAccessor: labels, held columns, relative targets, fixed window sets
+
+CLASSES = ["even", "odd"]
+
+
+def _labelled(df):
+    """A label per group: the parity of its id; the gappy group gets a label outside the classes."""
+    return df.with_columns(cls=pl.when(pl.col("id") == GAPPY_GROUP).then(pl.lit("other"))
+                           .when(pl.col("id") % 2 == 0).then(pl.lit("even")).otherwise(pl.lit("odd")))
+
+
+@pytest.mark.parametrize("infinite", [True, False])
+def test_group_window_accessor_label_is_one_hot_per_group(irregular_dataframe, infinite):
+    gwa = GroupWindowAccessor(_labelled(irregular_dataframe), group_column="id", timestamp_column="timestamp")
+
+    X, y = next(gwa.to_keras_generator(WINDOW_FEATURES, label="cls", classes=CLASSES, window=WINDOW,
+                                       sequence_length=10, max_gap=MAX_GAP, batch_size=64, infinite=infinite))
+
+    assert X.shape == (64, 10, len(WINDOW_FEATURES)) and y.shape == (64, 2)
+    np.testing.assert_array_equal(y.sum(axis=1), 1.0)
+    gids = X[:, 0, 0]
+    # the label of a window is its group's, and a group outside the classes never appears
+    np.testing.assert_array_equal(np.argmax(y, axis=1), (gids % 2).astype(int))
+    assert GAPPY_GROUP not in gids
+
+
+def test_group_window_accessor_label_must_be_constant_per_group(irregular_dataframe):
+    df = _labelled(irregular_dataframe).with_columns(
+        cls=pl.when((pl.col("id") == 3) & (pl.col("timestamp") > T_OFFSET + 1000)).then(pl.lit("even"))
+        .otherwise(pl.col("cls")))
+    gwa = GroupWindowAccessor(df, group_column="id", timestamp_column="timestamp")
+
+    with pytest.raises(ValueError, match="1 group.* more than one 'cls'"):
+        next(gwa.to_keras_generator(WINDOW_FEATURES, label="cls", classes=CLASSES, window=WINDOW,
+                                    sequence_length=10, max_gap=MAX_GAP))
+
+
+@pytest.mark.parametrize("kwargs, match", [
+    ({"label": "cls"}, "requires the classes"),
+    ({"label": "cls", "classes": CLASSES, "target": ["z"], "forecast_horizon": HORIZON}, "cannot be combined"),
+    ({"balance_by_label": True}, "requires a label"),
+    ({"target_reference": "last_input"}, "requires targets"),
+    ({"target": ["z"], "forecast_horizon": HORIZON, "target_reference": "first"}, "must be 'absolute'"),
+    ({"step_columns": ["cls"]}, "neither features nor targets"),
+])
+def test_group_window_accessor_rejects_inconsistent_options(irregular_dataframe, kwargs, match):
+    gwa = GroupWindowAccessor(_labelled(irregular_dataframe), group_column="id", timestamp_column="timestamp")
+
+    with pytest.raises(ValueError, match=match):
+        next(gwa.to_keras_generator(WINDOW_FEATURES, window=WINDOW, sequence_length=10, max_gap=MAX_GAP, **kwargs))
+
+
+def test_group_window_accessor_step_columns_hold_the_last_row(irregular_dataframe):
+    # the row's timestamp twice: interpolated it gives the grid time, held the row time behind it
+    df = irregular_dataframe.with_columns(held=pl.col("tv"))
+    gwa = GroupWindowAccessor(df, group_column="id", timestamp_column="timestamp")
+    sequence_length = 13
+
+    (X,) = next(gwa.to_keras_generator(["gid", "tv", "held"], window=WINDOW, sequence_length=sequence_length,
+                                       max_gap=MAX_GAP, batch_size=32, step_columns=["held"]))
+
+    for sample in X:
+        times = np.sort(df.filter(pl.col("id") == sample[0, 0])["timestamp"].to_numpy())
+        grid_times = sample[:, 1]
+        latest_row = times[np.searchsorted(times, grid_times, side="right") - 1]
+        np.testing.assert_array_equal(sample[:, 2], latest_row)
+
+
+def test_group_window_accessor_targets_relative_to_the_last_input(irregular_dataframe):
+    gwa = GroupWindowAccessor(irregular_dataframe, group_column="id", timestamp_column="timestamp")
+    forecast_length = 4
+
+    _, y = next(gwa.to_keras_generator(WINDOW_FEATURES, target=["tv"], window=WINDOW, sequence_length=10,
+                                       forecast_horizon=HORIZON, forecast_length=forecast_length,
+                                       max_gap=MAX_GAP, batch_size=32, target_reference="last_input"))
+
+    # 'tv' grows with time at rate 1, so its change since the last input point is the time passed
+    expected = HORIZON * np.arange(1, forecast_length + 1) / forecast_length
+    np.testing.assert_allclose(y[:, :, 0], np.broadcast_to(expected, (32, forecast_length)))
+
+
+def test_group_window_accessor_passes_over_the_given_windows_in_order(irregular_dataframe):
+    gwa = GroupWindowAccessor(irregular_dataframe, group_column="id", timestamp_column="timestamp")
+    windows = gwa.tile_windows(window=WINDOW, forecast_horizon=HORIZON, max_gap=MAX_GAP)
+
+    batches = list(gwa.to_keras_generator(WINDOW_FEATURES, target=["z"], window=WINDOW, sequence_length=10,
+                                          forecast_horizon=HORIZON, max_gap=MAX_GAP, batch_size=50,
+                                          windows=windows, infinite=True))
+    X = np.concatenate([b[0] for b in batches])
+
+    # exactly one sample per window, in the order listed - the same windows as a plain single pass
+    assert len(X) == windows.height
+    np.testing.assert_array_equal(X[:, 0, 0], windows["id"].cast(pl.Float64).to_numpy())
+    np.testing.assert_allclose(X[:, 0, 1], windows["window_start"].to_numpy())
+    single_pass = np.concatenate([b[0] for b in gwa.to_keras_generator(
+        WINDOW_FEATURES, target=["z"], window=WINDOW, sequence_length=10, forecast_horizon=HORIZON,
+        max_gap=MAX_GAP, batch_size=50)])
+    np.testing.assert_array_equal(X, single_pass)
+
+
+def test_group_window_accessor_tile_windows_subsample_repeats_with_the_seed(irregular_dataframe):
+    from damast.utils import set_random_seed
+
+    gwa = GroupWindowAccessor(irregular_dataframe, group_column="id", timestamp_column="timestamp")
+    all_windows = gwa.tile_windows(window=WINDOW, max_gap=MAX_GAP)
+
+    set_random_seed(7)
+    first = gwa.tile_windows(window=WINDOW, max_gap=MAX_GAP, max_windows=20)
+    set_random_seed(7)
+    second = gwa.tile_windows(window=WINDOW, max_gap=MAX_GAP, max_windows=20)
+
+    assert first.height == 20 and first.equals(second)
+    # a subsample of the full tiling, in its order
+    assert first.join(all_windows, on=["id", "window_start"], how="semi").height == 20
+    assert first.with_row_index().sort("id", "window_start")["index"].to_list() == list(range(20))
+
+
+def test_group_window_accessor_batches_repeat_with_the_seed(irregular_dataframe):
+    from damast.utils import set_random_seed
+
+    gwa = GroupWindowAccessor(irregular_dataframe, group_column="id", timestamp_column="timestamp")
+
+    def draw():
+        set_random_seed(11)
+        return next(gwa.to_keras_generator(WINDOW_FEATURES, window=WINDOW, sequence_length=10,
+                                           max_gap=MAX_GAP, batch_size=16, infinite=True))[0]
+
+    np.testing.assert_array_equal(draw(), draw())
+
+
+def test_group_window_accessor_balances_the_classes(irregular_dataframe):
+    from damast.utils import set_random_seed
+
+    # 8 groups of one class against 2 of the other
+    df = irregular_dataframe.filter(pl.col("id") < 10).with_columns(
+        cls=pl.when(pl.col("id") < 8).then(pl.lit("even")).otherwise(pl.lit("odd")))
+    gwa = GroupWindowAccessor(df, group_column="id", timestamp_column="timestamp")
+    set_random_seed(3)
+
+    def odd_share(balanced):
+        _, y = next(gwa.to_keras_generator(["gid", "tv"], label="cls", classes=CLASSES, window=WINDOW,
+                                           sequence_length=5, max_gap=MAX_GAP, batch_size=2000,
+                                           infinite=True, balance_by_label=balanced))
+        return y[:, 1].mean()
+
+    assert abs(odd_share(True) - 0.5) < 0.05
+    assert abs(odd_share(False) - 0.2) < 0.05

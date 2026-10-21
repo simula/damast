@@ -461,3 +461,215 @@ def test_temporal_experiment_run(tmp_path):
     assert Path(report).exists()
     assert set(experiment._evaluation_report) == {"BaselineA-forecast-ais-temporal",
                                                   "BaselineB-forecast-ais-temporal"}
+
+
+# --- classification, fixed-window evaluation, evaluation on other data
+
+CLASSES = ["even", "odd"]
+
+
+class ClassifierBaseline(Baseline):
+    """One probability per class."""
+
+    def _init_model(self):
+        self.model = keras.models.Sequential([
+            keras.layers.Flatten(input_shape=[self.timeline_length, len(self.features)]),
+            keras.layers.Dense(len(self.targets), activation="softmax")
+        ])
+
+
+class StepBaseline(Baseline):
+    """A forecast of ``forecast_length`` steps of all targets."""
+
+    def __init__(self, forecast_length: int, **kwargs):
+        self.forecast_length = forecast_length
+        super().__init__(**kwargs)
+
+    def _init_model(self):
+        self.model = keras.models.Sequential([
+            keras.layers.Flatten(input_shape=[self.timeline_length, len(self.features)]),
+            keras.layers.Dense(self.forecast_length * len(self.targets)),
+            keras.layers.Reshape((self.forecast_length, len(self.targets)))
+        ])
+
+
+def _temporal_dataset(path: Path, size: int = 200) -> Path:
+    """AIS test data with a datetime column, and a label per vessel: the parity of its mmsi."""
+    spec = copy.deepcopy(AISTestDataSpec)
+    for column in spec["columns"]:
+        if column["name"] == "date_time_utc":
+            column["representation_type"] = "datetime"
+    spec["columns"].append({"name": "parity", "is_optional": False, "representation_type": "str"})
+    data = AISTestData(size).dataframe.with_columns(
+        pl.col("date_time_utc").str.to_datetime(),
+        parity=pl.when(pl.col("mmsi") % 2 == 0).then(pl.lit("even")).otherwise(pl.lit("odd")))
+    adf = AnnotatedDataFrame(dataframe=data, metadata=MetaData.from_dict(data=spec))
+    adf.export(filename=path)
+    return path
+
+
+def _classification_task(pipeline, **kwargs):
+    from damast.ml.experiments import ClassificationTask
+
+    arguments = dict(label="classify-parity", pipeline=pipeline,
+                     features=["lat_x", "lat_y", "lon_x", "lon_y"],
+                     models=[ModelInstanceDescription(ClassifierBaseline, {})],
+                     label_column="parity", classes=CLASSES,
+                     group_column="mmsi", timestamp_column="date_time_utc",
+                     window="10m", sequence_length=5, max_gap="5m",
+                     training_parameters=TrainingParameters(epochs=1, validation_steps=1, optimizer="adam",
+                                                            learning_rate=0.01))
+    arguments.update(kwargs)
+    return ClassificationTask(**arguments)
+
+
+def _pipeline(tmp_path):
+    return DataProcessingPipeline(name="ais_preparation", base_dir=tmp_path).add("cyclic", LatLonTransformer())
+
+
+def test_classification_task_io(tmp_path):
+    from damast.ml.experiments import ClassificationTask
+
+    task = _classification_task(_pipeline(tmp_path))
+
+    assert task.targets == CLASSES
+    assert task.default_loss == "categorical_crossentropy"
+    loaded = LearningTask.from_dict(data=dict(task))
+    assert isinstance(loaded, ClassificationTask) and loaded == task
+    assert loaded != _classification_task(_pipeline(tmp_path), classes=["odd", "even"])
+
+    experiment = Experiment(learning_task=task, input_data=tmp_path / "unused.parquet", seed=3,
+                            max_evaluation_windows=10, evaluation_steps=None)
+    experiment.save(filename=tmp_path / "experiment.yaml")
+    assert Experiment.from_file(tmp_path / "experiment.yaml") == experiment
+
+    with pytest.raises(ValueError, match="differ from the classes"):
+        _classification_task(_pipeline(tmp_path), targets=["odd", "even"])
+
+
+def test_training_parameters_of_an_older_file_still_load():
+    parameters = TrainingParameters(**{"epochs": 1, "steps_per_epoch": 2, "validation_steps": 3,
+                                       "learning_rate": 0.5, "loss_function": "mse"})
+
+    assert (parameters.loss_function, parameters.optimizer, parameters.metrics) == ("mse", "sgd", None)
+    # without a loss, the task's default applies
+    assert TrainingParameters().loss_function is None and LearningTask.default_loss == "mse"
+
+
+def test_split_repeats_with_the_seed_and_keeps_each_stratum_in_proportion():
+    from damast.utils import set_random_seed
+
+    df = pl.DataFrame({"id": list(range(100))})
+    adf = AnnotatedDataFrame(df, metadata=AnnotatedDataFrame.infer_annotation(df.lazy()))
+    strata = {i: "rare" if i < 20 else "common" for i in range(100)}
+
+    def split():
+        set_random_seed(5)
+        return Experiment.compute_train_test_validate_groups(adf, group="id", ratios=[0.6, 0.2, 0.2],
+                                                             strata=strata)
+
+    first, second = split(), split()
+    assert all(a.equals(b) for a, b in zip(first, second))
+    rare_per_partition = [sum(strata[i] == "rare" for i in p["id"].to_list()) for p in first]
+    assert rare_per_partition == [12, 4, 4]
+    assert sorted(pl.concat(first)["id"].to_list()) == list(range(100))
+
+
+def test_classification_experiment_run(tmp_path):
+    dataset = _temporal_dataset(tmp_path / "test.parquet")
+
+    def run(output):
+        experiment = Experiment(learning_task=_classification_task(_pipeline(tmp_path)), input_data=dataset,
+                                output_directory=output, batch_size=16, evaluation_steps=None, seed=11,
+                                max_evaluation_windows=200)
+        return Path(experiment.run()), experiment
+
+    report, experiment = run(tmp_path / "first")
+    run_dir = report.parent
+
+    result = experiment._evaluation_report["ClassifierBaseline-classify-parity"]
+    metrics = result["metrics"]
+    assert metrics["classes"] == CLASSES
+    assert sum(map(sum, metrics["confusion_matrix"])) == result["windows"] == metrics["windows"] > 0
+    predictions = pl.read_parquet(run_dir / "ClassifierBaseline-classify-parity" / "predictions-test.parquet")
+    assert predictions.height == result["windows"]
+    assert {"mmsi", "window_start", "true_class", "predicted_class", "probability_even", "last_lat_x"} \
+        <= set(predictions.columns)
+    # every window of the test vessels, labelled with its vessel's parity
+    groups = pl.read_parquet(run_dir / "groups.parquet")
+    test_vessels = groups.filter(pl.col("partition") == "test")["mmsi"]
+    assert predictions["mmsi"].is_in(test_vessels.implode()).all()
+    expected = ["even" if mmsi % 2 == 0 else "odd" for mmsi in predictions["mmsi"].to_list()]
+    assert predictions["true_class"].to_list() == expected
+    assert (run_dir / "ais_preparation.damast.ppl").exists() or list(run_dir.glob("*.damast.ppl"))
+
+    # the same seed, the same split
+    second_report, _ = run(tmp_path / "second")
+    assert pl.read_parquet(second_report.parent / "groups.parquet").equals(groups)
+
+
+def test_temporal_forecast_evaluated_on_fixed_windows(tmp_path):
+    dataset = _temporal_dataset(tmp_path / "test.parquet")
+    task = _temporal_task(_pipeline(tmp_path), targets=["lat", "lon"], forecast_length=2,
+                          target_reference="last_input", step_features=["lat_x", "lat_y", "lon_x", "lon_y"],
+                          models=[ModelInstanceDescription(StepBaseline, {"forecast_length": 2})])
+    experiment = Experiment(learning_task=task, input_data=dataset, output_directory=tmp_path,
+                            batch_size=16, evaluation_steps=None, seed=2)
+
+    run_dir = Path(experiment.run()).parent
+
+    metrics = experiment._evaluation_report["StepBaseline-forecast-ais-temporal"]["metrics"]
+    assert [step["step"] for step in metrics["steps"]] == [1, 2]
+    predictions = pl.read_parquet(run_dir / "StepBaseline-forecast-ais-temporal" / "predictions-test.parquet")
+    assert {"true_lat_1", "predicted_lat_1", "true_lon_2", "predicted_lon_2"} <= set(predictions.columns)
+
+
+def test_fixed_windows_need_a_window_task(tmp_path):
+    task = ForecastTask(label="rows", pipeline=_pipeline(tmp_path), features=["lat_x", "lat_y", "lon_x", "lon_y"],
+                        models=[ModelInstanceDescription(BaselineA, {})], group_column="mmsi",
+                        sequence_length=5, forecast_length=1)
+    experiment = Experiment(learning_task=task, input_data=_temporal_dataset(tmp_path / "test.parquet"),
+                            output_directory=tmp_path, evaluation_steps=None)
+
+    with pytest.raises(ValueError, match="requires a window task"):
+        experiment.run()
+
+
+def test_evaluate_experiment_on_other_data(tmp_path):
+    dataset = _temporal_dataset(tmp_path / "train.parquet")
+    experiment = Experiment(learning_task=_classification_task(_pipeline(tmp_path)), input_data=dataset,
+                            output_directory=tmp_path / "out", batch_size=16, evaluation_steps=None, seed=4)
+    run_dir = Path(experiment.run()).parent
+    trained = pl.read_parquet(run_dir / "groups.parquet").filter(pl.col("partition") != "test")["mmsi"]
+
+    # other data: the same vessels again (a source reporting them too) and some new ones
+    other = _temporal_dataset(tmp_path / "other.parquet", size=50)
+    filename = Experiment.evaluate_experiment(run_dir, input_data=[other, dataset], dataset_label="other",
+                                              exclude_groups=trained.to_list(), seed=1)
+
+    import yaml
+    report = yaml.safe_load(Path(filename).read_text())
+    assert filename == run_dir / "evaluations" / "other" / "evaluation.yaml"
+    assert report["dataset"] == "other" and report["excluded_groups"] == trained.len()
+    result = report["evaluation"]["ClassifierBaseline-classify-parity"]
+    assert result["windows"] == report["windows"] > 0
+    assert sum(map(sum, result["metrics"]["confusion_matrix"])) == report["windows"]
+    predictions = pl.read_parquet(Path(filename).parent / "ClassifierBaseline-classify-parity" / "predictions-other.parquet")
+    # no window of a vessel the models were trained or validated on
+    assert not predictions["mmsi"].is_in(trained.implode()).any()
+
+
+def test_evaluation_csv_collects_every_evaluation(tmp_path):
+    dataset = _temporal_dataset(tmp_path / "test.parquet")
+    experiment = Experiment(learning_task=_temporal_task(_pipeline(tmp_path), models=[ModelInstanceDescription(BaselineA, {})]),
+                            input_data=dataset, output_directory=tmp_path)
+    experiment.run()
+    model = experiment._trained_models[0]
+    assert len(model.get_evaluations()) == 1
+
+    features = experiment.learning_task.pipeline.transform(AnnotatedDataFrame.from_file(dataset)).execute()
+    generator = experiment.create_generator(features, group="mmsi", group_ids=None)
+    model.evaluate(label="again", evaluation_data=generator, steps=1)
+
+    evaluations = model.get_evaluations()
+    assert len(evaluations) == 2 and list(evaluations["dataset"]) == [model.name, "again"]

@@ -449,8 +449,23 @@ class GroupWindowAccessor(_GroupAccessorBase):
     :math:`t_0 = a + jH`, so that every observation contributes to at most one target.
 
     .. warning::
-        All features and targets are interpolated linearly. Angular values such as course or heading
-        wrap around at 360° and must be transformed beforehand, e.g. into their sine and cosine.
+        All features and targets are interpolated linearly, unless listed in ``step_columns``. Angular
+        values such as course or heading wrap around at 360° and must be transformed beforehand, e.g.
+        into their sine and cosine.
+
+    Three variations of the above are opt-in:
+
+    * ``step_columns`` are not interpolated but hold the value of the last row at or before each grid
+      point - for indicator columns, e.g. a one-hot encoded status that must not be mixed, and for
+      inputs that must not look ahead of their grid point.
+    * ``target_reference="last_input"`` gives the targets relative to their value at the last input grid
+      point :math:`t_0 + H^{-}` - e.g. the displacement from cumulative track coordinates.
+    * With a ``label`` there is no forecast: y is the one-hot encoded ``label`` of the window's group,
+      which must be the same in all rows of a group. ``balance_by_label`` draws groups so that every
+      class is equally likely.
+
+    For an evaluation that is repeatable and covers each window once, :func:`tile_windows` lists the
+    windows, which :func:`to_keras_generator` then takes as ``windows``.
 
     .. note::
         Only the timestamps are scanned upfront; each batch then fetches just the rows of its windows.
@@ -484,7 +499,13 @@ class GroupWindowAccessor(_GroupAccessorBase):
                            batch_size: int = 1024,
                            shuffle: bool = False,
                            infinite: bool = False,
-                           verbose: bool = True):
+                           verbose: bool = True,
+                           step_columns: list[str] | None = None,
+                           target_reference: str = "absolute",
+                           label: str | None = None,
+                           classes: list[Any] | None = None,
+                           balance_by_label: bool = False,
+                           windows: pl.DataFrame | None = None):
         """
         Create a batch generator suitable as a Keras datasource.
 
@@ -512,6 +533,17 @@ class GroupWindowAccessor(_GroupAccessorBase):
             If False, do one pass over all non-overlapping windows of the data, e.g., for evaluation.
         :param verbose: If True, show an info on the recommended :code:`"steps_per_epoch"` based on the
             number of non-overlapping windows and :code:`"batch_size"`.
+        :param step_columns: Features or targets that hold the value of the last row at or before a grid
+            point instead of being interpolated
+        :param target_reference: ``"absolute"`` for the targets as they are, ``"last_input"`` for their
+            change since the last input grid point
+        :param label: Column of a label per group; y is then its one-hot encoding over ``classes``,
+            instead of a forecast. Groups whose label is not one of ``classes`` are left out.
+        :param classes: The labels, in the order of the one-hot encoding - required with ``label``
+        :param balance_by_label: If True, draw groups so that each class is equally likely
+            (``infinite=True`` only)
+        :param windows: The windows of one pass, as :func:`tile_windows` lists them, instead of tiling
+            the groups - implies ``infinite=False``
 
         Example:
 
@@ -537,11 +569,24 @@ class GroupWindowAccessor(_GroupAccessorBase):
 
         _check_single_dtype(self.df, features, "Features", owner)
         use_target = target is not None
+        use_label = label is not None
         if use_target:
             _check_single_dtype(self.df, target, "Targets", owner)
         for column in features + (target if use_target else []):
             if not XDataFrame(self.df).is_numeric(column):
                 raise ValueError(f"{owner}: Column '{column}' must be numeric to be interpolated")
+
+        if use_label and (use_target or forecast_horizon is not None):
+            raise ValueError(f"{owner}: a label cannot be combined with targets or a forecast_horizon")
+        if use_label and not classes:
+            raise ValueError(f"{owner}: a label requires the classes")
+        if balance_by_label and not use_label:
+            raise ValueError(f"{owner}: balance_by_label requires a label")
+        if target_reference not in ("absolute", "last_input"):
+            raise ValueError(f"{owner}: target_reference must be 'absolute' or 'last_input',"
+                             f" got {target_reference!r}")
+        if target_reference == "last_input" and not use_target:
+            raise ValueError(f"{owner}: target_reference='last_input' requires targets")
 
         if use_target and forecast_horizon is None:
             raise ValueError(f"{owner}: Targets require a forecast_horizon")
@@ -559,6 +604,10 @@ class GroupWindowAccessor(_GroupAccessorBase):
 
         if groups is not None:
             groups = self._group_values(groups)
+        labels: dict[Any, int] = {}
+        if use_label:
+            labels = self.group_labels(label=label, classes=classes, groups=groups)
+            groups = list(labels)
         segments = self._segments(groups=groups, max_gap=max_gap_units)
         valid_segments = segments.filter((pl.col("end") - pl.col("start")) >= span)
         if valid_segments.is_empty():
@@ -572,6 +621,10 @@ class GroupWindowAccessor(_GroupAccessorBase):
         columns = list(dict.fromkeys(features + (target if use_target else [])))
         feature_idx = [columns.index(f) for f in features]
         target_idx = [columns.index(t) for t in target] if use_target else []
+        unknown_steps = set(step_columns or []) - set(columns)
+        if unknown_steps:
+            raise ValueError(f"{owner}: step_columns {sorted(unknown_steps)} are neither features nor targets")
+        step_idx = [columns.index(c) for c in step_columns or []]
 
         grid = np.linspace(0, window_units, sequence_length)
         if use_target:
@@ -584,31 +637,151 @@ class GroupWindowAccessor(_GroupAccessorBase):
         if verbose:
             _log_steps_per_epoch(np.ceil(tile_counts.sum() / batch_size))
 
-        def _batch(segment_idx: np.ndarray, t0: np.ndarray):
-            values = self._resample(columns=columns,
-                                    groups=segments[self.group_column].gather(segment_idx),
-                                    t0=t0, grid=grid, max_gap=max_gap_units)
+        def _batch(window_groups: pl.Series, t0: np.ndarray):
+            values = self._resample(columns=columns, groups=window_groups,
+                                    t0=t0, grid=grid, max_gap=max_gap_units, step_idx=step_idx)
             X = _mps_precision(values[:, :sequence_length, feature_idx])
             if use_target:
-                return X, _mps_precision(values[:, sequence_length:, target_idx])
+                y = values[:, sequence_length:, target_idx]
+                if target_reference == "last_input":
+                    y = y - values[:, sequence_length - 1:sequence_length, target_idx]
+                return X, _mps_precision(y)
+            if use_label:
+                y = np.zeros((len(t0), len(classes)), dtype=np.float32)
+                y[np.arange(len(t0)), [labels[g] for g in window_groups.to_list()]] = 1.0
+                return X, y
             return (X,)
+
+        group_weights = self._label_weights(segments, labels) if balance_by_label else None
 
         def _random_generator():
             while True:
-                yield _batch(*self._draw_starts(segments=segments, span=span, size=batch_size))
+                segment_idx, t0 = self._draw_starts(segments=segments, span=span, size=batch_size,
+                                                    group_weights=group_weights)
+                yield _batch(segments[self.group_column].gather(segment_idx), t0)
 
         def _single_pass_generator():
-            # Tile each segment with non-overlapping windows, so that each target is seen once
-            segment_idx = np.repeat(np.arange(len(starts)), tile_counts)
-            tile_idx = np.arange(len(segment_idx)) - np.repeat(np.cumsum(tile_counts) - tile_counts, tile_counts)
-            t0 = starts[segment_idx] + tile_idx * span
+            if windows is not None:
+                window_groups = windows[self.group_column]
+                t0 = windows["window_start"].to_physical().to_numpy()
+                if use_label:
+                    unknown = set(window_groups.unique().to_list()) - set(labels)
+                    if unknown:
+                        raise ValueError(f"{owner}: windows of {len(unknown)} group(s) without a label"
+                                         f" among the classes, e.g. {sorted(unknown, key=str)[:3]}")
+            else:
+                segment_idx, t0 = self._tile(segments=segments, span=span)
+                window_groups = segments[self.group_column].gather(segment_idx)
 
             order = np.random.permutation(len(t0)) if shuffle else np.arange(len(t0))
             for from_idx in range(0, len(order), batch_size):
                 selected = order[from_idx:from_idx + batch_size]
-                yield _batch(segment_idx[selected], t0[selected])
+                yield _batch(window_groups.gather(selected), t0[selected])
 
-        return _random_generator() if infinite else _single_pass_generator()
+        return _random_generator() if infinite and windows is None else _single_pass_generator()
+
+    def tile_windows(self,
+                     groups: list[Any] | None = None,
+                     window: str | timedelta | float = "30m",
+                     forecast_horizon: str | timedelta | float | None = None,
+                     max_gap: str | timedelta | float = "5m",
+                     max_windows: int | None = None) -> pl.DataFrame:
+        """
+        List the non-overlapping windows of the groups, as a pass with ``infinite=False`` uses them.
+
+        Passed back to :func:`to_keras_generator` as ``windows``, with the same window, horizon and
+        gap, a pass goes over exactly these windows in this order - so that an evaluation is
+        repeatable and its predictions can be matched with the windows they were made for.
+
+        :param groups: The groups to tile, all if None
+        :param window: Duration of the input window
+        :param forecast_horizon: Duration of the forecast horizon, if any
+        :param max_gap: Maximum time between two consecutive rows that may be interpolated
+        :param max_windows: If given, at most this many windows, drawn at random and kept in order
+        :return: Dataframe with the group column and ``window_start``, in the type of the timestamp column
+        """
+        span = self._to_time_units("window", window)
+        if forecast_horizon is not None:
+            span += self._to_time_units("forecast_horizon", forecast_horizon)
+        max_gap_units = self._to_time_units("max_gap", max_gap)
+
+        if groups is not None:
+            groups = self._group_values(groups)
+        segments = self._segments(groups=groups, max_gap=max_gap_units)
+        segments = segments.filter((pl.col("end") - pl.col("start")) >= span)
+        segment_idx, t0 = self._tile(segments=segments, span=span)
+
+        if max_windows is not None and len(t0) > max_windows:
+            selected = np.sort(np.random.choice(len(t0), size=max_windows, replace=False))
+            segment_idx, t0 = segment_idx[selected], t0[selected]
+
+        dtype = XDataFrame(self.df).dtype(self.timestamp_column)
+        return pl.DataFrame([segments[self.group_column].gather(segment_idx),
+                             pl.Series("window_start", t0).cast(dtype)])
+
+    def group_labels(self, label: str, classes: list[Any], groups: list[Any] | None = None) -> dict[Any, int]:
+        """
+        The label of each group, as its index in ``classes``.
+
+        :param label: Column of the label - the same in all rows of a group
+        :param classes: The labels to keep, in the order of their index
+        :param groups: The groups to consider, all if None
+        :return: Group id to label index, for the groups whose label is one of ``classes``
+        :raise ValueError: If a group has more than one label
+        """
+        rows = self.df.select(self.group_column, label)
+        if groups is not None:
+            rows = rows.filter(pl.col(self.group_column).is_in(groups))
+        per_group = (rows.group_by(self.group_column)
+                     .agg(pl.col(label).drop_nulls().unique().alias("__labels"))
+                     .collect())
+
+        ambiguous = per_group.filter(pl.col("__labels").list.len() > 1)
+        if not ambiguous.is_empty():
+            raise ValueError(f"{self.__class__.__name__}: {ambiguous.height} group(s) have more than one"
+                             f" '{label}', e.g. {ambiguous.head(3).rows()}")
+
+        per_group = per_group.with_columns(pl.col("__labels").list.first().alias("__label"))
+        known = per_group.filter(pl.col("__label").is_in(classes))
+        if known.height < per_group.height:
+            logger.warning(f"{self.__class__.__name__}: leaving out {per_group.height - known.height} of"
+                           f" {per_group.height} group(s) whose '{label}' is missing or not one of {classes}")
+
+        index = {value: i for i, value in enumerate(classes)}
+        return {group: index[value] for group, value in known.select(self.group_column, "__label").iter_rows()}
+
+    def _label_weights(self, segments: pl.DataFrame, labels: dict[Any, int]) -> np.ndarray:
+        """
+        Draw probabilities of the groups of the segments, so that each class is equally likely.
+
+        :param segments: Segments, sorted by group
+        :param labels: Label index per group
+        :return: Probability per group, in the order of the groups in ``segments``
+        """
+        group_labels = np.array([labels[g] for g in
+                                 segments[self.group_column].unique(maintain_order=True).to_list()])
+        classes, counts = np.unique(group_labels, return_counts=True)
+        per_class = dict(zip(classes, counts))
+        weights = np.array([1.0 / per_class[c] for c in group_labels]) / len(classes)
+        return weights / weights.sum()
+
+    @staticmethod
+    def _tile(segments: pl.DataFrame, span: float) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Tile each segment with non-overlapping windows, so that each target is seen once.
+
+        :param segments: Segments that can hold at least one window
+        :param span: Duration of a window including the forecast horizon
+        :return: Tuple of the segment index and start time per window
+        """
+        starts = segments["start"].to_numpy()
+        tile_counts = ((segments["end"].to_numpy() - starts) // span).astype(np.int64)
+        segment_idx = np.repeat(np.arange(len(starts)), tile_counts)
+        tile_idx = np.arange(len(segment_idx)) - np.repeat(np.cumsum(tile_counts) - tile_counts, tile_counts)
+        t0 = starts[segment_idx] + tile_idx * span
+        if np.issubdtype(starts.dtype, np.integer):
+            t0 = t0.astype(starts.dtype)
+        return segment_idx, t0
 
     def _to_time_units(self, name: str, value: str | timedelta | float) -> float:
         """
@@ -665,14 +838,16 @@ class GroupWindowAccessor(_GroupAccessorBase):
                 .sort(self.group_column, "start")
                 .collect())
 
-    def _draw_starts(self, segments: pl.DataFrame, span: float, size: int) -> tuple[np.ndarray, np.ndarray]:
+    def _draw_starts(self, segments: pl.DataFrame, span: float, size: int,
+                     group_weights: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
         """
-        Draw random window starts: a group uniformly, then a start uniformly in time within the
-        valid part of its segments.
+        Draw random window starts: a group uniformly (or by ``group_weights``), then a start uniformly
+        in time within the valid part of its segments.
 
         :param segments: Segments that can hold at least one window, sorted by group
         :param span: Duration of a window including the forecast horizon
         :param size: Number of starts to draw
+        :param group_weights: Probability per group, in the order of the groups in ``segments``
         :return: Tuple of the segment index and start time per window
         """
         starts = segments["start"].to_numpy()
@@ -685,7 +860,10 @@ class GroupWindowAccessor(_GroupAccessorBase):
         group_bounds = np.searchsorted(group_ids, np.arange(number_of_groups + 1))
         cumulative = np.concatenate([[0.0], np.cumsum(valid_lengths, dtype=np.float64)])
 
-        group = np.random.randint(number_of_groups, size=size)
+        if group_weights is None:
+            group = np.random.randint(number_of_groups, size=size)
+        else:
+            group = np.random.choice(number_of_groups, size=size, p=group_weights)
         lower, upper = group_bounds[group], group_bounds[group + 1]
         position = cumulative[lower] + np.random.random(size) * (cumulative[upper] - cumulative[lower])
         segment_idx = np.clip(np.searchsorted(cumulative, position, side="right") - 1, lower, upper - 1)
@@ -696,7 +874,7 @@ class GroupWindowAccessor(_GroupAccessorBase):
         return segment_idx, starts[segment_idx] + offset
 
     def _resample(self, columns: list[str], groups: pl.Series, t0: np.ndarray,
-                  grid: np.ndarray, max_gap: float) -> np.ndarray:
+                  grid: np.ndarray, max_gap: float, step_idx: list[int] | None = None) -> np.ndarray:
         """
         Fetch the rows of the given windows and interpolate them onto the grid.
 
@@ -709,8 +887,10 @@ class GroupWindowAccessor(_GroupAccessorBase):
         :param t0: Start time per window
         :param grid: Time points relative to ``t0``
         :param max_gap: Maximum gap in the physical unit of the timestamp column
+        :param step_idx: Indices of the columns that hold the last row's value instead of being interpolated
         :return: Array of shape :code:`(len(t0), len(grid), len(columns))`
         """
+        step_idx = set(step_idx or [])
         width = grid[-1] + 2 * max_gap
         lower = t0 - max_gap
         requests = (pl.DataFrame([pl.Series("__window", np.arange(len(t0))),
@@ -739,8 +919,13 @@ class GroupWindowAccessor(_GroupAccessorBase):
         for i in range(len(t0)):
             rows_in_window = slice(window_bounds[i], window_bounds[i + 1])
             relative_time = (timestamps[rows_in_window] - t0[i]).astype(np.float64)
+            # rows are fetched from t0 - max_gap on, so one lies at or before every grid point
+            last_row = np.clip(np.searchsorted(relative_time, grid, side="right") - 1, 0, None)
             for j in range(len(columns)):
-                resampled[i, :, j] = np.interp(grid, relative_time, values[rows_in_window, j])
+                if j in step_idx:
+                    resampled[i, :, j] = values[rows_in_window, j][last_row]
+                else:
+                    resampled[i, :, j] = np.interp(grid, relative_time, values[rows_in_window, j])
         return resampled
 
 

@@ -10,13 +10,14 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, ClassVar, NamedTuple
 
 import keras.callbacks
 import keras.utils
+import numpy as np
 import pandas as pd
 
 from damast.core import DataSpecification
@@ -328,13 +329,7 @@ class BaseModel(ABC):
         :param evaluation_data: The data that shall be used for evaluation
         :return: DataFrame listing all performed evaluation results for this model
         """
-        # Load the best weight
-        checkpoint_best = self.checkpoints_dir / CHECKPOINT_BEST
-        if glob.glob(f"{checkpoint_best}*"):
-            self.load_weights(checkpoint_filepath=checkpoint_best)
-        else:
-            raise RuntimeError(f"{self.__class__}.evaluate: could not find the checkpoint data"
-                               f" with best weights: {checkpoint_best} does not exist")
+        self.load_best_weights()
 
         # Evaluate the model against the provided data using the weights/checkpoint
         # with the (so far) best performance
@@ -350,10 +345,43 @@ class BaseModel(ABC):
             evaluation_results.append(value)
 
         result_df = pd.DataFrame([evaluation_results], columns=evaluation_column_names)
-        if self.evaluation_file.exists():
-            result_df.to_csv(self.evaluation_file)
+        # one row per evaluation: appended to the file of the earlier ones, with the header only once
+        result_df.to_csv(self.evaluation_file, mode="a", header=not self.evaluation_file.exists(), index=False)
 
         return evaluation
+
+    def load_best_weights(self):
+        """
+        Load the weights of the best checkpoint, as written in :func:`train`.
+
+        :raise RuntimeError: If there is no such checkpoint
+        """
+        checkpoint_best = self.checkpoints_dir / CHECKPOINT_BEST
+        if not glob.glob(f"{checkpoint_best}*"):
+            raise RuntimeError(f"{self.__class__}.load_best_weights: could not find the checkpoint data"
+                               f" with best weights: {checkpoint_best} does not exist")
+        self.load_weights(checkpoint_filepath=checkpoint_best)
+
+    def predict_batches(self, batches: Iterable[tuple[np.ndarray, np.ndarray]]
+                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Predict batch after batch with the weights of the best checkpoint, keeping the true values.
+
+        The inputs are not kept, only their last step - e.g. to tell the windows of a moving and a
+        stationary object apart afterwards.
+
+        :param batches: Batches of (X, y), e.g. a single pass over fixed windows
+        :return: The true values, the predictions and the last input step of each window
+        """
+        self.load_best_weights()
+        y_true, y_pred, last_inputs = [], [], []
+        for X, y in batches:
+            y_true.append(np.asarray(y))
+            y_pred.append(keras.ops.convert_to_numpy(self.model.predict_on_batch(X)))
+            last_inputs.append(np.asarray(X)[:, -1, :])
+        if not y_true:
+            raise RuntimeError(f"{self.__class__.__name__}.predict_batches: no batch to predict")
+        return np.concatenate(y_true), np.concatenate(y_pred), np.concatenate(last_inputs)
 
 
 class ModelInstanceDescription(NamedTuple):
