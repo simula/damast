@@ -1,7 +1,7 @@
 import warnings
 
 import numpy as np
-import numpy.typing as npt
+import pandas as pd
 
 __all__ = [
     "N_sigma",
@@ -9,9 +9,9 @@ __all__ = [
 ]
 
 
-def N_sigma_limited(x: npt.NDArray[np.float64],
+def N_sigma_limited(x: pd.Series,
                     N: int,
-                    p: float = 0.99) -> npt.NDArray[np.float64]:
+                    p: float = 0.99) -> np.float64:
     """ Compute and return the N_sigma given a list without considering the
     :math:`100\\cdot(1-p)\\%` highest values
 
@@ -26,7 +26,7 @@ def N_sigma_limited(x: npt.NDArray[np.float64],
     return x.loc[x < limit].median() + N * x.loc[x < limit].std()
 
 
-def N_sigma(x: npt.NDArray[np.float64], N: int) -> npt.NDArray[np.float64]:
+def N_sigma(x: pd.Series, N: int) -> np.float64:
     """ Compute and return the N_sigma given a list
         :param x: The input array
 
