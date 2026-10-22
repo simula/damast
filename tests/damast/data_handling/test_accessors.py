@@ -482,15 +482,16 @@ def test_group_window_accessor_label_is_one_hot_per_group(irregular_dataframe, i
     assert GAPPY_GROUP not in gids
 
 
-def test_group_window_accessor_label_must_be_constant_per_group(irregular_dataframe):
+def test_group_window_accessor_leaves_out_groups_with_more_than_one_label(irregular_dataframe, caplog):
     df = _labelled(irregular_dataframe).with_columns(
         cls=pl.when((pl.col("id") == 3) & (pl.col("timestamp") > T_OFFSET + 1000)).then(pl.lit("even"))
         .otherwise(pl.col("cls")))
     gwa = GroupWindowAccessor(df, group_column="id", timestamp_column="timestamp")
 
-    with pytest.raises(ValueError, match="1 group.* more than one 'cls'"):
-        next(gwa.to_keras_generator(WINDOW_FEATURES, label="cls", classes=CLASSES, window=WINDOW,
-                                    sequence_length=10, max_gap=MAX_GAP))
+    labels = gwa.group_labels(label="cls", classes=CLASSES)
+
+    assert 3 not in labels and len(labels) > 0
+    assert any("leaving out 1 group(s) with more than one 'cls'" in r.message for r in caplog.records)
 
 
 @pytest.mark.parametrize("kwargs, match", [

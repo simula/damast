@@ -461,7 +461,7 @@ class GroupWindowAccessor(_GroupAccessorBase):
     * ``target_reference="last_input"`` gives the targets relative to their value at the last input grid
       point :math:`t_0 + H^{-}` - e.g. the displacement from cumulative track coordinates.
     * With a ``label`` there is no forecast: y is the one-hot encoded ``label`` of the window's group,
-      which must be the same in all rows of a group. ``balance_by_label`` draws groups so that every
+      which must be the same in all rows of a group - groups with more than one label are left out. ``balance_by_label`` draws groups so that every
       class is equally likely.
 
     For an evaluation that is repeatable and covers each window once, :func:`tile_windows` lists the
@@ -726,8 +726,8 @@ class GroupWindowAccessor(_GroupAccessorBase):
         :param label: Column of the label - the same in all rows of a group
         :param classes: The labels to keep, in the order of their index
         :param groups: The groups to consider, all if None
-        :return: Group id to label index, for the groups whose label is one of ``classes``
-        :raise ValueError: If a group has more than one label
+        :return: Group id to label index, for the groups whose single label is one of ``classes`` -
+            groups with more than one label are left out
         """
         rows = self.df.select(self.group_column, label)
         if groups is not None:
@@ -738,8 +738,9 @@ class GroupWindowAccessor(_GroupAccessorBase):
 
         ambiguous = per_group.filter(pl.col("__labels").list.len() > 1)
         if not ambiguous.is_empty():
-            raise ValueError(f"{self.__class__.__name__}: {ambiguous.height} group(s) have more than one"
-                             f" '{label}', e.g. {ambiguous.head(3).rows()}")
+            logger.warning(f"{self.__class__.__name__}: leaving out {ambiguous.height} group(s) with more than one"
+                           f" '{label}', e.g. {ambiguous.head(3).rows()}")
+            per_group = per_group.filter(pl.col("__labels").list.len() <= 1)
 
         per_group = per_group.with_columns(pl.col("__labels").list.first().alias("__label"))
         known = per_group.filter(pl.col("__label").is_in(classes))
