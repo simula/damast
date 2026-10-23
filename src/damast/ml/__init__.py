@@ -33,3 +33,26 @@ else:
     autodiscover_backend()
 
 import keras  # noqa
+
+
+def backend_device() -> str:
+    """
+    Device the keras backend computes on - the backends use a visible GPU by themselves,
+    ``CUDA_VISIBLE_DEVICES=`` restricts them to the CPU.
+
+    :return: ``"gpu"`` or ``"cpu"``
+    """
+    backend = keras.backend.backend()
+    if backend == "torch":
+        import torch
+        return "gpu" if torch.cuda.is_available() else "cpu"
+    if backend == "tensorflow":
+        import tensorflow as tf
+        return "gpu" if tf.config.list_physical_devices("GPU") else "cpu"
+    if backend == "jax":
+        import jax
+        return "gpu" if jax.default_backend() == "gpu" else "cpu"
+    return "cpu"
+
+
+logger.info(f"Keras backend '{keras.backend.backend()}' computes on: {backend_device()}")

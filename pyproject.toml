@@ -102,7 +102,9 @@ ml = [
 
 cuda = [
     "cudf",
-    "polars[gpu]"
+    "polars[gpu]",
+    # GPU build of the keras jax backend (torch and tensorflow wheels ship CUDA support)
+    "jax[cuda12]"
 ]
 
 test = [

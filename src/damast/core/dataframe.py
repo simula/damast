@@ -32,6 +32,7 @@ from .constants import (
 )
 from .data_description import ListOfValues, MinMax
 from .deferred import PendingQueries
+from .engine import default_engine
 from .metadata import DataSpecification, MetaData, ValidationMode
 from .partitioning import PartitionStrategy, warn_on_local_time_buckets
 from .types import DataFrame, XDataFrame
@@ -378,7 +379,7 @@ class AnnotatedDataFrame(XDataFrame):
         written: list[Path] = []
         try:
             if self.pending is None or self.pending.done:
-                polars.collect_all([sink], engine="streaming")
+                polars.collect_all([sink], engine=default_engine())
             else:
                 self.pending.run(sink)
 

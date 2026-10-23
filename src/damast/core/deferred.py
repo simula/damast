@@ -16,6 +16,8 @@ from typing import Any
 
 import polars
 
+from .engine import default_engine
+
 __all__ = ["Deferred", "PendingQueries", "current", "running"]
 
 
@@ -114,14 +116,14 @@ class PendingQueries:
         if self._absorbed_by is not None:
             return self._absorbed_by.run(*outputs)
         if self.done:
-            return polars.collect_all(list(outputs), engine="streaming") if outputs else []
+            return polars.collect_all(list(outputs), engine=default_engine()) if outputs else []
         self._done = True
 
         queries = [query for deferred, _, _ in self._entries for query in deferred.queries]
         if not queries and not outputs:
             results = []
         else:
-            results = polars.collect_all([*queries, *outputs], engine="streaming")
+            results = polars.collect_all([*queries, *outputs], engine=default_engine())
 
         position = 0
         for deferred, on_value, label in self._entries:

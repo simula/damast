@@ -4,7 +4,6 @@ import ast
 import csv
 import logging
 import math
-import os
 import re
 from collections import Counter
 from itertools import islice
@@ -22,22 +21,15 @@ from damast.utils import ensure_packages
 
 from .constants import DAMAST_CSV_DEFAULT_ARGS
 from .data_description import NumericValueStats
+from .engine import configure_engine_affinity
 
 logger = logging.getLogger(__name__)
 
 VAEX_HDF5_ROOT: str = "/table"
 VAEX_HDF5_COLUMNS: str = f"{VAEX_HDF5_ROOT}/columns"
 
-# Prefer an engine affinity the embedding application/environment has already configured
-# (via POLARS_ENGINE_AFFINITY or a prior polars.Config.set_engine_affinity call) over
-# unconditionally overriding it - only apply damast's own default when nothing is set yet.
-if "POLARS_ENGINE_AFFINITY" in os.environ:
-    logger.warning(
-        "damast.core.polars_dataframe: POLARS_ENGINE_AFFINITY is already set to"
-        f" '{os.environ['POLARS_ENGINE_AFFINITY']}' - keeping it instead of damast's default 'streaming'"
-    )
-else:
-    polars.Config.set_engine_affinity("streaming")
+# An explicit POLARS_ENGINE_AFFINITY wins, otherwise GPU when available, else streaming
+configure_engine_affinity()
 
 POLARS_TYPE_DICT = {
     key: value

@@ -148,6 +148,18 @@ Then open the documentation with a browser:
 ```
 
 
+## GPU Usage
+
+Install the `cuda` extra to execute pipelines with the polars GPU engine and to train with a GPU
+build of the keras backends:
+
+    pip install "damast[ml,cuda]"
+
+A GPU is then used automatically when available. To restrict damast to the CPU, hide the devices
+with `CUDA_VISIBLE_DEVICES=` (or set `POLARS_ENGINE_AFFINITY=streaming` for the data processing
+only). Queries the GPU engine cannot run fall back to polars' in-memory CPU engine - for data larger
+than memory, prefer the CPU streaming engine.
+
 ## Testing
 
 Install the project and use the predefined default test environment:
