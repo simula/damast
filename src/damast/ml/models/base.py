@@ -267,6 +267,11 @@ class BaseModel(ABC):
                 save_best_only=True)
             callbacks.append(model_checkpoint_cb)
 
+            if save_history:
+                # written after every epoch, so that a running training can be followed and compared
+                callbacks.append(keras.callbacks.CSVLogger(str(self.model_dir / HISTORY_FILENAME),
+                                                           append=initial_epoch > 0))
+
             early_stopping_cb = keras.callbacks.EarlyStopping(patience=10,
                                                               restore_best_weights=True)
             callbacks.append(early_stopping_cb)
@@ -290,11 +295,6 @@ class BaseModel(ABC):
                                           )
         except Exception as e:
             raise RuntimeError(f"{self.__class__.__name__}: Training of {self.name} failed") from e
-
-        # Save the history
-        if save_history:
-            history: DataFrame = XDataFrame.from_dict(self.history.history)
-            history.write_csv(f"{self.model_dir / HISTORY_FILENAME}")
 
     def get_evaluations(self) -> DataFrame:
         """

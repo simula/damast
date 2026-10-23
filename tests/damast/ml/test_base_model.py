@@ -70,3 +70,41 @@ def test_graphviz_is_usable(monkeypatch, which, run, expected):
         assert base.graphviz_is_usable() is expected
     finally:
         base.graphviz_is_usable.cache_clear()
+
+
+def test_the_training_history_is_written_after_every_epoch(tmp_path):
+    """So that a running training can be followed - and compared with others - before it ends: a
+    training that breaks off still leaves the epochs it finished."""
+    import numpy as np
+    import polars as pl
+
+    from damast.ml.models.base import HISTORY_FILENAME
+
+    class SmallModel(BaseModel):
+        input_specs = {"a": {"length": 1}}
+        output_specs = {"a": {"length": 1}}
+
+        def _init_model(self):
+            inputs = keras.Input(shape=(5, 1))
+            self.model = keras.Model(inputs, keras.layers.Dense(1)(keras.layers.Flatten()(inputs)))
+
+    def batches(limit=None):
+        rng = np.random.default_rng(0)
+        for k in range(limit or 10**9):
+            yield rng.random((4, 5, 1)), rng.random((4, 1))
+        raise RuntimeError("the data ran out")
+
+    model = SmallModel(name="small", features=["a"], targets=["a"], output_dir=tmp_path)
+    model.build()
+    history_file = model.model_dir / HISTORY_FILENAME
+
+    # 2 batches per epoch: the 5th batch, in the 3rd epoch, fails
+    with pytest.raises(RuntimeError, match="Training of small failed"):
+        model.train(batches(limit=4), batches(), epochs=5, steps_per_epoch=2, validation_steps=1)
+    history = pl.read_csv(history_file)
+    assert history["epoch"].to_list() == [0, 1]
+    assert "val_loss" in history.columns
+
+    # continued training appends to the history
+    model.train(batches(), batches(), epochs=3, initial_epoch=2, steps_per_epoch=2, validation_steps=1)
+    assert pl.read_csv(history_file)["epoch"].to_list() == [0, 1, 2]
