@@ -12,7 +12,7 @@ import damast.core
 from damast.core.dataprocessing import PipelineElement
 from damast.core.types import DataFrame, XDataFrame
 from damast.data_handling.transformers import augmenters
-from damast.data_handling.transformers.augmenters import BallTreeAugmenter
+from damast.data_handling.transformers.augmenters import BallTreeAugmenter, SphericalKDTreeAugmenter
 from damast.domains.maritime.ais.navigational_status import AISNavigationalStatus
 from damast.domains.maritime.ais.vessel_types import VesselType
 from damast.domains.maritime.math.spatial import EARTH_RADIUS_IN_KM
@@ -30,6 +30,7 @@ class ComputeClosestAnchorage(PipelineElement):
     :param dataset: Path to data-set with closest anchorages
     :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
     :param sep: Separator used in dataset if dataset is a csv file
+    :param backend: Nearest-Neighbour search, "balltree" or "kdtree"
     """
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
 
@@ -46,10 +47,12 @@ class ComputeClosestAnchorage(PipelineElement):
                  dataset: str | Path,
                  columns: list[str],
                  sep: str = ";",
-                 earth_radius_in_km: float = EARTH_RADIUS_IN_KM):
+                 earth_radius_in_km: float = EARTH_RADIUS_IN_KM,
+                 backend: str = "balltree"):
         self.dataset = dataset
         self.columns = columns
         self.sep = sep
+        self.backend = backend
 
         if type(dataset) in [str, Path]:
             _dataset = self.load_data(dataset, sep)
@@ -60,7 +63,12 @@ class ComputeClosestAnchorage(PipelineElement):
                 _dataset.select((pl.col(x)*self.deg2rad).alias(x))[:,0] for x in columns
         ]
 
-        self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
+        if backend == "balltree":
+            self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
+        elif backend == "kdtree":
+            self._function = SphericalKDTreeAugmenter(np.vstack(radian_dataset).T)
+        else:
+            raise ValueError(f"{self.__class__.__name__}: unknown Nearest-Neighbour-search-method '{backend}', expected 'balltree' or 'kdtree'")
 
         self.earth_radius_in_km = earth_radius_in_km
 
