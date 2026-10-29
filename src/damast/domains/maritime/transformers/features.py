@@ -172,41 +172,52 @@ class Heading(PipelineElement):
 
         delta_lon = "delta_lon"
         next_lat = "next_lat"
+        next_time = "_next_time"
 
         # The initial bearing from each position to the same object's next one - so an object's
         # last position, having no next one, has no heading and is dropped
         dataframe = dataframe.sort(group, sort_column).with_columns(
                     (pl.col(in_lon).shift(-1).over(group) - pl.col(in_lon)).alias(delta_lon),
-                    pl.col(in_lat).shift(-1).over(group).alias(next_lat)
+                    pl.col(in_lat).shift(-1).over(group).alias(next_lat),
+                    pl.col(sort_column).shift(-1).over(group).alias(next_time)
                 ).filter(
                     pl.col(next_lat).is_not_null()
                 )
 
+        # A step of zero length (the position repeated) has no bearing - arctan2(0, 0) would read
+        # as due north. Such a step keeps the object's last course, or its next one before it
+        # first moves; an object that never moves has no heading.
+        moved = (pl.col(delta_lon) != 0) | (pl.col(next_lat) != pl.col(in_lat))
         dataframe = dataframe.with_columns(
-            pl.arctan2(
+            pl.when(moved).then(pl.arctan2(
                 # X component
                 pl.col(delta_lon).radians().sin() * pl.col(next_lat).radians().cos(),
                 # Y component
                 pl.col(in_lat).radians().cos() * pl.col(next_lat).radians().sin() -
                 pl.col(in_lat).radians().sin() * pl.col(next_lat).radians().cos() * pl.col(delta_lon).radians().cos()
-            ).alias(heading)
+            )).forward_fill().backward_fill().over(group).alias(heading)
         ).drop(delta_lon, next_lat)
 
         # per object: the first heading of an object has nothing to change from, so it is dropped
-        # below rather than compared with the previous object's last one
+        # below rather than compared with the previous object's last one; without a heading there
+        # is no change of it.
+        # A step's bearing is the course at its middle, so the change between two steps takes from
+        # the middle of the one to the middle of the other: half the time from the previous
+        # position to the next one - not the incoming step's time, which differs when the
+        # positions come at irregular intervals.
         dataframe = dataframe.sort(group, sort_column).with_columns(
-                    wrapped_angle(pl.col(heading).diff()).over(group).alias(delta_heading),
-                    pl.col(sort_column).diff().dt.total_seconds(fractional=True).over(group)
-                      .alias("_delta_time")
+                    wrapped_angle(pl.col(heading).diff()).over(group).fill_null(0.0).alias(delta_heading),
+                    ((pl.col(next_time) - pl.col(sort_column).shift(1).over(group))
+                      .dt.total_seconds(fractional=True) / 2).alias("_delta_time")
                 )
 
         dataframe = dataframe.with_columns(
                         (pl.col(delta_heading) / pl.col("_delta_time")).alias(angular_velocity)
-                    ).drop("_delta_time")
+                    )
 
         df.lazyframe = dataframe.filter(
-                    pl.col(delta_heading).is_not_null()
-                )
+                    pl.col("_delta_time").is_not_null()
+                ).drop("_delta_time", next_time)
 
         return df
 

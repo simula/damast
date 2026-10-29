@@ -83,6 +83,65 @@ def test_a_turn_across_south_is_a_small_heading_change(tmp_path):
     assert result["angular_velocity"].abs().max() < math.radians(2) / 60
 
 
+def test_a_turn_takes_from_the_middle_of_one_step_to_the_middle_of_the_next(tmp_path):
+    # 2 s east, then 60 s north: the two bearings are the course at 1 s and at 32 s, so the
+    # quarter turn takes 31 s - not the 2 s of the incoming step
+    result = _headings(tmp_path, [
+        (1, 0, 0.0, 0.0),
+        (1, 2, 0.0, 0.001),
+        (1, 62, 0.01, 0.001),
+        (1, 122, 0.02, 0.001),
+    ])
+
+    assert result["delta_heading"].to_list() == pytest.approx([-math.pi / 2, 0.0], abs=1e-3)
+    assert result["angular_velocity"].to_list() == pytest.approx([-math.pi / 2 / 31, 0.0], abs=1e-4)
+
+
+def test_a_repeated_position_keeps_the_course(tmp_path):
+    # heading east; the position at 120 s is reported again at 180 s - that step has no bearing
+    # (not due north), so the course stays east throughout
+    result = _headings(tmp_path, [
+        (1, 0, 0.0, 0.0),
+        (1, 60, 0.0, 1.0),
+        (1, 120, 0.0, 2.0),
+        (1, 180, 0.0, 2.0),
+        (1, 240, 0.0, 3.0),
+        (1, 300, 0.0, 4.0),
+    ])
+
+    assert result["heading"].to_list() == pytest.approx([math.pi / 2] * 4, abs=1e-3)
+    assert result["delta_heading"].to_list() == pytest.approx([0.0] * 4, abs=1e-6)
+    assert result["angular_velocity"].to_list() == pytest.approx([0.0] * 4, abs=1e-6)
+
+
+def test_an_object_before_its_first_move_takes_its_first_course(tmp_path):
+    result = _headings(tmp_path, [
+        (1, 0, 0.0, 0.0),
+        (1, 60, 0.0, 0.0),
+        (1, 120, 0.0, 0.0),
+        (1, 180, 1.0, 0.0),
+        (1, 240, 2.0, 0.0),
+    ])
+
+    assert result["heading"].to_list() == pytest.approx([0.0] * 3, abs=1e-6)
+    assert result["delta_heading"].to_list() == pytest.approx([0.0] * 3, abs=1e-6)
+
+
+def test_an_object_that_never_moves_has_no_heading_and_no_change(tmp_path):
+    result = _headings(tmp_path, [
+        (1, 0, 5.0, 5.0),
+        (1, 60, 5.0, 5.0),
+        (1, 120, 5.0, 5.0),
+        (1, 180, 5.0, 5.0),
+    ])
+
+    # kept like any other object - only its first and last positions are dropped
+    assert result.height == 2
+    assert result["heading"].is_null().all()
+    assert result["delta_heading"].to_list() == [0.0, 0.0]
+    assert result["angular_velocity"].to_list() == [0.0, 0.0]
+
+
 @pytest.mark.parametrize("angle, expected", [
     (0.0, 0.0),
     (math.radians(358), math.radians(-2)),
