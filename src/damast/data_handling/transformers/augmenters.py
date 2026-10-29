@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import polars as pl
+from scipy.spatial import cKDTree
 from sklearn.neighbors import BallTree
 
 import damast.core
@@ -184,6 +185,39 @@ class BallTreeAugmenter:
         Last time the underlying BallTree was modified
         """
         return self._modified
+
+
+class SphericalKDTreeAugmenter:
+    """
+    distance computation using k-D-tree on 3-D unit vectors.
+
+    x: reference points (for example anchorages),  (n, 2)-shaped array of (latitude, longitude) in radians
+    """
+
+    def __init__(self, x: npt.NDArray[np.float64]):
+        # Fail if no data:
+        if len(x) == 0:
+            raise ValueError(f"Found array with 0 sample(s) (shape={x.shape}) while a minimum of 1 is required.")
+        self._tree = cKDTree(self.unit_vectors(x[:, 0], x[:, 1]))
+
+    @staticmethod
+    def unit_vectors(latitude: npt.NDArray[np.float64], longitude: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        cos_latitude = np.cos(latitude)
+        return np.column_stack([cos_latitude * np.cos(longitude), cos_latitude * np.sin(longitude), np.sin(latitude)])
+
+    def __call__(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """
+        Calculate angle in radians, between each position (for example ship coordinates) and,
+        nearest reference point (for example anchorages).
+
+        x: Latitudes of the positions (e.g. vessels), in radians
+        y: Longitudes of the positions, in radians
+        return: angle in radians
+
+        (unit sphere, so for distance, must multiply angle with Earth's radius)
+        """
+        chord = self._tree.query(self.unit_vectors(x, y))[0]
+        return 2.0 * np.arcsin(np.minimum(chord / 2.0, 1.0))
 
 
 class AddUndefinedValue(PipelineElement):
