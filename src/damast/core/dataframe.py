@@ -34,7 +34,7 @@ from .data_description import ListOfValues, MinMax
 from .deferred import PendingQueries
 from .engine import default_engine
 from .metadata import DataSpecification, MetaData, ValidationMode
-from .partitioning import PartitionStrategy, warn_on_local_time_buckets
+from .partitioning import PartitionStrategy, warn_on_local_time_buckets, with_suffix
 from .types import DataFrame, XDataFrame
 
 __all__ = ["AnnotatedDataFrame"]
@@ -302,6 +302,10 @@ class AnnotatedDataFrame(XDataFrame):
             self.pending.run()
         return self
 
+    #: Buckets :meth:`export_partitioned` hashes the partitions into. Each open output file holds
+    #: buffers, so the buckets bound how many are open at once - and with that the memory.
+    PARTITION_BUCKETS: int = 64
+
     def export_partitioned(
         self,
         directory: str | Path,
@@ -318,16 +322,17 @@ class AnnotatedDataFrame(XDataFrame):
         :meth:`from_files` exactly like any other multi-file dataset. Every file carries the
         metadata of its own rows.
 
-        The frame is streamed into one file per partition (polars' ``PartitionBy`` sink) in a
-        hidden directory below `directory`, together with the pending checks and statistics of
-        the pipeline run that produced it (see :attr:`pending`). Each file is then copied into
-        place with its metadata, inferred from its rows alone - one more pass per partition, but
-        nothing is ever held in memory as a whole.
+        The frame is streamed into :attr:`PARTITION_BUCKETS` buckets (polars' ``PartitionBy``
+        sink) in a hidden directory below `directory`, together with the pending checks and
+        statistics of the pipeline run that produced it (see :attr:`pending`), and each bucket
+        into one file per partition, so that thousands of partitions are not open at once. Each
+        file is then copied into place with its metadata, inferred from its rows alone - one more
+        pass per partition, but nothing is ever held in memory as a whole.
 
         :param directory: Directory to write partition files into (created if missing)
         :param strategy: Determines the per-row partition key and its filename
-        :param suffix: File extension appended to every :meth:`PartitionStrategy.filename`,
-            with a leading ``.`` added if missing. Pass ``""`` when the strategy already
+        :param suffix: File extension appended to every :meth:`PartitionStrategy.filename` that
+            does not end with it yet, with a leading ``.`` added if missing. Pass ``""`` when the strategy already
             returns complete filenames, e.g. when they come from an external naming scheme.
             This names the file only - the contents are parquet either way.
         :return: Paths of the written data files, one per partition
@@ -351,7 +356,7 @@ class AnnotatedDataFrame(XDataFrame):
             suffix = f".{suffix}"
 
         key_col = "__damast_partition_key__"
-        key_expr = strategy.key_expr().alias(key_col)
+        key_expr = strategy.key_expr(self.lazyframe.collect_schema()).alias(key_col)
         if strategy.time_zone is None:
             # only an accidental local-time bucketing is worth a warning - the key's type tells
             key_dtype = self.lazyframe.select(key_expr).collect_schema()[key_col]
@@ -366,15 +371,22 @@ class AnnotatedDataFrame(XDataFrame):
             # the key's value - for a struct-valued key_expr() (a composite of several columns)
             # a dict, as strategy.filename() expects
             staged = f"{next(counter)}.parquet"
-            targets[staged] = f"{strategy.filename(args.partition_keys.item())}{suffix}"
+            targets[staged] = with_suffix(strategy.filename(args.partition_keys.item()), suffix)
             return staged
 
         unfinished = directory / f".partitions-{os.getpid()}"
-        sink = self.lazyframe.sink_parquet(
-            # no size limit per file: one file per partition
-            polars.PartitionBy(unfinished, key=key_expr, include_key=False,
-                               file_path_provider=file_path, approximate_bytes_per_file=None),
-            compression="zstd", compression_level=1, mkdir=True, lazy=True,
+
+        def sink_parquet(lazyframe: polars.LazyFrame, partition_by: polars.PartitionBy) -> polars.LazyFrame:
+            return lazyframe.sink_parquet(partition_by, compression="zstd", compression_level=1,
+                                          mkdir=True, lazy=True)
+
+        # a computed column, since PartitionBy rejects a key that has to see the whole column -
+        # as parsing a string column does, to infer its format
+        buckets = unfinished / "buckets"
+        sink = sink_parquet(
+            self.lazyframe.with_columns(key_expr),
+            polars.PartitionBy(buckets, key=(polars.col(key_col).hash() % self.PARTITION_BUCKETS).alias("bucket"),
+                               include_key=False, approximate_bytes_per_file=None),
         )
         written: list[Path] = []
         try:
@@ -382,6 +394,15 @@ class AnnotatedDataFrame(XDataFrame):
                 polars.collect_all([sink], engine=default_engine())
             else:
                 self.pending.run(sink)
+
+            for bucket in sorted(buckets.rglob("*.parquet")):
+                # no size limit per file: one file per partition
+                polars.collect_all([sink_parquet(
+                    polars.scan_parquet(bucket),
+                    polars.PartitionBy(unfinished, key=polars.col(key_col), include_key=False,
+                                       file_path_provider=file_path, approximate_bytes_per_file=None),
+                )], engine=default_engine())
+                bucket.unlink()
 
             with tqdm(sorted(targets.items(), key=lambda item: item[1]), unit="partition") as pbar:
                 for staged, name in pbar:

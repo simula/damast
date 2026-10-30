@@ -486,3 +486,76 @@ def test_export_partitioned_of_a_pipeline_result_runs_its_checks_in_the_same_pas
     assert result.pending.done
     assert [p.name for p in written] == ["2026-01-02.parquet", "2026-01-03.parquet"]
     assert pipeline.processing_stats["keep"]["output_dataframe_length"] == 3
+
+
+@pytest.fixture()
+def string_timestamp_adf():
+    """Timestamps as aisdk ships them: day first, as strings - the 3rd row is 2 January."""
+    df = polars.DataFrame(
+        {
+            "mmsi": [1, 1, 2, 2, 3],
+            "timestamp": [
+                "01/01/2026 03:00:00",
+                "01/01/2026 05:00:00",
+                "02/01/2026 01:00:00",
+                "02/01/2026 02:00:00",
+                "03/01/2026 10:00:00",
+            ],
+        }
+    )
+    columns = [DataSpecification(name="mmsi"), DataSpecification(name="timestamp")]
+    return AnnotatedDataFrame(df, MetaData(columns=columns))
+
+
+@pytest.mark.parametrize("strategy, expected", [
+    (ByTime("timestamp", every="1d"),
+     {"2026-01-01.parquet": 2, "2026-01-02.parquet": 2, "2026-01-03.parquet": 1}),
+    (ByTime("timestamp", every="1d", time_zone="UTC"),
+     {"2026-01-01.parquet": 2, "2026-01-02.parquet": 2, "2026-01-03.parquet": 1}),
+    (SaveAs.parse("time:timestamp+daily:AIS_%Y_%m_%d").strategy,
+     {"AIS_2026_01_01.parquet": 2, "AIS_2026_01_02.parquet": 2, "AIS_2026_01_03.parquet": 1}),
+    (SaveAs.parse("time+column:timestamp+daily+mmsi:{mmsi}-%Y-%m-%d").strategy,
+     {"1-2026-01-01.parquet": 2, "2-2026-01-02.parquet": 2, "3-2026-01-03.parquet": 1}),
+])
+def test_time_partitions_of_a_string_column_match_those_of_a_datetime_column(
+    strategy, expected, string_timestamp_adf, timeseries_adf, tmp_path
+):
+    for name, adf in {"string": string_timestamp_adf, "datetime": timeseries_adf}.items():
+        written = adf.export_partitioned(tmp_path / name, strategy)
+
+        assert {p.name: polars.scan_parquet(p).select(polars.len()).collect().item() for p in written} == expected
+
+
+def test_time_partitioning_keeps_a_string_column_as_is(string_timestamp_adf, tmp_path):
+    written = string_timestamp_adf.export_partitioned(tmp_path, ByTime("timestamp", every="1d"))
+
+    exported = polars.read_parquet(sorted(written)[0])
+    assert exported["timestamp"].to_list() == ["01/01/2026 03:00:00", "01/01/2026 05:00:00"]
+
+
+def test_export_partitioned_with_more_partitions_than_buckets_keeps_every_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(AnnotatedDataFrame, "PARTITION_BUCKETS", 2)
+    df = polars.DataFrame({"mmsi": [1, 2, 3, 4, 5, 5], "x": [1, 2, 3, 4, 5, 6]})
+    adf = AnnotatedDataFrame(df, MetaData(columns=[DataSpecification(name="mmsi"), DataSpecification(name="x")]))
+
+    written = adf.export_partitioned(tmp_path, ByColumn("mmsi"))
+
+    assert sorted(p.name for p in written) == [f"mmsi_{i}.parquet" for i in range(1, 6)]
+    assert polars.read_parquet(tmp_path / "mmsi_5.parquet")["x"].to_list() == [5, 6]
+    assert sorted(p.name for p in tmp_path.iterdir() if p.is_dir()) == []
+
+
+def test_template_ending_in_parquet_does_not_get_the_suffix_twice(timeseries_adf, tmp_path):
+    spec = f"time:timestamp+daily:{tmp_path}/AIS_%Y_%m_%d.parquet"
+
+    written = SaveAs.parse(spec).export(timeseries_adf)
+
+    assert sorted(p.name for p in written) == [
+        "AIS_2026_01_01.parquet", "AIS_2026_01_02.parquet", "AIS_2026_01_03.parquet"]
+    assert SaveAs.expected_paths(spec, start=dt.datetime(2026, 1, 1), end=dt.datetime(2026, 1, 3)) == sorted(written)
+
+
+def test_dotted_template_still_gets_the_suffix(timeseries_adf, tmp_path):
+    written = SaveAs.parse(f"column:mmsi:{tmp_path}/v1.{{mmsi}}").export(timeseries_adf)
+
+    assert sorted(p.name for p in written) == ["v1.1.parquet", "v1.2.parquet", "v1.3.parquet"]

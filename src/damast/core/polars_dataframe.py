@@ -302,7 +302,7 @@ class PolarsDataFrame(metaclass=Meta):
     def set_dtype(self, column_name, representation_type) -> polars.datatype.DataType:
         """
         Set the dtype for a column to the given representation type.
-        Using polars cast functionality
+        Using polars cast functionality, or parsing for a string column set to a datetime
         :return: The updated object
         """
         self.ensure_column(column_name)
@@ -313,7 +313,15 @@ class PolarsDataFrame(metaclass=Meta):
             if hasattr(polars, representation_type):
                 representation_type = getattr(polars, representation_type)
 
-        self.lazyframe = self.lazyframe.with_columns(polars.col(column_name).cast(representation_type).alias(column_name))
+        column = polars.col(column_name)
+        if self.dtype(column_name) == polars.String and representation_type == polars.Datetime:
+            # polars does not cast strings to datetimes
+            column = column.str.to_datetime(time_unit=getattr(representation_type, "time_unit", None),
+                                            time_zone=getattr(representation_type, "time_zone", None))
+        else:
+            column = column.cast(representation_type)
+
+        self.lazyframe = self.lazyframe.with_columns(column.alias(column_name))
         return representation_type
 
     def rescale(self, column_name: str, factor: float) -> None:

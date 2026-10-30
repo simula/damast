@@ -260,6 +260,21 @@ def test_set_dtype(data_path):
     assert adf.dtype('height') == polars.String
 
 
+@pytest.mark.parametrize("representation_type, time_unit", [
+    (polars.Datetime, "us"),
+    (polars.Datetime("ms"), "ms"),
+])
+def test_set_dtype_parses_a_string_column_to_datetime(representation_type, time_unit):
+    adf = AnnotatedDataFrame(polars.DataFrame({"timestamp": ["13/06/2026 01:02:03"]}),
+                             metadata=MetaData(columns=[DataSpecification(name="timestamp")]))
+
+    adf.set_dtype("timestamp", representation_type)
+
+    column = adf.collect()["timestamp"]
+    assert column.dtype == polars.Datetime(time_unit)
+    assert column.item() == datetime.datetime(2026, 6, 13, 1, 2, 3)
+
+
 def test_01_dataframe_composition(data_path):
     """
     Test the dataframe composition, i.e. metadata in combination with an actual dataframe

@@ -22,6 +22,29 @@ __all__ = ["ByColumn", "ByExpr", "ByTime", "PartitionStrategy", "SaveAs"]
 logger: Logger = getLogger(__name__)
 
 
+def with_suffix(name: str, suffix: str) -> str:
+    """
+    Append `suffix` to a partition's file name, unless the name already ends with it.
+
+    :param name: File name, as given by :meth:`PartitionStrategy.filename`
+    :param suffix: File extension including the leading ``.``, or ``""``
+    :return: The complete file name
+    """
+    return name if name.endswith(suffix) else f"{name}{suffix}"
+
+
+def _as_datetime(column: str, schema: polars.Schema) -> polars.Expr:
+    """
+    Expression for `column` as a datetime - a string column is parsed, inferring its format.
+
+    :param column: Name of the time column
+    :param schema: Schema of the dataframe holding `column`
+    :return: An expression that `polars.Expr.dt` operations apply to
+    """
+    expr = polars.col(column)
+    return expr.str.to_datetime() if schema[column] == polars.String else expr
+
+
 class PartitionStrategy(ABC):
     """
     Splits a dataframe into named partitions for export as separate files.
@@ -37,8 +60,12 @@ class PartitionStrategy(ABC):
     time_zone: str | None = None
 
     @abstractmethod
-    def key_expr(self) -> polars.Expr:
-        """A polars expression computing this strategy's per-row partition key."""
+    def key_expr(self, schema: polars.Schema) -> polars.Expr:
+        """
+        A polars expression computing this strategy's per-row partition key.
+
+        :param schema: Schema of the dataframe to partition
+        """
 
     def filename(self, key: Any) -> str:
         """
@@ -62,7 +89,7 @@ class ByColumn(PartitionStrategy):
         self.column = column
         self.prefix = column if prefix is None else prefix
 
-    def key_expr(self) -> polars.Expr:
+    def key_expr(self, schema: polars.Schema) -> polars.Expr:
         return polars.col(self.column)
 
     def filename(self, key: Any) -> str:
@@ -101,7 +128,8 @@ class ByTime(PartitionStrategy):
         prefix: str | None = None,
     ):
         """
-        :param timestamp_column: Name of the datetime column to partition by
+        :param timestamp_column: Name of the datetime or string column to partition by - a
+            string column is parsed for the partition key only, the exported column stays as is
         :param every: Truncation interval, e.g. ``"1h"``, ``"1d"``, ``"1w"``
         :param time_zone: Convert the column to this time zone before truncating, e.g.
             ``"UTC"`` for UTC buckets or ``"Europe/Oslo"`` to bucket by local days on purpose.
@@ -123,8 +151,8 @@ class ByTime(PartitionStrategy):
         self.format = format
         self.prefix = prefix
 
-    def key_expr(self) -> polars.Expr:
-        column = polars.col(self.timestamp_column)
+    def key_expr(self, schema: polars.Schema) -> polars.Expr:
+        column = _as_datetime(self.timestamp_column, schema)
         if self.time_zone is not None:
             column = column.dt.convert_time_zone(self.time_zone)
         return column.dt.truncate(self.every)
@@ -170,16 +198,19 @@ class ByExpr(PartitionStrategy):
         )
     """
 
-    def __init__(self, expr: polars.Expr, filename_fn: Callable[[Any], str] = str):
+    def __init__(self,
+                 expr: polars.Expr | Callable[[polars.Schema], polars.Expr],
+                 filename_fn: Callable[[Any], str] = str):
         """
-        :param expr: Polars expression computing the per-row partition key
+        :param expr: Polars expression computing the per-row partition key, or a function
+            building it from the dataframe's schema
         :param filename_fn: Formats one key value into a file stem (default: ``str``)
         """
         self._expr = expr
         self._filename_fn = filename_fn
 
-    def key_expr(self) -> polars.Expr:
-        return self._expr
+    def key_expr(self, schema: polars.Schema) -> polars.Expr:
+        return self._expr if isinstance(self._expr, polars.Expr) else self._expr(schema)
 
     def filename(self, key: Any) -> str:
         return self._filename_fn(key)
@@ -254,8 +285,8 @@ class SaveAs:
         as before - ``SaveAs(Path(value))``.
 
         With a `<strategy>:<spec>:<template>` prefix, `value` selects partitioned export.
-        `template` is the filename stem for every partition (no extension - `.parquet` is added
-        automatically by `export_partitioned`) and may contain:
+        `template` is the filename for every partition (`.parquet` is added by
+        `export_partitioned` unless it is already there) and may contain:
 
         - any `strftime` code (``%Y``, ``%m``, ``%d``, ``%H``, ...) - the truncated timestamp
         - ``{<column>}`` - the literal value of that column for this partition (curly braces,
@@ -272,7 +303,9 @@ class SaveAs:
           (time bucket, column value) pair
 
         ``<interval>`` is one of ``hourly``, ``daily``, ``weekly``, ``monthly``, or any raw
-        `polars.Expr.dt.truncate` interval (e.g. ``"3h"``, ``"15m"``). Time buckets follow the
+        `polars.Expr.dt.truncate` interval (e.g. ``"3h"``, ``"15m"``). ``<timestamp_column>`` may
+        be a datetime or a string column; a string is parsed for the partition key only, its
+        format inferred, and the exported column stays as is. Time buckets follow the
         timestamp column's own time zone - see the note on :class:`ByTime`; the read-side
         counterpart :meth:`expected_paths` derives its bucket names from the ``start``/``end``
         it is given, so both sides have to agree on the zone.
@@ -402,8 +435,7 @@ class SaveAs:
             return ByExpr(
                 polars.col(column), filename_fn=lambda key: template.format(**{column: key})
             )
-
-        if strategy_name == "time":
+        elif strategy_name == "time":
             timestamp_column, _, interval = spec.partition("+")
             if not timestamp_column or not interval:
                 raise ValueError(
@@ -411,32 +443,37 @@ class SaveAs:
                     f" but got {value!r}"
                 )
             interval = _INTERVAL_ALIASES.get(interval, interval)
-            key_expr = polars.col(timestamp_column).dt.truncate(interval)
-            return ByExpr(key_expr, filename_fn=lambda key: key.strftime(template))
-
-        # "time+column"
-        timestamp_column, _, rest = spec.partition("+")
-        interval, _, column = rest.partition("+")
-        if not timestamp_column or not interval or not column:
-            raise ValueError(
-                "SaveAs.parse: 'time+column:' requires"
-                f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
+            return ByExpr(
+                lambda schema: _as_datetime(timestamp_column, schema).dt.truncate(interval),
+                filename_fn=lambda key: key.strftime(template),
             )
-        interval = _INTERVAL_ALIASES.get(interval, interval)
-        time_field, column_field = "__time", column
-        key_expr = polars.struct(
-            [
-                polars.col(timestamp_column).dt.truncate(interval).alias(time_field),
-                polars.col(column).alias(column_field),
-            ]
-        )
+        elif strategy_name == "time+column":
+            # "time+column"
+            timestamp_column, _, rest = spec.partition("+")
+            interval, _, column = rest.partition("+")
+            if not timestamp_column or not interval or not column:
+                raise ValueError(
+                    "SaveAs.parse: 'time+column:' requires"
+                    f" 'time+column:<timestamp_column>+<interval>+<column>:<template>', but got {value!r}"
+                )
+            interval = _INTERVAL_ALIASES.get(interval, interval)
+            time_field, column_field = "__time", column
 
-        def filename_fn(key: dict) -> str:
-            substituted = template.format(**{column_field: key[column_field]})
-            return key[time_field].strftime(substituted)
+            def key_expr(schema: polars.Schema) -> polars.Expr:
+                return polars.struct(
+                    [
+                        _as_datetime(timestamp_column, schema).dt.truncate(interval).alias(time_field),
+                        polars.col(column).alias(column_field),
+                    ]
+                )
 
-        return ByExpr(key_expr, filename_fn=filename_fn)
+            def filename_fn(key: dict) -> str:
+                substituted = template.format(**{column_field: key[column_field]})
+                return key[time_field].strftime(substituted)
 
+            return ByExpr(key_expr, filename_fn=filename_fn)
+        else:
+            raise TypeError(f"Unknown strategy: '{strategy_name}'")
 
     @classmethod
     def _expected_paths_for_strategy(cls,
@@ -450,7 +487,7 @@ class SaveAs:
                     f"SaveAs.expected_paths: 'column:' requires 'column:<column>:<template>', but got {value!r}"
                 )
             wildcard = template.format(**{column: "*"})
-            return [Path(f"{wildcard}.parquet")]
+            return [Path(with_suffix(wildcard, ".parquet"))]
 
         if strategy_name == "time":
             timestamp_column, _, interval = spec.partition("+")
@@ -460,7 +497,7 @@ class SaveAs:
                     f" but got {value!r}"
                 )
             interval = _INTERVAL_ALIASES.get(interval, interval)
-            return [Path(f"{bucket.strftime(template)}.parquet") for bucket in cls._time_buckets(start, end, interval)]
+            return [Path(with_suffix(bucket.strftime(template), ".parquet")) for bucket in cls._time_buckets(start, end, interval)]
 
         # "time+column"
         timestamp_column, _, rest = spec.partition("+")
@@ -472,7 +509,7 @@ class SaveAs:
             )
         interval = _INTERVAL_ALIASES.get(interval, interval)
         wildcard_template = template.format(**{column: "*"})
-        return [Path(f"{bucket.strftime(wildcard_template)}.parquet") for bucket in cls._time_buckets(start, end, interval)]
+        return [Path(with_suffix(bucket.strftime(wildcard_template), ".parquet")) for bucket in cls._time_buckets(start, end, interval)]
 
 
     @classmethod

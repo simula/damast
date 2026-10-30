@@ -73,6 +73,8 @@ class DataConvertParser(BaseParser):
                                  " 'time+column:<column>+<interval>+<column>:<template>' to instead"
                                  " save one file per partition - see"
                                  " damast.core.partitioning.SaveAs.parse"
+                                 " Example: "
+                                 " --save-as 'time+column:msgtime+daily+MMSI:data/sourcename/by-mmsi/{MMSI}/{MMSI}-%%Y-%%m-%%d'"
         )
         parser.add_argument("-c", "--compression-type",
                             default="zstd",
@@ -133,11 +135,12 @@ class DataConvertParser(BaseParser):
                 save_as = SaveAs.parse(args.save_as) if args.save_as else SaveAs(Path(args.output_file))
 
                 # this conversion reads all of the data to write it out, so materialising it
-                # up front keeps the metadata and the validation from reading it again
+                # up front keeps the metadata and the validation from reading it again - except
+                # for a partitioned export, which streams: that takes memory of its own
                 adf = AnnotatedDataFrame.from_files(
                         files=files,
                         metadata_required=False,
-                        materialize=True,
+                        materialize=save_as.strategy is None,
                     )
 
                 self.validate(adf, args)
