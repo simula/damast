@@ -396,7 +396,7 @@ class CyclicMinMax(MinMax):
     """
 
 class NumericValueStats(BaseModel):
-    mean: float = 0.0
+    mean: float | None = 0.0  #: None for a column without any value
     stddev: float | None = None
     median: float | None = None
     lower_quantile: float | None = None  #: Q1 (25th percentile)
@@ -408,6 +408,11 @@ class NumericValueStats(BaseModel):
     quantile_sample_fraction: float | None = None
 
     def merge(self, other: NumericValueStats) -> NumericValueStats:
+        # a side without any value adds its nulls only, the other side's stats still hold
+        if self.mean is None or other.mean is None:
+            kept = other if self.mean is None else self
+            return kept.model_copy(update={"null_count": self.null_count + other.null_count})
+
         combined_mean = (
                     self.mean*self.total_count
                     + other.mean*other.total_count

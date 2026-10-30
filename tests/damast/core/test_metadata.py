@@ -7,6 +7,7 @@ import yaml
 from astropy import units
 
 from damast.core.annotations import Annotation, Change, History
+from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.data_description import (
     BooleanValueStats,
     CyclicMinMax,
@@ -268,6 +269,43 @@ def test_update_datarange_and_stats_for_single_value_int_column_keeps_mean_and_c
     assert spec.value_stats.stddev is None
     assert spec.value_stats.total_count == 1
     assert spec.value_stats.null_count == 0
+
+
+@pytest.mark.parametrize("dtype", [polars.Int64, polars.Float64])
+def test_stats_of_an_all_null_column_keep_the_counts_without_a_warning(dtype, caplog):
+    df = polars.LazyFrame({"x": [None, None, None]}, schema={"x": dtype})
+
+    with caplog.at_level("WARNING", logger="damast.core.polars_dataframe"):
+        stats = AnnotatedDataFrame.infer_annotation(df)["x"].value_stats
+
+    assert caplog.records == []
+    assert stats.mean is None
+    assert stats.total_count == 0
+    assert stats.null_count == 3
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_numeric_value_stats_merge_with_an_all_null_side_keeps_the_other_sides_stats(swap):
+    values = NumericValueStats(mean=2.0, stddev=0.5, median=2.0, lower_quantile=1.5,
+                               upper_quantile=2.5, total_count=4, null_count=1)
+    empty = NumericValueStats(mean=None, total_count=0, null_count=3)
+
+    merged = empty.merge(values) if swap else values.merge(empty)
+
+    assert merged == values.model_copy(update={"null_count": 4})
+
+
+def test_to_str_shows_an_all_null_column_without_a_mean():
+    spec = DataSpecification(name="x", value_stats=NumericValueStats(mean=None, total_count=0, null_count=3))
+
+    assert "value_stats: mean=n/a, stddev=n/a, nulls=3/3 (100.00%)" in MetaData([spec]).to_str()
+
+
+def test_numeric_value_stats_merge_of_two_all_null_sides_adds_the_nulls():
+    a = NumericValueStats(mean=None, total_count=0, null_count=3)
+    b = NumericValueStats(mean=None, total_count=0, null_count=2)
+
+    assert a.merge(b) == NumericValueStats(mean=None, total_count=0, null_count=5)
 
 
 def test_update_datarange_and_stats_for_int_column_computes_median_and_iqr():

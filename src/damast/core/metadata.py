@@ -1310,7 +1310,8 @@ class MetaData:
             # NumericValueStats
             stddev = "n/a" if value["stddev"] is None else f"{value['stddev']:.2f}"
             nulls = format_nulls(value["total_count"], value["null_count"])
-            txt = f"mean={value['mean']:.2f}, stddev={stddev}, nulls={nulls}"
+            mean = "n/a" if value["mean"] is None else f"{value['mean']:.2f}"
+            txt = f"mean={mean}, stddev={stddev}, nulls={nulls}"
 
             median = value.get("median")
             lower_quantile = value.get("lower_quantile")
