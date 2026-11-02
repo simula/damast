@@ -92,8 +92,8 @@ class AISTestData:
         last_day = datetime.datetime(year=2022, month=12, day=31)
         start_time = randint(0, int(last_day.timestamp()))
 
-        sog_start = uniform(0, 0.5) * SpeedOverGround.max_value
-        cog_start = random() * CourseOverGround.min_value / CourseOverGround.max_value
+        sog_start = uniform(0, 0.25) * SpeedOverGround.max_value
+        cog_start = random() * CourseOverGround.max_value
         heading_start = cog_start
 
         rot_start = 0.0
