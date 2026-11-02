@@ -559,3 +559,46 @@ def test_dotted_template_still_gets_the_suffix(timeseries_adf, tmp_path):
     written = SaveAs.parse(f"column:mmsi:{tmp_path}/v1.{{mmsi}}").export(timeseries_adf)
 
     assert sorted(p.name for p in written) == ["v1.1.parquet", "v1.2.parquet", "v1.3.parquet"]
+
+
+def _string_time_adf(times: list[str]) -> AnnotatedDataFrame:
+    """A frame whose timestamps are text, as in BarentsWatch's `msgtime`."""
+    df = polars.DataFrame({"mmsi": [1] * len(times), "msgtime": times})
+    return AnnotatedDataFrame(
+        df, MetaData(columns=[DataSpecification(name="mmsi"), DataSpecification(name="msgtime")])
+    )
+
+
+def test_string_timestamps_with_an_offset_are_partitioned_by_utc_day(tmp_path, monkeypatch, caplog):
+    """Offset-aware text used to fail: "called with no format and no time zone, but a time
+    zone is part of the data". Mixed offsets and sub-second digits, as BarentsWatch writes them."""
+    monkeypatch.chdir(tmp_path)
+    adf = _string_time_adf(
+        [
+            "2026-06-01T00:00:00+00:00",
+            "2026-06-01T11:53:43.9533384+00:00",
+            # 23:00 UTC on 1 June
+            "2026-06-02T01:00:00.5+02:00",
+            "2026-06-02T08:00:00+00:00",
+        ]
+    )
+    with caplog.at_level("WARNING", logger="damast.core.partitioning"):
+        written = SaveAs.parse(
+            "time+column:msgtime+daily+mmsi:bw/by-mmsi/{mmsi}/{mmsi}-%Y-%m-%d"
+        ).export(adf)
+    assert sorted(p.as_posix() for p in written) == [
+        "bw/by-mmsi/1/1-2026-06-01.parquet",
+        "bw/by-mmsi/1/1-2026-06-02.parquet",
+    ]
+    # UTC buckets: nothing to warn about
+    assert caplog.records == []
+    first_day = AnnotatedDataFrame.from_files([str(tmp_path / written[0])], metadata_required=False)
+    assert first_day.dataframe.collect().height == 3
+    # the text itself is exported unchanged
+    assert first_day.dataframe.collect()["msgtime"].to_list()[1] == "2026-06-01T11:53:43.9533384+00:00"
+
+
+def test_string_timestamps_without_an_offset_are_read_as_utc(tmp_path):
+    adf = _string_time_adf(["2026-06-01 00:00:00", "2026-06-01 23:59:59", "2026-06-02 00:00:00"])
+    written = adf.export_partitioned(tmp_path, ByTime("msgtime", every="1d"))
+    assert [p.name for p in written] == ["2026-06-01.parquet", "2026-06-02.parquet"]

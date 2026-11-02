@@ -37,12 +37,17 @@ def _as_datetime(column: str, schema: polars.Schema) -> polars.Expr:
     """
     Expression for `column` as a datetime - a string column is parsed, inferring its format.
 
+    A string column is parsed as UTC: strings with an offset (e.g. BarentsWatch's
+    ``"2026-06-01T11:53:43.9533384+00:00"``) are converted to UTC, and strings without one are
+    read as UTC, as a naive datetime column is. Without a time zone, polars refuses strings that
+    carry an offset ("a time zone is part of the data").
+
     :param column: Name of the time column
     :param schema: Schema of the dataframe holding `column`
     :return: An expression that `polars.Expr.dt` operations apply to
     """
     expr = polars.col(column)
-    return expr.str.to_datetime() if schema[column] == polars.String else expr
+    return expr.str.to_datetime(time_zone="UTC") if schema[column] == polars.String else expr
 
 
 class PartitionStrategy(ABC):
