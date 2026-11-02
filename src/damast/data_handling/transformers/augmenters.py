@@ -218,7 +218,7 @@ class SphericalKDTreeAugmenter:
         :return: angle in radians (unit sphere, so for distance, must multiply angle with Earth's radius)
         """
         if len(x) == 0:
-            return np.empty(0, dtpye=np.float64)
+            return np.empty(0, dtype=np.float64)
         chord = self._tree.query(self.unit_vectors(x, y), workers=self._workers)[0]
         return 2.0 * np.arcsin(np.minimum(chord / 2.0, 1.0))
 
