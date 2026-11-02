@@ -92,6 +92,14 @@ def test_data_specification(name, category, is_optional,
         assert exception is None
 
 
+@pytest.mark.parametrize("is_optional", [None, True, False])
+def test_data_specification_is_optional_survives_round_trip(is_optional):
+    """An undeclared is_optional (None) must not be read back as False"""
+    spec = DataSpecification(name="x", is_optional=is_optional)
+    loaded = DataSpecification.from_dict(dict(spec))
+    assert loaded.is_optional is is_optional
+
+
 @pytest.mark.parametrize(["name", "category", "is_optional",
                           "abbreviation", "representation_type",
                           "missing_value", "unit", "precision",

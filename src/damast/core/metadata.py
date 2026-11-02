@@ -473,10 +473,15 @@ class DataSpecification:
             if not isinstance(data_category, DataCategory):
                 data_category = DataCategory(data_category)
 
+        # None means 'not declared' and must survive a round trip
+        is_optional = data[cls.Key.is_optional]
+        if is_optional is not None:
+            is_optional = bool(is_optional)
+
         spec = cls(
             name=data[cls.Key.name],
             category=data_category,
-            is_optional=bool(data[cls.Key.is_optional]),
+            is_optional=is_optional,
             abbreviation=abbreviation,
         )
 

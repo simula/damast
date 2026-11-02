@@ -209,7 +209,7 @@ def test_annotated_dataframe_import_vaex_hdf5(data_path):
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m,
+        name="height", is_optional=False, abbreviation="height", category=DataCategory.STATIC, unit=units.m,
         value_range=MinMax(min=0, max=40))
 
 
@@ -227,7 +227,7 @@ def test_annotated_dataframe_import_csv(data_path):
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", abbreviation="height", category=DataCategory.STATIC,
+        name="height", is_optional=False, abbreviation="height", category=DataCategory.STATIC,
         unit=units.m, value_range=MinMax(min=0, max=40), representation_type=int)
 
 def test_annotated_dataframe_import_csv_with_quotes(data_path):
