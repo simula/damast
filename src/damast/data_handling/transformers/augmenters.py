@@ -27,7 +27,8 @@ __all__ = [
     "AddUndefinedValue",
     "BallTreeAugmenter",
     "JoinDataFrameByColumn",
-    "MultiplyValue"
+    "MultiplyValue",
+    "SphericalKDTreeAugmenter"
 ]
 
 _log: Logger = getLogger(__name__)
@@ -191,14 +192,16 @@ class SphericalKDTreeAugmenter:
     """
     distance computation using k-D-tree on 3-D unit vectors.
 
-    x: reference points (for example anchorages),  (n, 2)-shaped array of (latitude, longitude) in radians
+    :param x: reference points (for example anchorages), (n, 2)-shaped array of (latitude, longitude) in radians
+    :param workers: number of threads for query. -1 uses all available
     """
 
-    def __init__(self, x: npt.NDArray[np.float64]):
+    def __init__(self, x: npt.NDArray[np.float64], workers: int = 1):
         # Fail if no data:
         if len(x) == 0:
             raise ValueError(f"Found array with 0 sample(s) (shape={x.shape}) while a minimum of 1 is required.")
         self._tree = cKDTree(self.unit_vectors(x[:, 0], x[:, 1]))
+        self._workers = workers
 
     @staticmethod
     def unit_vectors(latitude: npt.NDArray[np.float64], longitude: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -207,16 +210,16 @@ class SphericalKDTreeAugmenter:
 
     def __call__(self, x: npt.NDArray[np.float64], y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        Calculate angle in radians, between each position (for example ship coordinates) and,
+        Calculate angle in radians, between each position (for example ship coordinates) and the
         nearest reference point (for example anchorages).
 
-        x: Latitudes of the positions (e.g. vessels), in radians
-        y: Longitudes of the positions, in radians
-        return: angle in radians
-
-        (unit sphere, so for distance, must multiply angle with Earth's radius)
+        :param x: Latitudes of the positions (e.g. vessels), in radians
+        :param y: Longitudes of the positions, in radians
+        :return: angle in radians (unit sphere, so for distance, must multiply angle with Earth's radius)
         """
-        chord = self._tree.query(self.unit_vectors(x, y))[0]
+        if len(x) == 0:
+            return np.empty(0, dtpye=np.float64)
+        chord = self._tree.query(self.unit_vectors(x, y), workers=self._workers)[0]
         return 2.0 * np.arcsin(np.minimum(chord / 2.0, 1.0))
 
 
