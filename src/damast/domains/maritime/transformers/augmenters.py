@@ -31,6 +31,7 @@ class ComputeClosestAnchorage(PipelineElement):
     :param columns: Names of columns used to define the distance to anchorage (The data should be in degrees)
     :param sep: Separator used in dataset if dataset is a csv file
     :param backend: Nearest-Neighbour search, "balltree" or "kdtree"
+    :param workers: Number of threads for the "kdtree" search.  -1 use all available
     """
     _function: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]
 
@@ -48,11 +49,13 @@ class ComputeClosestAnchorage(PipelineElement):
                  columns: list[str],
                  sep: str = ";",
                  earth_radius_in_km: float = EARTH_RADIUS_IN_KM,
-                 backend: str = "balltree"):
+                 backend: str = "kdtree",
+                 workers: int = 1):
         self.dataset = dataset
         self.columns = columns
         self.sep = sep
         self.backend = backend
+        self.workers = workers
 
         if type(dataset) in [str, Path]:
             _dataset = self.load_data(dataset, sep)
@@ -64,9 +67,9 @@ class ComputeClosestAnchorage(PipelineElement):
         ]
 
         if backend == "balltree":
-            self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, "haversine")
+            self._function = BallTreeAugmenter(np.vstack(radian_dataset).T, metric="haversine")
         elif backend == "kdtree":
-            self._function = SphericalKDTreeAugmenter(np.vstack(radian_dataset).T)
+            self._function = SphericalKDTreeAugmenter(np.vstack(radian_dataset).T, workers=workers)
         else:
             raise ValueError(f"{self.__class__.__name__}: unknown Nearest-Neighbour-search-method '{backend}', expected 'balltree' or 'kdtree'")
 
