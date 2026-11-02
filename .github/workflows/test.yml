@@ -51,18 +51,12 @@ jobs:
           python -m pip install -e .[dev,test]
           python -m pip install ${{ matrix.backend }}
 
-      - name: Use Chocolatey V3 Source
-        if: runner.os == 'Windows'
-        run: |
-          choco source disable -n=chocolatey
-          choco source add -n=chocolatey-v3 -s="https://community.chocolatey.org/api/v3/index.json"
-
       # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#runner-context
       - name: Set Env (Windows)
         if: runner.os == 'Windows'
         run: |
           echo "KERAS_BACKEND=${{ matrix.backend }}"  | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-          choco install graphviz --no-progress
+          winget install --id Graphviz.Graphviz --silent --accept-source-agreements --accept-package-agreements
           echo "C:\Program Files\Graphviz\bin" >> $env:GITHUB_PATH
           # register the graphviz plugins - a chocolatey install ships no plugin config, and
           # 'dot' then hangs instead of rendering. GITHUB_PATH only affects later steps, so
