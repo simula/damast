@@ -97,7 +97,9 @@ ml = [
     # BEGIN keras backends
     "torch",
     "jax[cpu]",
-    "tensorflow; python_version <= '3.13'"
+    "tensorflow; python_version <= '3.13'",
+    # used by BaseModel.train() with the tensorflow backend, no longer a tensorflow dependency
+    "tensorboard; python_version <= '3.13'"
     # END backends
 ]
 

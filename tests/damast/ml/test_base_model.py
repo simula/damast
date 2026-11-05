@@ -105,6 +105,9 @@ def test_the_training_history_is_written_after_every_epoch(tmp_path):
     assert history["epoch"].to_list() == [0, 1]
     assert "val_loss" in history.columns
 
-    # continued training appends to the history
+    # continued training - from the last best checkpoint, as after a crash - appends to the history.
+    # Reloading is also required in-process: the jax backend leaves the model without weights when
+    # fit() raises at the start of an epoch
+    model.load_best_weights()
     model.train(batches(), batches(), epochs=3, initial_epoch=2, steps_per_epoch=2, validation_steps=1)
     assert pl.read_csv(history_file)["epoch"].to_list() == [0, 1, 2]
