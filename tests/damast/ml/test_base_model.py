@@ -90,8 +90,9 @@ def test_the_training_history_is_written_after_every_epoch(tmp_path):
 
     def batches(limit=None):
         rng = np.random.default_rng(0)
+        # float32: the torch backend on macOS (MPS) does not support float64
         for k in range(limit or 10**9):
-            yield rng.random((4, 5, 1)), rng.random((4, 1))
+            yield rng.random((4, 5, 1), dtype=np.float32), rng.random((4, 1), dtype=np.float32)
         raise RuntimeError("the data ran out")
 
     model = SmallModel(name="small", features=["a"], targets=["a"], output_dir=tmp_path)
@@ -99,9 +100,10 @@ def test_the_training_history_is_written_after_every_epoch(tmp_path):
     history_file = model.model_dir / HISTORY_FILENAME
 
     # 4 batches per epoch: drawing the 11th batch fails. Keras may read up to 2 batches ahead (jax
-    # backend in keras < 3.13), so the failure lands in the 3rd epoch with or without read-ahead
-    with pytest.raises(RuntimeError, match="Training of small failed"):
+    # backend in older keras), so the failure lands in the 3rd epoch with or without read-ahead
+    with pytest.raises(RuntimeError, match="Training of small failed") as failure:
         model.train(batches(limit=10), batches(), epochs=5, steps_per_epoch=4, validation_steps=1)
+    assert "the data ran out" in str(failure.value.__cause__)
     history = pl.read_csv(history_file)
     assert history["epoch"].to_list() == [0, 1]
     assert "val_loss" in history.columns
