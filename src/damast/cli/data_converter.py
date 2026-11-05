@@ -152,7 +152,10 @@ class DataConvertParser(BaseParser):
                 created_files = written if isinstance(written, list) else [written]
 
                 print(adf.head(10).collect())
-                print(f"Written: {created_files}")
+                if len(created_files) <= 20:
+                    print(f"Written: {created_files}")
+                else:
+                    print(f"Written: {len(created_files)} files: {created_files[0]}...{created_files[-1]}")
             else:
                 output_dir = Path(args.output_dir) if args.output_dir else None
                 if output_dir:
@@ -181,5 +184,8 @@ class DataConvertParser(BaseParser):
                     print(f"Filename: {output_file.resolve()}")
                     print(adf.head(10).collect())
 
-                print(f"Written: {created_files}")
+                if len(created_files) <= 20:
+                    print(f"Written: {created_files}")
+                else:
+                    print(f"Written: {len(created_files)} files: {created_files[0]}...{created_files[-1]}")
 
