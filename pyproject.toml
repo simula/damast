@@ -60,6 +60,7 @@ dependencies = [
     "rich",
     "typing_extensions;python_version<'3.13'",
     "scikit-learn",
+    "scipy",
     "tables",
     "tqdm",
 ]
