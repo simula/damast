@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from collections.abc import Callable
 from logging import INFO, Logger, getLogger
 from pathlib import Path
@@ -45,6 +46,31 @@ _log: Logger = getLogger(__name__)
 _log.setLevel(INFO)
 
 COMPRESSION_CODECS = ["NONE", "SNAPPY", "GZIP", "BROTLI", "LZ4", "ZSTD", "BZ2"]
+
+#: Delays (in seconds) between attempts to replace a file, see :func:`replace_file`
+REPLACE_RETRY_DELAYS = (0.1, 0.2, 0.5, 1.0)
+
+
+def replace_file(source: Path, target: Path) -> None:
+    """
+    Replace `target` by `source`, retrying while access is denied.
+
+    On Windows, a freshly written file is often held open for a moment by another process (e.g.
+    the virus scanner), so that a replace fails with a transient `PermissionError`.
+
+    :param source: The file to move
+    :param target: The file to replace
+    :raise PermissionError: If access is still denied after the last retry
+    """
+    for delay in REPLACE_RETRY_DELAYS:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            _log.debug(f"Access denied when replacing {target} - retrying in {delay}s")
+            time.sleep(delay)
+    os.replace(source, target)
+
 
 class AnnotatedDataFrame(XDataFrame):
     """
@@ -265,7 +291,7 @@ class AnnotatedDataFrame(XDataFrame):
                     compression_level=compression_level,
                     metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
                 )
-                os.replace(staged, path)
+                replace_file(staged, path)
             finally:
                 staged.unlink(missing_ok=True)
 
