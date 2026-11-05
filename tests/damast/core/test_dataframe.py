@@ -191,6 +191,18 @@ def test_annotated_dataframe_export_csv(metadata, polars_dataframe, tmp_path):
     assert test_file.exists()
     assert metadata_test_file.exists()
 
+def test_export_can_overwrite_its_own_source(polars_dataframe, metadata, tmp_path):
+    """An inplace update reads from the file it writes to"""
+    filename = tmp_path / "data.parquet"
+    AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata).export(filename)
+
+    adf = AnnotatedDataFrame.from_file(filename)
+    adf.export(filename)
+
+    assert AnnotatedDataFrame.from_file(filename).dataframe.collect().equals(polars_dataframe)
+    assert [p.name for p in tmp_path.iterdir()] == ["data.parquet"]
+
+
 def test_annotated_dataframe_import_vaex_hdf5(data_path):
     """
     Simple test of the annotated dataframe import for HDF5
@@ -209,7 +221,7 @@ def test_annotated_dataframe_import_vaex_hdf5(data_path):
     assert adf._metadata.annotations["license"] == Annotation(name="license", value="MIT License")
     assert adf._metadata.annotations["comment"] == Annotation(name="comment", value="test dataframe")
     assert adf._metadata.columns[0] == DataSpecification(
-        name="height", is_optional=False, abbreviation="height", category=DataCategory.STATIC, unit=units.m,
+        name="height", abbreviation="height", category=DataCategory.STATIC, unit=units.m,
         value_range=MinMax(min=0, max=40))
 
 

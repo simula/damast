@@ -238,6 +238,7 @@ def test_annotate_with_metadata_file(data_path, filename, spec_filename, tmp_pat
 
     # Then check
     result = script_runner.run(['damast', 'annotate', '-f', output_file, '-m', str(data_path / spec_filename), '--apply', '--inplace', '--set-unit', 'latitude:rad'])
+    assert result.returncode == 0, result.stdout + result.stderr
     adf = AnnotatedDataFrame.from_file(filename=output_file)
 
     assert adf.dtype('courseOverGround') == polars.Float64

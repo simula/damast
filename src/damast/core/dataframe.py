@@ -254,13 +254,20 @@ class AnnotatedDataFrame(XDataFrame):
             compression = "uncompressed"
 
         def write(lazyframe: polars.LazyFrame, path: Path) -> None:
-            # The metadata ends up as plain parquet key/value metadata
-            lazyframe.sink_parquet(
-                path,
-                compression=compression,
-                compression_level=compression_level,
-                metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
-            )
+            # Sink next to the target and then replace it: the query may still read from `path`
+            # (e.g. an inplace update), and a failed write must not leave a truncated file behind
+            staged = path.with_name(f".{path.name}.{os.getpid()}.staged")
+            try:
+                # The metadata ends up as plain parquet key/value metadata
+                lazyframe.sink_parquet(
+                    staged,
+                    compression=compression,
+                    compression_level=compression_level,
+                    metadata={"annotated_dataframe": json.dumps(dict(self._metadata), default=str)},
+                )
+                os.replace(staged, path)
+            finally:
+                staged.unlink(missing_ok=True)
 
         filename = Path(filename)
         if self.pending is None or self.pending.done:
