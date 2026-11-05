@@ -66,7 +66,7 @@ def reverse_bearing(lat_1: npt.NDArray[np.float64],
                     lon_1: npt.NDArray[np.float64],
                     distance: npt.NDArray[np.float64],
                     bearing: npt.NDArray[np.float64],
-                    earth_radius_in_km: float = EARTH_RADIUS_IN_KM) -> npt.NDArray[np.float64]:
+                    earth_radius_in_km: float = EARTH_RADIUS_IN_KM) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Compute the position of an object, given its initial position, the initial bearing, and the distance
     it will travel.
@@ -89,7 +89,7 @@ def reverse_bearing(lat_1: npt.NDArray[np.float64],
 
 
 @njit
-def decdeg2dms(dd: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+def decdeg2dms(dd: npt.NDArray[np.float64]) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Convert decimal degrees (dd) to sexagesimal degrees (degrees, minutes, seconds)
 
@@ -155,10 +155,16 @@ def great_circle_distance(lat_1: npt.NDArray[np.float64],
     :param lon_2: A sequence of longitudes (in degrees), :math:`\\lambda_2`
 
     :returns: The great circle distance between sets of points """
-    lon_1, lat_1, lon_2, lat_2 = map(np.radians, [lon_1, lat_1, lon_2, lat_2])
-    return 2 * earth_radius_in_km * np.arcsin(np.sqrt(np.power(np.sin((lat_1 - lat_2) / 2), 2)
-                                                + np.cos(lat_1) * np.cos(lat_2) * np.power(np.sin((lon_1 - lon_2) / 2),
-                                                                                           2)))
+    lon_1 = np.radians(lon_1)
+    lat_1 = np.radians(lat_1)
+    lon_2 = np.radians(lon_2)
+    lat_2 = np.radians(lat_2)
+
+    a = np.sin((lat_1 - lat_2) / 2) ** 2
+    b = np.cos(lat_1) * np.cos(lat_2) * np.sin((lon_1 - lon_2) / 2) ** 2
+    c = np.minimum(a + b, 1.0)
+
+    return 2 * earth_radius_in_km * np.arcsin(np.sqrt(c))
 
 
 # Alias under the formula's common name - identical to great_circle_distance.
