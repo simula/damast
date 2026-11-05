@@ -98,9 +98,10 @@ def test_the_training_history_is_written_after_every_epoch(tmp_path):
     model.build()
     history_file = model.model_dir / HISTORY_FILENAME
 
-    # 2 batches per epoch: the 5th batch, in the 3rd epoch, fails
+    # 4 batches per epoch: drawing the 11th batch fails. Keras may read up to 2 batches ahead (jax
+    # backend in keras < 3.13), so the failure lands in the 3rd epoch with or without read-ahead
     with pytest.raises(RuntimeError, match="Training of small failed"):
-        model.train(batches(limit=4), batches(), epochs=5, steps_per_epoch=2, validation_steps=1)
+        model.train(batches(limit=10), batches(), epochs=5, steps_per_epoch=4, validation_steps=1)
     history = pl.read_csv(history_file)
     assert history["epoch"].to_list() == [0, 1]
     assert "val_loss" in history.columns
