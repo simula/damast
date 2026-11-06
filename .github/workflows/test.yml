@@ -15,9 +15,11 @@ on:
 jobs:
   test:
     strategy:
+      # DEBUG(win/debug): Windows only, and let every Python version finish
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest] # failing on github-ci with memory error
-        backend: ['torch','jax'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
+        os: [windows-latest]
+        backend: ['torch'] # 'tensorflow' is excluded since on github-ci tests get stuck for a yet unknown reason
         # macos-latest:
         #   - misses support for ratarmount > index_zstd
         #   - for >=3.13 indexed_zstd/libzstd-seek/zstd-seek.h:20:10: fatal error: zstd.h: No such file or directory
@@ -82,6 +84,26 @@ jobs:
           fi
           brew install zstd graphviz
 
+
+      # DEBUG(win/debug): find what holds the parquet file on 'damast annotate --inplace'
+      - name: Diagnose inplace - default
+        continue-on-error: true
+        run: python diagnose_inplace.py
+      - name: Diagnose inplace - without the test's own AnnotatedDataFrame
+        continue-on-error: true
+        run: python diagnose_inplace.py --skip-test-adf
+      - name: Diagnose inplace - under coverage
+        continue-on-error: true
+        run: python -m coverage run diagnose_inplace.py
+      - name: Diagnose inplace - trace
+        continue-on-error: true
+        run: python diagnose_inplace.py --trace
+      - name: Failing test alone - without coverage
+        continue-on-error: true
+        run: pytest -v --timeout=120 "tests/damast/cli/test_cli.py::test_annotate_with_metadata_file"
+      - name: Failing test alone - with coverage
+        continue-on-error: true
+        run: pytest -v --timeout=120 --cov=damast --cov-report=term "tests/damast/cli/test_cli.py::test_annotate_with_metadata_file"
 
       # Run keras backend specific tests (for keras>=3)
       # Due to space issues avoid creating too many venvs (via tox)
