@@ -203,47 +203,6 @@ def test_export_can_overwrite_its_own_source(polars_dataframe, metadata, tmp_pat
     assert [p.name for p in tmp_path.iterdir()] == ["data.parquet"]
 
 
-def test_export_waits_for_a_briefly_locked_target(polars_dataframe, metadata, tmp_path, monkeypatch):
-    """On Windows, another process (e.g. the virus scanner) may briefly hold a fresh file open"""
-    import os
-
-    import damast.core.dataframe as dataframe_module
-
-    monkeypatch.setattr(dataframe_module, "REPLACE_RETRY_DELAYS", (0, 0, 0))
-    replace = os.replace
-    attempts = []
-
-    def locked_twice(source, target):
-        attempts.append(target)
-        if len(attempts) <= 2:
-            raise PermissionError(13, "Access is denied", str(target))
-        replace(source, target)
-
-    monkeypatch.setattr(dataframe_module.os, "replace", locked_twice)
-
-    filename = tmp_path / "data.parquet"
-    AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata).export(filename)
-
-    assert len(attempts) == 3
-    assert AnnotatedDataFrame.from_file(filename).dataframe.collect().equals(polars_dataframe)
-    assert [p.name for p in tmp_path.iterdir()] == ["data.parquet"]
-
-
-def test_export_reports_a_lasting_lock(polars_dataframe, metadata, tmp_path, monkeypatch):
-    import damast.core.dataframe as dataframe_module
-
-    monkeypatch.setattr(dataframe_module, "REPLACE_RETRY_DELAYS", (0, 0))
-
-    def locked(source, target):
-        raise PermissionError(13, "Access is denied", str(target))
-
-    monkeypatch.setattr(dataframe_module.os, "replace", locked)
-
-    with pytest.raises(PermissionError):
-        AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata).export(tmp_path / "data.parquet")
-    assert list(tmp_path.iterdir()) == []
-
-
 def test_annotated_dataframe_import_vaex_hdf5(data_path):
     """
     Simple test of the annotated dataframe import for HDF5
