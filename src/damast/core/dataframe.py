@@ -611,10 +611,11 @@ class AnnotatedDataFrame(XDataFrame):
 
             pyarrow_schemas = []
             for file in files:
-                parquet_file = pq.ParquetFile(file)
-                schema = parquet_file.schema_arrow
-                pyarrow_schemas.append(schema)
-                raw_metadata = parquet_file.metadata.metadata
+                # Close the file right away: on Windows an open handle prevents replacing the
+                # file, e.g. on an inplace update
+                with pq.ParquetFile(file) as parquet_file:
+                    pyarrow_schemas.append(parquet_file.schema_arrow)
+                    raw_metadata = parquet_file.metadata.metadata
                 if raw_metadata and b"annotated_dataframe" in raw_metadata:
                     data = raw_metadata[b"annotated_dataframe"]
                     m = MetaData.from_dict(json.loads(data.decode('UTF-8')))
