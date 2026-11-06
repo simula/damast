@@ -203,6 +203,32 @@ def test_export_can_overwrite_its_own_source(polars_dataframe, metadata, tmp_pat
     assert [p.name for p in tmp_path.iterdir()] == ["data.parquet"]
 
 
+def test_load_parquet_closes_the_files(polars_dataframe, metadata, tmp_path, monkeypatch):
+    """On Windows a file left open cannot be replaced, e.g. by an inplace update"""
+    import pyarrow.parquet as pq
+
+    opened = []
+
+    class RecordingParquetFile(pq.ParquetFile):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.closed_by_caller = False
+            opened.append(self)
+
+        def close(self, *args, **kwargs):
+            self.closed_by_caller = True
+            super().close(*args, **kwargs)
+
+    filename = tmp_path / "data.parquet"
+    AnnotatedDataFrame(dataframe=polars_dataframe, metadata=metadata).export(filename)
+    monkeypatch.setattr(pq, "ParquetFile", RecordingParquetFile)
+
+    AnnotatedDataFrame.from_file(filename)
+
+    assert opened
+    assert all(f.closed_by_caller for f in opened)
+
+
 def test_annotated_dataframe_import_vaex_hdf5(data_path):
     """
     Simple test of the annotated dataframe import for HDF5
