@@ -88,15 +88,23 @@ jobs:
       # DEBUG(win/debug): find what holds the parquet file on 'damast annotate --inplace'
       - name: Diagnose inplace - default
         continue-on-error: true
+        env:
+          PYTHONUTF8: 1  # the console's cp1252 cannot print the polars tables
         run: python diagnose_inplace.py
       - name: Diagnose inplace - without the test's own AnnotatedDataFrame
         continue-on-error: true
+        env:
+          PYTHONUTF8: 1  # the console's cp1252 cannot print the polars tables
         run: python diagnose_inplace.py --skip-test-adf
       - name: Diagnose inplace - under coverage
         continue-on-error: true
+        env:
+          PYTHONUTF8: 1  # the console's cp1252 cannot print the polars tables
         run: python -m coverage run diagnose_inplace.py
       - name: Diagnose inplace - trace
         continue-on-error: true
+        env:
+          PYTHONUTF8: 1  # the console's cp1252 cannot print the polars tables
         run: python diagnose_inplace.py --trace
       - name: Failing test alone - without coverage
         continue-on-error: true
