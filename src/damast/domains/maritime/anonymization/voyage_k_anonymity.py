@@ -62,6 +62,26 @@ def voyage_pseudonym(key: bytes, voyage: str, length: int = 16) -> str:
     return hmac.new(key, voyage.encode(), hashlib.sha256).hexdigest()[:length]
 
 
+def load_key(key_env: str | None, user: str) -> bytes:
+    """
+    The secret key of a keyed step, read as hex from the environment variable `key_env`.
+
+    Args:
+        key_env: Name of the environment variable holding the key, or None for a random key
+        user: Name of the step using the key, for the log message
+
+    Returns:
+        The key, or 32 random bytes if `key_env` is None
+
+    Raises:
+        KeyError: If the environment variable `key_env` is not set
+    """
+    if key_env is None:
+        _log.info(f"{user}: no key_env - using a random key, the output is not reproducible")
+        return secrets.token_bytes(32)
+    return bytes.fromhex(os.environ[key_env])
+
+
 #: Ship type code -> code of its category, see `ShipType.category`
 SHIP_TYPE_CATEGORIES: dict[int, int | None] = {code: ShipType.category(code) for code in range(100)}
 
@@ -152,12 +172,6 @@ class PseudonymizeVoyages(PipelineElement):
     def __init__(self, key_env: str | None = None):
         self.key_env = key_env
 
-    def _key(self) -> bytes:
-        if self.key_env is None:
-            _log.info(f"{self.__class__.__name__}: no key_env - using a random key, pseudonyms are not reproducible")
-            return secrets.token_bytes(32)
-        return bytes.fromhex(os.environ[self.key_env])
-
     @describe("Replace the voyage by a keyed pseudonym and drop all non-whitelisted columns")
     @input({"voyage": {},
             "timestamp": {},
@@ -172,7 +186,7 @@ class PseudonymizeVoyages(PipelineElement):
             exclusive=True)
     def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
         voyage = self.get_name("voyage")
-        key = self._key()
+        key = load_key(self.key_env, self.__class__.__name__)
 
         # each voyage is hashed once and joined back - there are far fewer voyages than fixes
         pseudonyms = df.lazyframe.select(voyage).unique().with_columns(

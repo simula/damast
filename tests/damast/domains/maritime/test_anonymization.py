@@ -1,5 +1,6 @@
 import datetime as dt
 
+import numpy as np
 import polars
 import pytest
 
@@ -12,9 +13,11 @@ from damast.domains.maritime.anonymization import (
     GeneralizeSpaceTime,
     KAnonymityFilter,
     PseudonymizeVoyages,
+    RelocateVoyages,
     SegmentVoyages,
     SuppressVoyageEndpoints,
     VoyageKAnonymity,
+    VoyageRelocation,
 )
 
 KEY = "ab" * 32
@@ -234,3 +237,83 @@ def test_saved_strategy_pipeline_reproduces_its_output(tmp_path, key_env):
     result = loaded.transform(df=annotate(crowd(6))).lazyframe.collect()
 
     assert result.sort("voyage_id", "msgtime").equals(expected.sort("voyage_id", "msgtime"))
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = (np.radians(np.asarray(v)) for v in (lat1, lon1, lat2, lon2))
+    a = np.sin((lat2 - lat1) / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
+    return 2 * 6371.0 * np.arcsin(np.sqrt(a))
+
+
+def bearing_deg(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = (np.radians(np.asarray(v)) for v in (lat1, lon1, lat2, lon2))
+    y = np.sin(lon2 - lon1) * np.cos(lat2)
+    x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(lon2 - lon1)
+    return np.degrees(np.arctan2(y, x)) % 360
+
+
+def relocate(df: polars.DataFrame, tmp_path, **kwargs) -> polars.DataFrame:
+    pipeline = DataProcessingPipeline(name="anon", base_dir=str(tmp_path))
+    pipeline.add("relocate", RelocateVoyages(**kwargs),
+                 name_mappings={"group": "voyage", "timestamp": "msgtime", "lat": "latitude", "lon": "longitude",
+                                "course": "courseOverGround"})
+    return pipeline.transform(df=annotate(df)).lazyframe.collect()
+
+
+def voyages_heading_east() -> polars.DataFrame:
+    """Two voyages sailing east along 60 N, one fix a minute for 20 minutes."""
+    n = 20
+    return polars.DataFrame({
+        "voyage": ["a"] * n + ["b"] * n,
+        "msgtime": [T0 + dt.timedelta(minutes=i) for i in range(n)] * 2,
+        "latitude": [60.0] * n + [10.0] * n,
+        "longitude": [5.0 + 0.01 * i for i in range(n)] * 2,
+        "courseOverGround": [90.0] * 2 * n,
+    })
+
+
+def test_relocation_keeps_shape_speed_and_timing(tmp_path, key_env):
+    df = voyages_heading_east()
+    result = relocate(df, tmp_path, key_env=key_env, max_shift_s=86400.0)
+
+    for voyage in ["a", "b"]:
+        before = df.filter(polars.col("voyage") == voyage)
+        after = result.filter(polars.col("voyage") == voyage)
+        assert haversine_km(after["latitude"][0], after["longitude"][0],
+                            before["latitude"][0], before["longitude"][0]) > 10
+        steps = [haversine_km(f["latitude"][:-1], f["longitude"][:-1], f["latitude"][1:], f["longitude"][1:])
+                 for f in (before, after)]
+        assert steps[1] == pytest.approx(steps[0], rel=1e-6)
+        # the course turns with the voyage: it still points to the next fix
+        np.testing.assert_allclose(after["courseOverGround"][:-1].to_numpy(),
+                                   bearing_deg(after["latitude"][:-1], after["longitude"][:-1],
+                                               after["latitude"][1:], after["longitude"][1:]), atol=0.05)
+        shift = after["msgtime"] - before["msgtime"]
+        assert shift.n_unique() == 1
+        assert abs(shift[0]) <= dt.timedelta(days=1)
+
+
+def test_relocation_depends_on_key_and_voyage(tmp_path, key_env):
+    df = voyages_heading_east()
+    first = relocate(df, tmp_path, key_env=key_env)
+    again = relocate(df, tmp_path, key_env=key_env)
+    random_key = relocate(df, tmp_path)
+
+    assert first.equals(again)
+    assert not first.equals(random_key)
+    shifts = (first["msgtime"] - df["msgtime"]).unique()
+    assert len(shifts) == 2
+
+
+def test_relocation_strategy_releases_only_whitelisted_columns(tmp_path, key_env):
+    anonymize = VoyageRelocation(key_env=key_env, base_dir=tmp_path)
+    result = anonymize.transform(df=annotate(crowd(3))).lazyframe.collect()
+
+    assert set(result.columns) == {"voyage_id", *PSEUDONYMIZE_MAPPINGS.values()}
+    assert result["voyage_id"].n_unique() == 3
+    # three vessels side by side end up in three different places
+    assert result.group_by("voyage_id").agg(polars.col("latitude").first())["latitude"].n_unique() == 3
+
+    loaded = DataProcessingPipeline.load(anonymize.save(tmp_path))
+    again = loaded.transform(df=annotate(crowd(3))).lazyframe.collect()
+    assert again.sort("voyage_id", "msgtime").equals(result.sort("voyage_id", "msgtime"))
