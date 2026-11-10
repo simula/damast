@@ -10,6 +10,7 @@ from .voyage_k_anonymity import (
     SuppressVoyageEndpoints,
     VoyageKAnonymity,
 )
+from .voyage_relocation import RelocateVoyages, VoyageRelocation
 
 __all__ = [
     "AISColumns",
@@ -17,8 +18,10 @@ __all__ = [
     "GeneralizeSpaceTime",
     "KAnonymityFilter",
     "PseudonymizeVoyages",
+    "RelocateVoyages",
     "SegmentVoyages",
     "Step",
     "SuppressVoyageEndpoints",
     "VoyageKAnonymity",
+    "VoyageRelocation",
 ]
