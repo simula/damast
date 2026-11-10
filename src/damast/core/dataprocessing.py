@@ -289,6 +289,44 @@ class DataProcessingPipeline(PipelineElement):
         self.is_ready = False
         return self
 
+    def extend(self, pipeline: DataProcessingPipeline) -> DataProcessingPipeline:
+        """
+        Append the steps of another pipeline, e.g. to chain a reusable pipeline after own steps.
+
+        The steps are copied, under their names and with their name mappings, so `pipeline` stays
+        usable on its own and the result saves as a flat sequence of steps.
+
+        Example:
+
+        ```python
+        pipeline = DataProcessingPipeline(name="release").add("clean", DropMissingOrNan(),
+                                                              name_mappings={"x": "mmsi"})
+        pipeline.extend(VoyageKAnonymity(key_env="AIS_PSEUDONYM_KEY"))
+        ```
+
+        Args:
+            pipeline: Pipeline whose steps to append - it must have a single datasource
+
+        Returns:
+            This pipeline
+
+        Raises:
+            ValueError: If `pipeline` joins more than one datasource
+        """
+        if len(pipeline.processing_graph.datasource_nodes()) > 1:
+            raise ValueError(f"{self.__class__.__name__}.extend: cannot append '{pipeline.name}',"
+                             " which joins several datasources")
+
+        for node in pipeline.processing_graph.nodes():
+            if node.is_datasource():
+                continue
+            transformer = copy.deepcopy(node.transformer)
+            transformer.set_parent(pipeline=self)
+            self.processing_graph.add_node(Node(name=node.name, transformer=transformer))
+
+        self.is_ready = False
+        return self
+
     @classmethod
     def validate(
             cls, processing_graph: ProcessingGraph, metadata: dict[str, MetaData]
