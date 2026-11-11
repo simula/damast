@@ -12,12 +12,14 @@ from damast.domains.maritime.anonymization import (
     AISColumns,
     GeneralizeSpaceTime,
     KAnonymityFilter,
+    OwnerRisk,
     PseudonymizeVoyages,
     RelocateVoyages,
     SegmentVoyages,
     SuppressVoyageEndpoints,
     VoyageKAnonymity,
     VoyageRelocation,
+    valid_imo,
 )
 
 KEY = "ab" * 32
@@ -317,3 +319,67 @@ def test_relocation_strategy_releases_only_whitelisted_columns(tmp_path, key_env
     loaded = DataProcessingPipeline.load(anonymize.save(tmp_path))
     again = loaded.transform(df=annotate(crowd(3))).lazyframe.collect()
     assert again.sort("voyage_id", "msgtime").equals(result.sort("voyage_id", "msgtime"))
+
+
+def test_valid_imo():
+    imo = polars.Series([9074729, 9160358, 9074728, 64, 1062873000, None])
+    assert polars.select(valid_imo(polars.lit(imo))).to_series().to_list() == [True, True, False, False, False, False]
+
+
+def test_owner_risk(tmp_path):
+    rows = [  # mmsi, ship type, IMO number
+        (972123456, None, None, "high"),       # man overboard device
+        (257000001, 37, None, "high"),         # pleasure craft
+        (257000002, 70, 9074729, "low"),       # cargo ship with a valid IMO number
+        (257000003, 30, 9160358, "medium"),    # fishing vessel, even with an IMO number
+        (257000004, 70, 64, "medium"),         # invalid IMO number
+        (257000005, 60, None, "medium"),       # no IMO number
+        (992570001, None, None, "low"),        # aid to navigation
+        (257000006, 70, 9074729, "high"),      # same MMSI reports a pleasure craft type below
+        (257000006, 36, None, "high"),
+    ]
+    df = polars.DataFrame({"mmsi": [r[0] for r in rows],
+                           "shipType": [r[1] for r in rows],
+                           "imoNumber": [r[2] for r in rows]},
+                          schema={"mmsi": polars.Int64, "shipType": polars.Int64, "imoNumber": polars.Int64})
+    pipeline = DataProcessingPipeline(name="risk", base_dir=str(tmp_path))
+    pipeline.add("owner risk", OwnerRisk(), name_mappings={"ship_type": "shipType", "imo": "imoNumber"})
+    adf = AnnotatedDataFrame(df, MetaData(columns=[DataSpecification(c, representation_type=int) for c in df.columns]))
+    result = pipeline.transform(df=adf).lazyframe.collect()
+
+    assert result["owner_risk"].to_list() == [r[3] for r in rows]
+
+
+def owner_risk(df: polars.DataFrame, tmp_path, name_mappings: dict, **kwargs) -> list[str]:
+    adf = AnnotatedDataFrame(df, MetaData(columns=[
+        DataSpecification(c, representation_type=int if df[c].dtype == polars.Int64 else None) for c in df.columns]))
+    pipeline = DataProcessingPipeline(name="risk", base_dir=str(tmp_path))
+    pipeline.add("owner risk", OwnerRisk(**kwargs), name_mappings=name_mappings)
+    return pipeline.transform(df=adf).lazyframe.collect()["owner_risk"].to_list()
+
+
+def test_owner_risk_of_aisdk_columns(tmp_path):
+    df = polars.DataFrame({
+        "MMSI": [219000001, 219000002, 219000003, 219000004, 219000005],
+        "Ship type": ["Pleasure", "Cargo", "Cargo", "Fishing", "Undefined"],
+        "IMO": ["Unknown", "9074729", "Unknown", "9160358", "Unknown"],
+        "Type of mobile": ["Class B", "Class A", "Class A", "Class A", "Class B"],
+    })
+    mappings = {"mmsi": "MMSI", "ship_type": "Ship type", "imo": "IMO"}
+
+    assert owner_risk(df, tmp_path, mappings) == ["high", "low", "medium", "medium", "medium"]
+    assert owner_risk(df, tmp_path, mappings, report_class="Type of mobile") == \
+        ["high", "low", "medium", "medium", "high"]
+
+
+def test_owner_risk_of_marinecadastre_columns(tmp_path):
+    df = polars.DataFrame({
+        "MMSI": [367000001, 367000002, 367000003, 367000004],
+        "VesselType": [37, 70, 70, 31],
+        "IMO": ["", "IMO9074729", "IMO9074728", None],
+        "TransceiverClass": ["B", "A", "B", "B"],
+    })
+    mappings = {"mmsi": "MMSI", "ship_type": "VesselType", "imo": "IMO"}
+
+    # a class B transponder with a valid IMO number stays low; an invalid one does not count
+    assert owner_risk(df, tmp_path, mappings, report_class="TransceiverClass") == ["high", "low", "high", "high"]
