@@ -5,6 +5,8 @@ Each voyage keeps its shape, speeds and timing relative to its own start, so the
 for learning movement, but it is rotated on the sphere to a random location and heading and shifted
 in time. The strategy chains, in this order:
 
+0. `OwnerRisk`, `DropHighOwnerRisk` - drop the vessels likely to identify a private person
+   (unless `drop_high_owner_risk=False`)
 1. `SegmentVoyages` - drop fixes at rest and split each vessel's track into voyages
 2. `SuppressVoyageEndpoints` - drop the fixes close to where a voyage starts or ends
 3. `RelocateVoyages` - rotate each voyage to a random place and heading, shift it in time
@@ -25,7 +27,12 @@ import polars as pl
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.decorators import describe, input, output
 from damast.core.transformations import PipelineElement
-from damast.domains.maritime.anonymization.strategy import AISColumns, AnonymizationStrategy, Step
+from damast.domains.maritime.anonymization.strategy import (
+    AISColumns,
+    AnonymizationStrategy,
+    Step,
+    owner_risk_steps,
+)
 from damast.domains.maritime.anonymization.voyage_k_anonymity import (
     PseudonymizeVoyages,
     SegmentVoyages,
@@ -185,8 +192,8 @@ class VoyageRelocation(AnonymizationStrategy):
     """
     Anonymize AIS data by moving each voyage to a random place, heading and time.
 
-    Chains `SegmentVoyages`, `SuppressVoyageEndpoints`, `RelocateVoyages` and `PseudonymizeVoyages`
-    - the parameters are theirs, see there; `key_env` keys both the relocation and the pseudonyms.
+    Chains `OwnerRisk` and `DropHighOwnerRisk` (if `drop_high_owner_risk`), `SegmentVoyages`,
+    `SuppressVoyageEndpoints`, `RelocateVoyages` and `PseudonymizeVoyages` - the parameters are theirs, see there; `key_env` keys both the relocation and the pseudonyms.
     `columns`, `name` and `base_dir` are those of `AnonymizationStrategy`.
 
     Example:
@@ -198,9 +205,11 @@ class VoyageRelocation(AnonymizationStrategy):
 
     def __init__(self, *, key_env: str | None = None, max_gap_s: float = 3600.0, rest_speed: float = 0.5,
                  radius_km: float = 2.0, min_fixes: int = 2, max_shift_s: float = 365 * 86400.0,
+                 drop_high_owner_risk: bool = True,
                  columns: AISColumns = AISColumns(), name: str = "anonymize",
                  base_dir: str | Path = tempfile.gettempdir()):
         self.key_env = key_env
+        self.drop_high_owner_risk = drop_high_owner_risk
         self.max_gap_s = max_gap_s
         self.rest_speed = rest_speed
         self.radius_km = radius_km
@@ -211,6 +220,7 @@ class VoyageRelocation(AnonymizationStrategy):
     def steps(self, columns: AISColumns) -> list[Step]:
         c = columns
         return [
+            *(owner_risk_steps(c) if self.drop_high_owner_risk else []),
             Step("segment voyages", SegmentVoyages(max_gap_s=self.max_gap_s, rest_speed=self.rest_speed),
                  {"mmsi": c.mmsi, "timestamp": c.timestamp, "speed": c.speed, "status": c.status}),
             Step("suppress voyage endpoints", SuppressVoyageEndpoints(radius_km=self.radius_km,

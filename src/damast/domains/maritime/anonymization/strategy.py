@@ -9,11 +9,13 @@ from typing import NamedTuple
 
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.transformations import PipelineElement
+from damast.domains.maritime.anonymization.owner_risk import DropHighOwnerRisk, OwnerRisk
 
 __all__ = [
     "AISColumns",
     "AnonymizationStrategy",
     "Step",
+    "owner_risk_steps",
 ]
 
 
@@ -31,6 +33,9 @@ class AISColumns:
     course: str = "courseOverGround"
     status: str = "navigationalStatus"
     ship_type: str = "shipType"
+    imo: str = "imoNumber"
+    #: AIS transponder class, "A" or "B" - None if the data has no such column
+    report_class: str | None = "reportClass"
 
 
 class Step(NamedTuple):
@@ -40,6 +45,23 @@ class Step(NamedTuple):
     name: str
     transformer: PipelineElement
     name_mappings: dict[str, str]
+
+
+def owner_risk_steps(columns: AISColumns) -> list[Step]:
+    """
+    The steps that drop the vessels likely to identify a private person - see `OwnerRisk`.
+
+    Args:
+        columns: Names of the AIS columns in the data
+
+    Returns:
+        `OwnerRisk` followed by `DropHighOwnerRisk`
+    """
+    return [
+        Step("assess owner risk", OwnerRisk(report_class=columns.report_class),
+             {"mmsi": columns.mmsi, "ship_type": columns.ship_type, "imo": columns.imo}),
+        Step("drop high owner risk", DropHighOwnerRisk(), {"owner_risk": "owner_risk"}),
+    ]
 
 
 class AnonymizationStrategy(DataProcessingPipeline, ABC):

@@ -33,7 +33,7 @@ PSEUDONYMIZE_MAPPINGS = {"timestamp": "msgtime", "lat": "latitude", "lon": "long
 
 def annotate(df: polars.DataFrame, columns: AISColumns = AISColumns()) -> AnnotatedDataFrame:
     units = {columns.lat: "deg", columns.lon: "deg", columns.course: "deg"}
-    ints = {columns.mmsi, columns.status, columns.ship_type}
+    ints = {columns.mmsi, columns.status, columns.ship_type, columns.imo}
     return AnnotatedDataFrame(df, MetaData(columns=[
         DataSpecification(c, unit=units.get(c), representation_type=int if c in ints else None)
         for c in df.columns
@@ -51,6 +51,8 @@ def ais(rows: list[tuple]) -> polars.DataFrame:
         "courseOverGround": [0.0] * len(rows),
         "navigationalStatus": [r[4] for r in rows],
         "shipType": [71] * len(rows),
+        "imoNumber": polars.Series([None] * len(rows), dtype=polars.Int64),
+        "reportClass": ["A"] * len(rows),
         "name": ["SECRET"] * len(rows),
     })
 
@@ -226,7 +228,7 @@ def test_strategy_chains_after_other_steps(tmp_path, key_env):
     pipeline.extend(anonymize)
 
     steps = [node.name for node in pipeline.processing_graph.nodes()]
-    assert steps[:3] == ["df", "drop unnamed", "anonymize: segment voyages"]
+    assert steps[:3] == ["df", "drop unnamed", "anonymize: assess owner risk"]
     assert pipeline.transform(df=annotate(df)).lazyframe.collect().equals(
         anonymize.transform(df=annotate(crowd(6))).lazyframe.collect())
 
@@ -383,3 +385,21 @@ def test_owner_risk_of_marinecadastre_columns(tmp_path):
 
     # a class B transponder with a valid IMO number stays low; an invalid one does not count
     assert owner_risk(df, tmp_path, mappings, report_class="TransceiverClass") == ["high", "low", "high", "high"]
+
+
+@pytest.mark.parametrize("strategy", [VoyageKAnonymity, VoyageRelocation])
+def test_strategies_drop_vessels_of_high_owner_risk(tmp_path, key_env, strategy):
+    # of six vessels side by side, one is a pleasure craft and one has a class B transponder
+    df = crowd(6).with_columns(
+        shipType=polars.when(polars.col("mmsi") == 257000000).then(37).otherwise(polars.col("shipType")),
+        reportClass=polars.when(polars.col("mmsi") == 257000001).then(polars.lit("B"))
+        .otherwise(polars.col("reportClass")),
+    )
+    kwargs = {"k": 4, "time_bucket": "1h"} if strategy is VoyageKAnonymity else {}
+
+    kept = strategy(key_env=key_env, base_dir=tmp_path, **kwargs).transform(df=annotate(df)).lazyframe.collect()
+    everything = strategy(key_env=key_env, base_dir=tmp_path, drop_high_owner_risk=False,
+                          **kwargs).transform(df=annotate(df)).lazyframe.collect()
+
+    assert kept["voyage_id"].n_unique() == 4
+    assert everything["voyage_id"].n_unique() == 6

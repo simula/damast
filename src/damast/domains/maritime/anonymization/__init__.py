@@ -10,12 +10,13 @@ from .voyage_k_anonymity import (
     SuppressVoyageEndpoints,
     VoyageKAnonymity,
 )
-from .owner_risk import OwnerRisk, valid_imo
+from .owner_risk import DropHighOwnerRisk, OwnerRisk, valid_imo
 from .voyage_relocation import RelocateVoyages, VoyageRelocation
 
 __all__ = [
     "AISColumns",
     "AnonymizationStrategy",
+    "DropHighOwnerRisk",
     "GeneralizeSpaceTime",
     "KAnonymityFilter",
     "OwnerRisk",
