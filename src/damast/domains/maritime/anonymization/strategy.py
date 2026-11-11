@@ -10,6 +10,7 @@ from typing import NamedTuple
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.transformations import PipelineElement
 from damast.domains.maritime.anonymization.owner_risk import DropHighOwnerRisk, OwnerRisk
+from damast.domains.maritime.transformers.mmsi_pattern_classifier import MMSIPatternClassifier
 
 __all__ = [
     "AISColumns",
@@ -55,11 +56,14 @@ def owner_risk_steps(columns: AISColumns) -> list[Step]:
         columns: Names of the AIS columns in the data
 
     Returns:
-        `OwnerRisk` followed by `DropHighOwnerRisk`
+        `MMSIPatternClassifier`, `OwnerRisk` and `DropHighOwnerRisk`
     """
+    category = f"{columns.mmsi}_category"
     return [
+        Step("classify mmsi", MMSIPatternClassifier(), {"x": columns.mmsi}),
         Step("assess owner risk", OwnerRisk(report_class=columns.report_class),
-             {"mmsi": columns.mmsi, "ship_type": columns.ship_type, "imo": columns.imo}),
+             {"mmsi": columns.mmsi, "mmsi_category": category, "ship_type": columns.ship_type,
+              "imo": columns.imo}),
         Step("drop high owner risk", DropHighOwnerRisk(), {"owner_risk": "owner_risk"}),
     ]
 
