@@ -15,6 +15,7 @@ from damast.domains.maritime.ais.labels import normalise_label
 from damast.domains.maritime.ais.vessel_types import ShipType
 
 __all__ = [
+    "DropHighOwnerRisk",
     "OwnerRisk",
     "valid_imo",
 ]
@@ -150,4 +151,17 @@ class OwnerRisk(PipelineElement):
             .otherwise(pl.lit(self.MEDIUM))
             .alias(self.get_name("owner_risk"))
         ).drop("_ship_type", "_imo")
+        return df
+
+
+class DropHighOwnerRisk(PipelineElement):
+    """
+    Drop the rows of vessels whose `owner_risk` is "high" - see `OwnerRisk`.
+    """
+
+    @describe("Drop the vessels that likely identify a private person")
+    @input({"owner_risk": {}})
+    @output({"owner_risk": {}})
+    def transform(self, df: AnnotatedDataFrame) -> AnnotatedDataFrame:
+        df.lazyframe = df.lazyframe.filter(pl.col(self.get_name("owner_risk")) != OwnerRisk.HIGH)
         return df

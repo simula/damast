@@ -5,6 +5,8 @@ Replacing the MMSI alone is pseudonymization only: AIS is broadcast publicly, so
 re-identified by matching it against another AIS source, and the berth where it starts or ends
 identifies the vessel. The strategy chains these elements, in this order:
 
+0. `OwnerRisk`, `DropHighOwnerRisk` - drop the vessels likely to identify a private person
+   (unless `drop_high_owner_risk=False`)
 1. `SegmentVoyages` - drop fixes at rest and split each vessel's track into voyages
 2. `SuppressVoyageEndpoints` - drop the fixes close to where a voyage starts or ends
 3. `GeneralizeSpaceTime` - snap positions to H3 cells, bucket time, round speed and course
@@ -30,7 +32,12 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.decorators import describe, input, output
 from damast.core.transformations import PipelineElement
 from damast.domains.maritime.ais.vessel_types import ShipType
-from damast.domains.maritime.anonymization.strategy import AISColumns, AnonymizationStrategy, Step
+from damast.domains.maritime.anonymization.strategy import (
+    AISColumns,
+    AnonymizationStrategy,
+    Step,
+    owner_risk_steps,
+)
 
 __all__ = [
     "GeneralizeSpaceTime",
@@ -325,9 +332,10 @@ class VoyageKAnonymity(AnonymizationStrategy):
     """
     Anonymize AIS data for public release with per-voyage pseudonyms and k-anonymity.
 
-    Chains `SegmentVoyages`, `SuppressVoyageEndpoints`, `GeneralizeSpaceTime`, `KAnonymityFilter`
-    (counting vessels) and `PseudonymizeVoyages` - the parameters are theirs, see there; `columns`,
-    `name` and `base_dir` are those of `AnonymizationStrategy`.
+    Chains `OwnerRisk` and `DropHighOwnerRisk` (if `drop_high_owner_risk`), `SegmentVoyages`,
+    `SuppressVoyageEndpoints`, `GeneralizeSpaceTime`, `KAnonymityFilter` (counting vessels) and
+    `PseudonymizeVoyages` - the parameters are theirs, see there; `columns`, `name` and `base_dir`
+    are those of `AnonymizationStrategy`.
 
     Example:
 
@@ -339,9 +347,11 @@ class VoyageKAnonymity(AnonymizationStrategy):
     def __init__(self, *, key_env: str | None = None, max_gap_s: float = 3600.0, rest_speed: float = 0.5,
                  radius_km: float = 2.0, min_fixes: int = 2, h3_resolution: int = 6, time_bucket: str = "10m",
                  speed_step: float = 1.0, course_step: float = 10.0, k: int = 5,
+                 drop_high_owner_risk: bool = True,
                  columns: AISColumns = AISColumns(), name: str = "anonymize",
                  base_dir: str | Path = tempfile.gettempdir()):
         self.key_env = key_env
+        self.drop_high_owner_risk = drop_high_owner_risk
         self.max_gap_s = max_gap_s
         self.rest_speed = rest_speed
         self.radius_km = radius_km
@@ -357,6 +367,7 @@ class VoyageKAnonymity(AnonymizationStrategy):
         c = columns
         motion = {"timestamp": c.timestamp, "lat": c.lat, "lon": c.lon, "speed": c.speed, "course": c.course}
         return [
+            *(owner_risk_steps(c) if self.drop_high_owner_risk else []),
             Step("segment voyages", SegmentVoyages(max_gap_s=self.max_gap_s, rest_speed=self.rest_speed),
                  {"mmsi": c.mmsi, "timestamp": c.timestamp, "speed": c.speed, "status": c.status}),
             Step("suppress voyage endpoints", SuppressVoyageEndpoints(radius_km=self.radius_km,
