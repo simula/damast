@@ -20,10 +20,14 @@ __all__ = [
     "valid_imo",
 ]
 
-#: MMSI prefixes of devices carried by a person: 970 AIS-SART, 972 man overboard, 974 EPIRB-AIS
-PERSONAL_DEVICE_PREFIXES: list[str] = ["970", "972", "974"]
-#: MMSI prefix of aids to navigation - not a vessel
-AID_TO_NAVIGATION_PREFIX: str = "99"
+#: `MMSIPatternClassifier` categories of devices carried by a person, or sent off in distress
+PERSONAL_DEVICE_CATEGORIES: list[str] = ["handheld-vhf-transceiver", "man-overboard-device", "ais-sart", "epirb-ais"]
+#: `MMSIPatternClassifier` categories of stations that are not vessels
+NOT_A_VESSEL_CATEGORIES: list[str] = [
+    "all-coast-stations", "coast-station", "port-station", "pilot-station", "ais-repeater-station",
+    "ais-base-station", "sar-aircraft", "sar-aircraft-fixed-wing", "sar-aircraft-helicopter",
+    "aid-to-navigation", "aid-to-navigation-physical", "aid-to-navigation-virtual", "aid-to-navigation-mobile",
+]
 #: Ship types of sailing and pleasure craft
 PLEASURE_CRAFT_TYPES: list[int] = [36, 37]
 #: Ship type of fishing vessels - often owned by a sole proprietor, whether or not it has an IMO number
@@ -66,13 +70,16 @@ class OwnerRisk(PipelineElement):
     Add `owner_risk`: whether a vessel's movements can identify a private person.
 
     Assessed per MMSI over all its rows, from AIS data only - see the module for why registers are
-    not used. The values:
+    not used. What kind of station an MMSI belongs to is read from `mmsi_category`, the column
+    `MMSIPatternClassifier` adds with its default mapping file. The values:
 
-    - "high": a device carried by a person (MMSI 970, 972 or 974...), or a sailing or pleasure craft
-      (ship type 36 or 37); with `report_class`, also a class B transponder without a valid IMO
-      number - typically a leisure boat or a small one-person fishing boat
-    - "low": an aid to navigation (MMSI 99...), or a ship with a valid IMO number that is neither a
-      fishing vessel nor a pleasure craft - in practice run by a company
+    - "high": a device carried by a person or sent off in distress (handheld VHF, man overboard
+      device, AIS-SART, EPIRB-AIS), or a sailing or pleasure craft (ship type 36 or 37); with
+      `report_class`, also a class B transponder without a valid IMO number - typically a leisure
+      boat or a small one-person fishing boat
+    - "low": a station that is not a vessel (coast or base station, SAR aircraft, aid to navigation),
+      or a ship with a valid IMO number that is neither a fishing vessel nor a pleasure craft - in
+      practice run by a company
     - "medium": everything else, which may well be owned or crewed by a single person, e.g. small
       boats without an IMO number and fishing vessels
 
@@ -95,8 +102,10 @@ class OwnerRisk(PipelineElement):
     Example:
 
     ```python
+    pipeline.add("classify mmsi", MMSIPatternClassifier(), name_mappings={"x": "MMSI"})
     pipeline.add("owner risk", OwnerRisk(report_class="Type of mobile"),
-                 name_mappings={"mmsi": "MMSI", "ship_type": "Ship type", "imo": "IMO"})
+                 name_mappings={"mmsi": "MMSI", "mmsi_category": "MMSI_category",
+                                "ship_type": "Ship type", "imo": "IMO"})
     ```
 
     Args:
@@ -113,6 +122,7 @@ class OwnerRisk(PipelineElement):
 
     @describe("Assess per MMSI whether the vessel's movements can identify a private person")
     @input({"mmsi": {"representation_type": int},
+            "mmsi_category": {},
             "ship_type": {},
             "imo": {}})
     @output({"owner_risk": {"representation_type": str,
@@ -134,16 +144,16 @@ class OwnerRisk(PipelineElement):
         def any_row(condition: pl.Expr) -> pl.Expr:
             return condition.fill_null(False).any().over(mmsi)
 
-        mmsi_text = pl.col(mmsi).cast(pl.String)
+        category = pl.col(self.get_name("mmsi_category"))
         has_imo = any_row(valid_imo(pl.col("_imo")))
-        personal = any_row(mmsi_text.str.slice(0, 3).is_in(PERSONAL_DEVICE_PREFIXES)
+        personal = any_row(category.is_in(PERSONAL_DEVICE_CATEGORIES)
                            | pl.col("_ship_type").is_in(PLEASURE_CRAFT_TYPES))
         if self.report_class is not None:
             transponder = (pl.col(self.report_class).cast(pl.String).str.to_uppercase()
                            .str.replace(r"^\s*CLASS\s*", "").str.strip_chars())
             personal = personal | (any_row(transponder == "B") & ~has_imo)
         commercial = has_imo & ~any_row(pl.col("_ship_type").is_in([FISHING_TYPE, *PLEASURE_CRAFT_TYPES]))
-        no_vessel = mmsi_text.str.starts_with(AID_TO_NAVIGATION_PREFIX)
+        no_vessel = category.is_in(NOT_A_VESSEL_CATEGORIES)
 
         df.lazyframe = lazyframe.with_columns(
             pl.when(personal).then(pl.lit(self.HIGH))

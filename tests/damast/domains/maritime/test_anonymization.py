@@ -8,6 +8,7 @@ from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.metadata import DataSpecification, MetaData
 from damast.data_handling.transformers.filters import DropMissingOrNan
+from damast.domains.maritime.transformers import MMSIPatternClassifier
 from damast.domains.maritime.anonymization import (
     AISColumns,
     GeneralizeSpaceTime,
@@ -228,7 +229,7 @@ def test_strategy_chains_after_other_steps(tmp_path, key_env):
     pipeline.extend(anonymize)
 
     steps = [node.name for node in pipeline.processing_graph.nodes()]
-    assert steps[:3] == ["df", "drop unnamed", "anonymize: assess owner risk"]
+    assert steps[:3] == ["df", "drop unnamed", "anonymize: classify mmsi"]
     assert pipeline.transform(df=annotate(df)).lazyframe.collect().equals(
         anonymize.transform(df=annotate(crowd(6))).lazyframe.collect())
 
@@ -328,15 +329,29 @@ def test_valid_imo():
     assert polars.select(valid_imo(polars.lit(imo))).to_series().to_list() == [True, True, False, False, False, False]
 
 
+def owner_risk(df: polars.DataFrame, tmp_path, name_mappings: dict, **kwargs) -> list[str]:
+    adf = AnnotatedDataFrame(df, MetaData(columns=[
+        DataSpecification(c, representation_type=int if df[c].dtype == polars.Int64 else None) for c in df.columns]))
+    mmsi = name_mappings["mmsi"]
+    pipeline = DataProcessingPipeline(name="risk", base_dir=str(tmp_path))
+    pipeline.add("classify mmsi", MMSIPatternClassifier(), name_mappings={"x": mmsi})
+    pipeline.add("owner risk", OwnerRisk(**kwargs),
+                 name_mappings={**name_mappings, "mmsi_category": f"{mmsi}_category"})
+    return pipeline.transform(df=adf).lazyframe.collect()["owner_risk"].to_list()
+
+
 def test_owner_risk(tmp_path):
     rows = [  # mmsi, ship type, IMO number
         (972123456, None, None, "high"),       # man overboard device
+        (825712345, None, None, "high"),       # handheld VHF, Norway
         (257000001, 37, None, "high"),         # pleasure craft
         (257000002, 70, 9074729, "low"),       # cargo ship with a valid IMO number
         (257000003, 30, 9160358, "medium"),    # fishing vessel, even with an IMO number
         (257000004, 70, 64, "medium"),         # invalid IMO number
         (257000005, 60, None, "medium"),       # no IMO number
         (992570001, None, None, "low"),        # aid to navigation
+        (2570001, None, None, "low"),          # 002570001: coast station - leading zeros lost as integer
+        (111257123, None, None, "low"),        # SAR aircraft
         (257000006, 70, 9074729, "high"),      # same MMSI reports a pleasure craft type below
         (257000006, 36, None, "high"),
     ]
@@ -344,20 +359,9 @@ def test_owner_risk(tmp_path):
                            "shipType": [r[1] for r in rows],
                            "imoNumber": [r[2] for r in rows]},
                           schema={"mmsi": polars.Int64, "shipType": polars.Int64, "imoNumber": polars.Int64})
-    pipeline = DataProcessingPipeline(name="risk", base_dir=str(tmp_path))
-    pipeline.add("owner risk", OwnerRisk(), name_mappings={"ship_type": "shipType", "imo": "imoNumber"})
-    adf = AnnotatedDataFrame(df, MetaData(columns=[DataSpecification(c, representation_type=int) for c in df.columns]))
-    result = pipeline.transform(df=adf).lazyframe.collect()
+    mappings = {"mmsi": "mmsi", "ship_type": "shipType", "imo": "imoNumber"}
 
-    assert result["owner_risk"].to_list() == [r[3] for r in rows]
-
-
-def owner_risk(df: polars.DataFrame, tmp_path, name_mappings: dict, **kwargs) -> list[str]:
-    adf = AnnotatedDataFrame(df, MetaData(columns=[
-        DataSpecification(c, representation_type=int if df[c].dtype == polars.Int64 else None) for c in df.columns]))
-    pipeline = DataProcessingPipeline(name="risk", base_dir=str(tmp_path))
-    pipeline.add("owner risk", OwnerRisk(**kwargs), name_mappings=name_mappings)
-    return pipeline.transform(df=adf).lazyframe.collect()["owner_risk"].to_list()
+    assert owner_risk(df, tmp_path, mappings) == [r[3] for r in rows]
 
 
 def test_owner_risk_of_aisdk_columns(tmp_path):

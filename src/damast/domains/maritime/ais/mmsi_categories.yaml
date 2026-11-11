@@ -20,8 +20,7 @@
 # pattern, since it would otherwise swallow all of them.
 #
 # A plain ship station has no fixed pattern at all (its first 3 digits *are* the MID, Annex 1
-# S1), so it is left unmapped here and falls back to `default_category` - see
-# examples/run_pipeline.py.
+# S1), so it is left unmapped here and falls back to `default_category`.
 
 # --- coast stations (Annex 1, Section 2) ----------------------------------------------------
 # the 6th digit differentiating specific coast-station uses is optional (S2 §2-3) - an

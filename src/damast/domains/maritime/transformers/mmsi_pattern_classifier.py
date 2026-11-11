@@ -15,6 +15,9 @@ from damast.core.transformations import PipelineElement
 #: value in between is assigned
 VALID_MIDS: range = range(201, 776)
 
+#: Mapping file with the patterns of Recommendation ITU-R M.585-10, used when none is given
+DEFAULT_MAPPING_FILE: Path = Path(__file__).parent.parent / "ais" / "mmsi_categories.yaml"
+
 
 def load_pattern_rules(mapping_file: str | Path) -> dict[str, str]:
     """
@@ -22,7 +25,7 @@ def load_pattern_rules(mapping_file: str | Path) -> dict[str, str]:
 
     Example:
         ```yaml
-        # mmsi_categories.yaml - see examples/mmsi_categories.yaml for the full set of
+        # mmsi_categories.yaml - see damast/domains/maritime/ais/mmsi_categories.yaml for the full set of
         # patterns defined in Recommendation ITU-R M.585-10. More specific patterns are
         # listed before the more general ones they would otherwise shadow.
         '00(?P<mid>\\d{3})1': coast-station      # Annex 1, S2 §3a: 00-MID-1XXX
@@ -61,7 +64,7 @@ class MMSIPatternClassifier(PipelineElement):
     MMSI numbers are not only assigned to ships - fixed digit patterns are reserved for other
     kinds of AIS transmitters, e.g. ``111MIDxxx`` for SAR aircraft or ``99MIDxxxx`` for aids to
     navigation, per Recommendation ITU-R M.585-10 (04/2026) - see
-    examples/mmsi_categories.yaml for the full set of patterns it defines. This transformer
+    `DEFAULT_MAPPING_FILE` for the full set of patterns it defines. This transformer
     looks up each MMSI's category from a user-supplied pattern -> label mapping (see
     `load_pattern_rules`) and adds it as a new column - a MMSI matching no rule is a ship
     station and gets `default_category`.
@@ -87,7 +90,7 @@ class MMSIPatternClassifier(PipelineElement):
 
     Args:
         mapping_file: YAML file mapping MMSI patterns (regexes) to category labels - see
-            `load_pattern_rules`. Re-read every time the transformer is constructed, including
+            `load_pattern_rules`; `DEFAULT_MAPPING_FILE` if None. Re-read every time the transformer is constructed, including
             when a saved pipeline using it is loaded elsewhere, so keep it alongside the
             pipeline (or use an absolute path)
         default_category: Category assigned to a MMSI that matches no rule in `mapping_file`
@@ -101,15 +104,13 @@ class MMSIPatternClassifier(PipelineElement):
 
     def __init__(self, mapping_file: str | Path | None = None, default_category: str = "unknown",
                  invalid_category: str = "invalid", drop_invalid: bool = False):
-        if mapping_file is None:
-            self.mapping_file = Path(__file__).parent.parent / "ais" / "mmsi_categories.yaml"
-        else:
-            self.mapping_file = str(mapping_file)
+        # None stays None, so a saved pipeline uses the default file of wherever it is loaded
+        self.mapping_file = None if mapping_file is None else str(mapping_file)
 
         self.default_category = default_category
         self.invalid_category = invalid_category
         self.drop_invalid = drop_invalid
-        self._rules = load_pattern_rules(self.mapping_file)
+        self._rules = load_pattern_rules(self.mapping_file or DEFAULT_MAPPING_FILE)
 
         # tried in file order - first match wins, see load_pattern_rules
         self._compiled_patterns: list[tuple[re.Pattern, str]] = []
@@ -121,7 +122,7 @@ class MMSIPatternClassifier(PipelineElement):
             except re.error as e:
                 raise ValueError(
                     f"{self.__class__.__name__}: invalid regex pattern {pattern!r} in "
-                    f"'{self.mapping_file}': {e}"
+                    f"'{self.mapping_file or DEFAULT_MAPPING_FILE}': {e}"
                 ) from e
             self._compiled_patterns.append((compiled, category))
 
