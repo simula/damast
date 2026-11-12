@@ -1383,3 +1383,39 @@ def test_a_pipeline_on_another_runs_result_computes_both_runs_in_one_pass(tmp_pa
     assert (tmp_path / "second.stats.yaml").exists()
     assert first.processing_stats["valid_mmsi"]["rows_removed"] == 2
     assert second.processing_stats["large_mmsi"]["rows_removed"] == 1
+
+
+# --- DataProcessingPipeline.extend --------------------------------------------------------------
+
+def test_extend_appends_copies_of_the_steps(tmp_path):
+    from damast.data_handling.transformers.filters import DropMissingOrNan
+
+    adf = AnnotatedDataFrame(polars.DataFrame({"x": [1, None, 3], "y": [1.0, 2.0, None]}),
+                             MetaData(columns=[DataSpecification("x"), DataSpecification("y")]))
+    tail = DataProcessingPipeline(name="tail", base_dir=tmp_path).add("drop y", DropMissingOrNan(),
+                                                                      name_mappings={"x": "y"})
+    pipeline = DataProcessingPipeline(name="head", base_dir=tmp_path) \
+        .add("drop x", DropMissingOrNan(), name_mappings={"x": "x"}) \
+        .extend(tail)
+
+    assert [node.name for node in pipeline.processing_graph.nodes()] == ["df", "drop x", "drop y"]
+    assert pipeline.transform(df=adf).lazyframe.collect()["x"].to_list() == [1]
+    # the appended steps are copies - the original pipeline still runs on its own
+    assert tail.transform(df=adf).lazyframe.collect()["x"].to_list() == [1, None]
+    tail_uuids = {node.uuid for node in tail.processing_graph.nodes()}
+    assert not tail_uuids & {node.uuid for node in pipeline.processing_graph.nodes()}
+
+
+def test_extend_rejects_a_pipeline_with_several_datasources(tmp_path):
+    class JoinStep(PipelineElement):
+        @damast.core.input({"key": {}})
+        @damast.core.input({"key": {}}, label="other")
+        @damast.core.output({"key": {}})
+        def transform(self, df: AnnotatedDataFrame, other: AnnotatedDataFrame) -> AnnotatedDataFrame:
+            return df
+
+    joined = DataProcessingPipeline(name="joined", base_dir=tmp_path) \
+        .join("other", JoinStep(), name_mappings={"df": {}, "other": {}})
+
+    with pytest.raises(ValueError, match="several datasources"):
+        DataProcessingPipeline(name="head", base_dir=tmp_path).extend(joined)
