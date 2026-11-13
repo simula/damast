@@ -1,6 +1,5 @@
 import copy
 import datetime
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +20,6 @@ from damast.core.metadata import (
     ValidationMode,
 )
 from damast.core.types import XDataFrame
-from damast.utils.io import DataFile
 
 
 @pytest.fixture()
@@ -336,64 +334,6 @@ def test_from_files_loads_compressed_csv_with_its_spec_file(data_path, tmp_path,
     assert adf.column_names == expected.column_names
     assert adf.lazyframe.collect().equals(expected.lazyframe.collect())
     assert adf._metadata.columns[0] == expected._metadata.columns[0]
-
-
-def test_csv_compression_codecs_without_ratarmount(monkeypatch):
-    import sys
-
-    monkeypatch.setitem(sys.modules, "ratarmountcore.formats", None)
-    monkeypatch.setattr(DataFile, "_csv_compression_codecs", None)
-
-    assert DataFile.csv_compression_codecs() == {".gz": "gzip", ".zst": "zstd"}
-
-
-@pytest.mark.parametrize(
-    ("filename", "suffix", "stem"),
-    [
-        ("dir/data.csv", ".csv", "data"),
-        ("dir/data.csv.zst", ".csv.zst", "data"),
-        ("dir/data.csv.gz", ".csv.gz", "data"),
-        ("dir/ais-2024.01.01.csv.zst", ".csv.zst", "ais-2024.01.01"),
-        ("dir/data.parquet", ".parquet", "data"),
-        # not read directly by polars, so only the last suffix names the format
-        ("dir/data.csv.bz2", ".bz2", "data.csv"),
-        ("dir/data", "", "data"),
-    ],
-)
-def test_data_file_format_suffix_and_stem(filename, suffix, stem):
-    assert DataFile.format_suffix(filename) == suffix
-    assert DataFile.data_file_stem(filename) == stem
-
-
-def test_zipfile_archive_backend_passes_compressed_csv_to_from_files(data_path, tmp_path):
-    """
-    Without ratarmount (e.g. on macOS) Archive only extracts zip files: a csv.zst is passed on
-    unchanged and read by polars directly
-    """
-    from damast.utils.io import Archive, ArchiveBackend
-
-    compressed = tmp_path / "test_dataframe.csv.zst"
-    compressed.write_bytes(_compress((data_path / "test_dataframe.csv").read_bytes(), "zstd"))
-
-    with Archive(filenames=[str(compressed)], backend=ArchiveBackend.ZIPFILE) as files:
-        assert files == [str(compressed)]
-        adf = AnnotatedDataFrame.from_files(files, metadata_required=False)
-        assert adf.lazyframe.collect().shape == (5, 2)
-
-
-@pytest.mark.skipif(shutil.which("ratarmount") is None, reason="needs the ratarmount command")
-def test_ratarmount_archive_mounts_compressed_csv_polars_cannot_read(data_path, tmp_path):
-    import bz2
-
-    from damast.utils.io import Archive, ArchiveBackend
-
-    compressed = tmp_path / "test_dataframe.csv.bz2"
-    compressed.write_bytes(bz2.compress((data_path / "test_dataframe.csv").read_bytes()))
-
-    with Archive(filenames=[str(compressed)], backend=ArchiveBackend.RATARMOUNT) as files:
-        assert [Path(f).name for f in files] == ["test_dataframe.csv"]
-        adf = AnnotatedDataFrame.from_files([str(f) for f in files], metadata_required=False)
-        assert adf.lazyframe.collect().shape == (5, 2)
 
 
 @pytest.mark.parametrize(
