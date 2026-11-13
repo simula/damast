@@ -33,7 +33,7 @@ from .constants import (
 from .data_description import ListOfValues, MinMax
 from .deferred import PendingQueries
 from .engine import default_engine
-from .metadata import DataSpecification, MetaData, ValidationMode
+from .metadata import DataSpecification, MetaData, ValidationMode, format_suffix
 from .partitioning import PartitionStrategy, warn_on_local_time_buckets, with_suffix
 from .types import DataFrame, XDataFrame
 
@@ -438,6 +438,22 @@ class AnnotatedDataFrame(XDataFrame):
 
         return None
 
+    @classmethod
+    def get_file_format(cls, filename: str | Path) -> str | None:
+        """
+        Get the name of the supported format of a file
+
+        Unlike :meth:`get_supported_format`, this also recognises compressed csv files,
+        e.g. data.csv.zst or data.csv.gz, as csv
+
+        :param filename: Name of the file
+        :return: Name of the format, or None if the file type is not supported
+        """
+        suffix = format_suffix(filename)
+        if suffix.startswith(".csv"):
+            return "csv"
+        return cls.get_supported_format(suffix)
+
     #: Share of the memory psutil reports as available that a materialised dataframe may take.
     #: The remaining share absorbs the transient peak of the collect itself, measured at 1.3-2.3
     #: times the resulting frame.
@@ -527,24 +543,20 @@ class AnnotatedDataFrame(XDataFrame):
         if not files or type(files) is not list:
             raise ValueError(f"{cls.__name__}.from_files: file list required, but were {files=}")
 
-        suffixes = set()
+        file_formats = set()
         for f in files:
             path = Path(f)
             if not path.exists():
                 raise FileNotFoundError(f"{cls.__name__}.from_files: could not find {f}")
 
-            suffixes.add(path.suffix)
+            file_formats.add(cls.get_file_format(path))
 
-        if len(suffixes) != 1:
-            raise RuntimeError(f"{cls.__name__}.from_files: one file type expected, but multiple suffixes found: {suffixes=}")
+        if len(file_formats) != 1:
+            raise RuntimeError(f"{cls.__name__}.from_files: one file type expected, but multiple found: {file_formats=}")
 
-        suffix = list(suffixes)[0]
-        load_fn = None
-        # find load function by suffix
-        for filetype, suffixes in DAMAST_SUPPORTED_FILE_FORMATS.items():
-            if suffix in suffixes:
-                if hasattr(cls, f"load_{filetype}"):
-                    load_fn = getattr(cls, f"load_{filetype}")
+        # find load function by file format
+        file_format = list(file_formats)[0]
+        load_fn = getattr(cls, f"load_{file_format}", None) if file_format else None
 
         if load_fn:
             df, metadata = load_fn(files)

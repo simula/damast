@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import ast
 import csv
+import io
 import logging
 import math
 import re
 from collections import Counter
+from functools import cache
 from itertools import islice
 from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
 import polars
+import pyarrow
 import polars.api
 from polars import LazyFrame
 from polars.io.plugins import register_io_source
@@ -92,6 +95,32 @@ def usable_categories(column_name: str, values: list, max_count: int = MAX_CATEG
             timepoint_like += 1
 
     return values if timepoint_like < 3 else None
+
+
+
+@cache
+def csv_compression_codecs() -> dict[str, str]:
+    """
+    Get the suffixes of compressed csv files that polars reads directly, e.g. '.zst' for
+    data.csv.zst, mapped to the pyarrow codec that decompresses them
+
+    These are gzip and zstandard, named by ratarmount's suffixes for them when ratarmount is
+    available. Other compressions, e.g. bz2 or lz4, polars reads without an error but as an
+    empty frame: such files have to be mounted first, see :class:`damast.utils.io.Archive`.
+
+    :return: Mapping of suffix to pyarrow codec
+    """
+    suffixes = {"gzip": ["gz"], "zstd": ["zst"]}
+    try:
+        from ratarmountcore.formats import COMPRESSION_FORMATS, FID
+
+        suffixes = {
+            "gzip": COMPRESSION_FORMATS[FID.GZIP].extensions,
+            "zstd": COMPRESSION_FORMATS[FID.ZSTANDARD].extensions,
+        }
+    except Exception:
+        logger.debug("ratarmount is not available: using the default suffixes of compressed csv files")
+    return {f".{suffix}": codec for codec, names in suffixes.items() for suffix in names}
 
 
 @polars.api.register_dataframe_namespace("compat")
@@ -578,15 +607,23 @@ class PolarsDataFrame(metaclass=Meta):
         column did not split the file and is never chosen; if that holds for all of them, the
         first candidate is returned.
 
-        :param file: The csv file whose first lines should be inspected
+        :param file: The csv file whose first lines should be inspected; a compressed csv
+            (e.g. .csv.zst or .csv.gz) is decompressed while reading
         :param candidates: Separators to consider, most-preferred first
         :param max_lines: Number of lines to inspect. More lines make a separator that also
             occurs inside quoted fields easier to rule out - it splits those rows into a width
             of their own - at the cost of reading further into the file
         :return: The most likely separator
         """
-        # Path.open, not the builtin - this class defines an `open` of its own
-        with Path(file).open(newline="", encoding="utf-8", errors="replace") as f:
+        codec = csv_compression_codecs().get(Path(file).suffix)
+        if codec is not None:
+            # streamed, so only the inspected lines are decompressed
+            raw = pyarrow.input_stream(str(file), compression=codec)
+            text = io.TextIOWrapper(raw, newline="", encoding="utf-8", errors="replace")
+        else:
+            # Path.open, not the builtin - this class defines an `open` of its own
+            text = Path(file).open(newline="", encoding="utf-8", errors="replace")
+        with text as f:
             lines = list(islice(f, max_lines))
 
         separator = candidates[0]

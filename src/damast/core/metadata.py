@@ -31,7 +31,7 @@ from .data_description import (
     NumericValueStats,
 )
 from .formatting import DEFAULT_INDENT
-from .polars_dataframe import MAX_CATEGORIES, row_position, usable_categories
+from .polars_dataframe import MAX_CATEGORIES, csv_compression_codecs, row_position, usable_categories
 from .types import DataFrame, XDataFrame
 from .units import Unit, units
 
@@ -42,9 +42,36 @@ __all__ = [
     "MetaData",
     "Status",
     "ValidationMode",
+    "data_file_stem",
+    "format_suffix",
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def format_suffix(filename: str | Path) -> str:
+    """
+    Get the suffix naming the format of a data file: the last suffix, or both suffixes
+    of a compressed csv file, e.g. '.csv.zst' for data.csv.zst
+
+    :param filename: Name of the data file
+    :return: The format suffix, empty if there is none
+    """
+    suffixes = Path(filename).suffixes
+    if suffixes[-2:-1] == [".csv"] and suffixes[-1] in csv_compression_codecs():
+        return "".join(suffixes[-2:])
+    return Path(filename).suffix
+
+
+def data_file_stem(filename: str | Path) -> str:
+    """
+    Get the name of a data file without its format suffix, e.g. 'data' for data.csv.zst
+
+    :param filename: Name of the data file
+    :return: The file name without its format suffix
+    """
+    name = Path(filename).name
+    return name.removesuffix(format_suffix(name))
 
 #: Share of the rows median and quartiles are computed from, see MetaData.statistics
 QUANTILE_SAMPLE_FRACTION: float = 0.01
@@ -1689,7 +1716,7 @@ class MetaData:
         if len(files) == 1:
             commonpath = Path(commonpath).parent
 
-        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        commonprefix = os.path.commonprefix([data_file_stem(x) for x in files])
         metadata_file_candidates = { x: SequenceMatcher(None, commonprefix, str(x.stem)).ratio() for x in Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}") }
         for f in dict(sorted(metadata_file_candidates.items(), key=lambda x: x[1], reverse=True)):
             try:
@@ -1703,13 +1730,14 @@ class MetaData:
     @classmethod
     def specfile(cls, files: list[str | Path]) -> str:
         """
-        Create the default filename for the spec file
+        Create the default filename for the spec file: the data file name with its format
+        suffix replaced, e.g. data.spec.yaml for data.csv.zst
         """
         if len(files) == 1:
-            return Path(files[0]).with_suffix(DAMAST_SPEC_SUFFIX)
+            return Path(files[0]).with_name(f"{data_file_stem(files[0])}{DAMAST_SPEC_SUFFIX}")
 
         commonpath = os.path.commonpath(files)
-        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        commonprefix = os.path.commonprefix([data_file_stem(x) for x in files])
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
     def merge(self, other: MetaData, strategy: DataSpecification.MergeStrategy | None = None) -> MetaData:
