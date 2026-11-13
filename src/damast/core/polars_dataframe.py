@@ -7,7 +7,6 @@ import logging
 import math
 import re
 from collections import Counter
-from functools import cache
 from itertools import islice
 from pathlib import Path
 from typing import Any, ClassVar
@@ -21,6 +20,7 @@ from polars.io.plugins import register_io_source
 from pydantic import ValidationError
 
 from damast.utils import ensure_packages
+from damast.utils.io import DataFile
 
 from .constants import DAMAST_CSV_DEFAULT_ARGS
 from .data_description import NumericValueStats
@@ -96,31 +96,6 @@ def usable_categories(column_name: str, values: list, max_count: int = MAX_CATEG
 
     return values if timepoint_like < 3 else None
 
-
-
-@cache
-def csv_compression_codecs() -> dict[str, str]:
-    """
-    Get the suffixes of compressed csv files that polars reads directly, e.g. '.zst' for
-    data.csv.zst, mapped to the pyarrow codec that decompresses them
-
-    These are gzip and zstandard, named by ratarmount's suffixes for them when ratarmount is
-    available. Other compressions, e.g. bz2 or lz4, polars reads without an error but as an
-    empty frame: such files have to be mounted first, see :class:`damast.utils.io.Archive`.
-
-    :return: Mapping of suffix to pyarrow codec
-    """
-    suffixes = {"gzip": ["gz"], "zstd": ["zst"]}
-    try:
-        from ratarmountcore.formats import COMPRESSION_FORMATS, FID
-
-        suffixes = {
-            "gzip": COMPRESSION_FORMATS[FID.GZIP].extensions,
-            "zstd": COMPRESSION_FORMATS[FID.ZSTANDARD].extensions,
-        }
-    except Exception:
-        logger.debug("ratarmount is not available: using the default suffixes of compressed csv files")
-    return {f".{suffix}": codec for codec, names in suffixes.items() for suffix in names}
 
 
 @polars.api.register_dataframe_namespace("compat")
@@ -615,7 +590,7 @@ class PolarsDataFrame(metaclass=Meta):
             of their own - at the cost of reading further into the file
         :return: The most likely separator
         """
-        codec = csv_compression_codecs().get(Path(file).suffix)
+        codec = DataFile.csv_compression_codecs().get(Path(file).suffix)
         if codec is not None:
             # streamed, so only the inspected lines are decompressed
             raw = pyarrow.input_stream(str(file), compression=codec)

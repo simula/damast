@@ -25,6 +25,8 @@ try:
 except ImportError:
     from typing_extensions import deprecated
 
+from damast.utils.io import DataFile
+
 from .annotations import Annotation
 from .constants import (
     DAMAST_SPEC_SUFFIX,
@@ -33,7 +35,7 @@ from .constants import (
 from .data_description import ListOfValues, MinMax
 from .deferred import PendingQueries
 from .engine import default_engine
-from .metadata import DataSpecification, MetaData, ValidationMode, format_suffix
+from .metadata import DataSpecification, MetaData, ValidationMode
 from .partitioning import PartitionStrategy, warn_on_local_time_buckets, with_suffix
 from .types import DataFrame, XDataFrame
 
@@ -449,7 +451,7 @@ class AnnotatedDataFrame(XDataFrame):
         :param filename: Name of the file
         :return: Name of the format, or None if the file type is not supported
         """
-        suffix = format_suffix(filename)
+        suffix = DataFile.format_suffix(filename)
         if suffix.startswith(".csv"):
             return "csv"
         return cls.get_supported_format(suffix)

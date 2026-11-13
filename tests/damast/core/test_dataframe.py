@@ -21,6 +21,7 @@ from damast.core.metadata import (
     ValidationMode,
 )
 from damast.core.types import XDataFrame
+from damast.utils.io import DataFile
 
 
 @pytest.fixture()
@@ -340,14 +341,28 @@ def test_from_files_loads_compressed_csv_with_its_spec_file(data_path, tmp_path,
 def test_csv_compression_codecs_without_ratarmount(monkeypatch):
     import sys
 
-    from damast.core.polars_dataframe import csv_compression_codecs
-
     monkeypatch.setitem(sys.modules, "ratarmountcore.formats", None)
-    csv_compression_codecs.cache_clear()
-    try:
-        assert csv_compression_codecs() == {".gz": "gzip", ".zst": "zstd"}
-    finally:
-        csv_compression_codecs.cache_clear()
+    monkeypatch.setattr(DataFile, "_csv_compression_codecs", None)
+
+    assert DataFile.csv_compression_codecs() == {".gz": "gzip", ".zst": "zstd"}
+
+
+@pytest.mark.parametrize(
+    ("filename", "suffix", "stem"),
+    [
+        ("dir/data.csv", ".csv", "data"),
+        ("dir/data.csv.zst", ".csv.zst", "data"),
+        ("dir/data.csv.gz", ".csv.gz", "data"),
+        ("dir/ais-2024.01.01.csv.zst", ".csv.zst", "ais-2024.01.01"),
+        ("dir/data.parquet", ".parquet", "data"),
+        # not read directly by polars, so only the last suffix names the format
+        ("dir/data.csv.bz2", ".bz2", "data.csv"),
+        ("dir/data", "", "data"),
+    ],
+)
+def test_data_file_format_suffix_and_stem(filename, suffix, stem):
+    assert DataFile.format_suffix(filename) == suffix
+    assert DataFile.data_file_stem(filename) == stem
 
 
 def test_zipfile_archive_backend_passes_compressed_csv_to_from_files(data_path, tmp_path):
