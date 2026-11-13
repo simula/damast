@@ -15,6 +15,70 @@ from damast.core.constants import DAMAST_MOUNT_PREFIX
 logger = logging.getLogger(__name__)
 
 
+class DataFile:
+    """
+    Class to derive the format and naming of data files from their file names
+    """
+    #: Suffixes of compressed csv files that polars reads directly, mapped to their pyarrow codec
+    _csv_compression_codecs: dict[str, str] | None = None
+
+    @classmethod
+    def csv_compression_codecs(cls) -> dict[str, str]:
+        """
+        Get the suffixes of compressed csv files that polars reads directly, e.g. '.zst' for
+        data.csv.zst, mapped to the pyarrow codec that decompresses them
+
+        These are gzip and zstandard, named by ratarmount's suffixes for them when ratarmount is
+        available. Other compressions, e.g. bz2 or lz4, polars reads without an error but as an
+        empty frame: such files have to be mounted first, see :class:`Archive`.
+
+        :return: Mapping of suffix to pyarrow codec
+        """
+        if cls._csv_compression_codecs is not None:
+            return cls._csv_compression_codecs
+
+        suffixes = {"gzip": ["gz"], "zstd": ["zst"]}
+        try:
+            from ratarmountcore.formats import COMPRESSION_FORMATS, FID
+
+            suffixes = {
+                "gzip": COMPRESSION_FORMATS[FID.GZIP].extensions,
+                "zstd": COMPRESSION_FORMATS[FID.ZSTANDARD].extensions,
+            }
+        except Exception:
+            logger.debug("ratarmount is not available: using the default suffixes of compressed csv files")
+
+        cls._csv_compression_codecs = {
+            f".{suffix}": codec for codec, names in suffixes.items() for suffix in names
+        }
+        return cls._csv_compression_codecs
+
+    @classmethod
+    def format_suffix(cls, filename: str | Path) -> str:
+        """
+        Get the suffix naming the format of a data file: the last suffix, or both suffixes
+        of a compressed csv file that polars reads directly, e.g. '.csv.zst' for data.csv.zst
+
+        :param filename: Name of the data file
+        :return: The format suffix, empty if there is none
+        """
+        suffixes = Path(filename).suffixes
+        if suffixes[-2:-1] == [".csv"] and suffixes[-1] in cls.csv_compression_codecs():
+            return "".join(suffixes[-2:])
+        return Path(filename).suffix
+
+    @classmethod
+    def data_file_stem(cls, filename: str | Path) -> str:
+        """
+        Get the name of a data file without its format suffix, e.g. 'data' for data.csv.zst
+
+        :param filename: Name of the data file
+        :return: The file name without its format suffix
+        """
+        name = Path(filename).name
+        return name.removesuffix(cls.format_suffix(name))
+
+
 class ArchiveBackend(str, Enum):
     ZIPFILE = 'zipfile'
     RATARMOUNT = 'ratarmount'

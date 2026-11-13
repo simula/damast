@@ -19,6 +19,8 @@ import polars as pl
 import yaml
 from pydantic import ValidationError
 
+from damast.utils.io import DataFile
+
 from . import deferred
 from .annotations import Annotation, History
 from .constants import DAMAST_HDF5_COLUMNS, DAMAST_HDF5_ROOT, DAMAST_SPEC_SUFFIX
@@ -1689,7 +1691,7 @@ class MetaData:
         if len(files) == 1:
             commonpath = Path(commonpath).parent
 
-        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        commonprefix = os.path.commonprefix([DataFile.data_file_stem(x) for x in files])
         metadata_file_candidates = { x: SequenceMatcher(None, commonprefix, str(x.stem)).ratio() for x in Path(commonpath).glob(f"{commonprefix}*{DAMAST_SPEC_SUFFIX}") }
         for f in dict(sorted(metadata_file_candidates.items(), key=lambda x: x[1], reverse=True)):
             try:
@@ -1703,13 +1705,14 @@ class MetaData:
     @classmethod
     def specfile(cls, files: list[str | Path]) -> str:
         """
-        Create the default filename for the spec file
+        Create the default filename for the spec file: the data file name with its format
+        suffix replaced, e.g. data.spec.yaml for data.csv.zst
         """
         if len(files) == 1:
-            return Path(files[0]).with_suffix(DAMAST_SPEC_SUFFIX)
+            return Path(files[0]).with_name(f"{DataFile.data_file_stem(files[0])}{DAMAST_SPEC_SUFFIX}")
 
         commonpath = os.path.commonpath(files)
-        commonprefix = os.path.commonprefix([Path(x).stem for x in files])
+        commonprefix = os.path.commonprefix([DataFile.data_file_stem(x) for x in files])
         return Path(commonpath) / f"{commonprefix}.collection{DAMAST_SPEC_SUFFIX}"
 
     def merge(self, other: MetaData, strategy: DataSpecification.MergeStrategy | None = None) -> MetaData:

@@ -285,6 +285,79 @@ def test_annotated_dataframe_import_csv_with_quotes(data_path):
     assert df[0,1] == "a,b;c"
     assert df[1,1] == "d;e,f"
 
+def _compress(data: bytes, compression: str) -> bytes:
+    import gzip
+
+    import pyarrow
+
+    if compression == "gzip":
+        return gzip.compress(data)
+    sink = pyarrow.BufferOutputStream()
+    with pyarrow.CompressedOutputStream(sink, compression) as out:
+        out.write(data)
+    return sink.getvalue().to_pybytes()
+
+
+@pytest.mark.parametrize(
+    ("filename", "file_format"),
+    [
+        ("data.csv", "csv"),
+        ("data.csv.zst", "csv"),
+        ("data.csv.gz", "csv"),
+        ("ais-2024.01.01.csv.zst", "csv"),
+        ("data.parquet", "parquet"),
+        # polars reads bz2 without an error but as an empty frame - mounted by Archive instead
+        ("data.csv.bz2", None),
+        ("data.zst", None),
+        ("data.parquet.zst", None),
+        ("data.txt", None),
+    ],
+)
+def test_get_file_format_recognises_compressed_csv(filename, file_format):
+    assert AnnotatedDataFrame.get_file_format(filename) == file_format
+
+
+@pytest.mark.parametrize(("suffix", "compression"), [(".csv.zst", "zstd"), (".csv.gz", "gzip")])
+def test_from_files_loads_compressed_csv_with_its_spec_file(data_path, tmp_path, suffix, compression):
+    """
+    A compressed csv loads like the plain csv, with its spec file named after the data file
+    without the full format suffix
+    """
+    csv_path = data_path / "test_dataframe.csv"
+    compressed = tmp_path / f"test_dataframe{suffix}"
+    compressed.write_bytes(_compress(csv_path.read_bytes(), compression))
+    MetaData.load_yaml(data_path / "test_dataframe.spec.yaml").save_yaml(tmp_path / "test_dataframe.spec.yaml")
+
+    adf = AnnotatedDataFrame.from_files([str(compressed)])
+    expected = AnnotatedDataFrame.from_file(csv_path)
+
+    assert adf.column_names == expected.column_names
+    assert adf.lazyframe.collect().equals(expected.lazyframe.collect())
+    assert adf._metadata.columns[0] == expected._metadata.columns[0]
+
+
+@pytest.mark.parametrize(
+    ("files", "specfile"),
+    [
+        (["dir/data.csv"], "dir/data.spec.yaml"),
+        (["dir/data.csv.zst"], "dir/data.spec.yaml"),
+        (["dir/ais-2024.01.01.csv.gz"], "dir/ais-2024.01.01.spec.yaml"),
+        (["dir/data.parquet"], "dir/data.spec.yaml"),
+        (["dir/ais-2024-01-01.csv.zst", "dir/ais-2024-01-02.csv.zst"], "dir/ais-2024-01-0.collection.spec.yaml"),
+    ],
+)
+def test_specfile_replaces_the_full_format_suffix(files, specfile):
+    assert Path(MetaData.specfile(files)) == Path(specfile)
+
+
+def test_from_files_rejects_files_of_different_formats(data_path, tmp_path):
+    compressed = tmp_path / "test_dataframe.csv.gz"
+    compressed.write_bytes(_compress((data_path / "test_dataframe.csv").read_bytes(), "gzip"))
+
+    with pytest.raises(RuntimeError, match="one file type expected"):
+        AnnotatedDataFrame.from_files([str(compressed), str(data_path / "test_ais.parquet")], metadata_required=False)
+
+
 def test_set_dtype(data_path):
     """
     Test if conversion from int -> str in representation_type is consistent
@@ -625,6 +698,15 @@ def test_scan_csv_infers_schema_once(tmp_path, monkeypatch):
 def test_sniff_csv_separator(tmp_path, content, expected_separator):
     csv_file = tmp_path / "data.csv"
     csv_file.write_text(content)
+
+    assert XDataFrame.sniff_csv_separator(csv_file) == expected_separator
+
+
+@pytest.mark.parametrize(("suffix", "compression"), [(".csv.zst", "zstd"), (".csv.gz", "gzip")])
+@pytest.mark.parametrize(("content", "expected_separator"), [("a;b;c\n1;2;3\n", ";"), ("a,b,c\n1,2,3\n", ",")])
+def test_sniff_csv_separator_reads_compressed_csv(tmp_path, suffix, compression, content, expected_separator):
+    csv_file = tmp_path / f"data{suffix}"
+    csv_file.write_bytes(_compress(content.encode(), compression))
 
     assert XDataFrame.sniff_csv_separator(csv_file) == expected_separator
 

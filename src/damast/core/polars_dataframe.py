@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import io
 import logging
 import math
 import re
@@ -12,12 +13,14 @@ from typing import Any, ClassVar
 
 import numpy as np
 import polars
+import pyarrow
 import polars.api
 from polars import LazyFrame
 from polars.io.plugins import register_io_source
 from pydantic import ValidationError
 
 from damast.utils import ensure_packages
+from damast.utils.io import DataFile
 
 from .constants import DAMAST_CSV_DEFAULT_ARGS
 from .data_description import NumericValueStats
@@ -92,6 +95,7 @@ def usable_categories(column_name: str, values: list, max_count: int = MAX_CATEG
             timepoint_like += 1
 
     return values if timepoint_like < 3 else None
+
 
 
 @polars.api.register_dataframe_namespace("compat")
@@ -578,15 +582,23 @@ class PolarsDataFrame(metaclass=Meta):
         column did not split the file and is never chosen; if that holds for all of them, the
         first candidate is returned.
 
-        :param file: The csv file whose first lines should be inspected
+        :param file: The csv file whose first lines should be inspected; a compressed csv
+            (e.g. .csv.zst or .csv.gz) is decompressed while reading
         :param candidates: Separators to consider, most-preferred first
         :param max_lines: Number of lines to inspect. More lines make a separator that also
             occurs inside quoted fields easier to rule out - it splits those rows into a width
             of their own - at the cost of reading further into the file
         :return: The most likely separator
         """
-        # Path.open, not the builtin - this class defines an `open` of its own
-        with Path(file).open(newline="", encoding="utf-8", errors="replace") as f:
+        codec = DataFile.csv_compression_codecs().get(Path(file).suffix)
+        if codec is not None:
+            # streamed, so only the inspected lines are decompressed
+            raw = pyarrow.input_stream(str(file), compression=codec)
+            text = io.TextIOWrapper(raw, newline="", encoding="utf-8", errors="replace")
+        else:
+            # Path.open, not the builtin - this class defines an `open` of its own
+            text = Path(file).open(newline="", encoding="utf-8", errors="replace")
+        with text as f:
             lines = list(islice(f, max_lines))
 
         separator = candidates[0]
