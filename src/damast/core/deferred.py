@@ -118,15 +118,19 @@ class PendingQueries:
         if self.done:
             return polars.collect_all(list(outputs), engine=default_engine()) if outputs else []
         self._done = True
+        # released whatever happens below: run() never executes them again, and kept they would
+        # pin every plan of the run - and anything its UDFs capture - for as long as this lives
+        entries, self._entries = self._entries, []
+        on_complete, self._on_complete = self._on_complete, []
 
-        queries = [query for deferred, _, _ in self._entries for query in deferred.queries]
+        queries = [query for deferred, _, _ in entries for query in deferred.queries]
         if not queries and not outputs:
             results = []
         else:
             results = polars.collect_all([*queries, *outputs], engine=default_engine())
 
         position = 0
-        for deferred, on_value, label in self._entries:
+        for deferred, on_value, label in entries:
             count = len(deferred.queries)
             try:
                 on_value(deferred.finish(results[position:position + count]))
@@ -134,7 +138,7 @@ class PendingQueries:
                 raise RuntimeError(f"{label}: {e}" if label else str(e)) from e
             position += count
 
-        for callback in self._on_complete:
+        for callback in on_complete:
             callback()
         return results[position:]
 

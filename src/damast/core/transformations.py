@@ -973,6 +973,36 @@ class PipelineElement(Transformer):
         new_element._name_mappings = copy.deepcopy(self.name_mappings)
         return new_element
 
+    #: Attributes that only tie the element to the run it is part of - left out when pickling,
+    #: see :func:`__getstate__`
+    _RUNTIME_ATTRIBUTES: tuple[str, ...] = ("parent_pipeline",)
+
+    def __copy__(self) -> PipelineElement:
+        # explicit, since copy.copy would otherwise go through __getstate__ and drop the
+        # runtime attributes, which a shallow copy - e.g. in __deepcopy__ - is meant to keep
+        new_element = self.__class__.__new__(self.__class__)
+        new_element.__dict__.update(self.__dict__)
+        return new_element
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Pickle the element's configuration only, not the run it is part of.
+
+        A UDF that reads an attribute of the element - ``lambda s: f(s, self.n)`` - captures the
+        element, and polars pickles the UDF whenever the plan is serialized. Through
+        :attr:`parent_pipeline` that would take in the pipeline and the LazyFrames of its run,
+        whose plans contain the very same UDF - each pickled afresh, so the cycle never ends
+        (``PicklingError: ... excessively deep recursion``).
+        """
+        state = self.__dict__.copy()
+        for name in self._RUNTIME_ATTRIBUTES:
+            state.pop(name, None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]):
+        self.__dict__.update(state)
+        self.__dict__.setdefault("parent_pipeline", None)
+
 # Only for internal use
 class MultiCycleTransformer(Transformer):
     def __init__(self, features: list[str], n: int):

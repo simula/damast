@@ -937,6 +937,15 @@ class DataProcessingPipeline(PipelineElement):
         # that run and hold state
         return pipeline
 
+    #: The run's pending queries hold LazyFrames, whose plans may contain UDFs that capture this
+    #: pipeline's elements - see :func:`PipelineElement.__getstate__`
+    _RUNTIME_ATTRIBUTES = (*PipelineElement._RUNTIME_ATTRIBUTES, "_pending", "_steps_in_flight")
+
+    def __setstate__(self, state: dict[str, Any]):
+        super().__setstate__(state)
+        self.__dict__.setdefault("_pending", None)
+        self.__dict__.setdefault("_steps_in_flight", set())
+
     def describe(self) -> str:
         """
         Render a saved pipeline's interface and steps, without needing any input data.
