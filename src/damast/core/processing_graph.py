@@ -295,6 +295,10 @@ class ProcessingGraph:
         return joins
 
     def __getattr__(self, name):
+        # '_graph' itself missing - e.g. while unpickling, before the state is restored - would
+        # otherwise forward to itself without end
+        if name == "_graph":
+            raise AttributeError(name)
         # forward calls to the underlying graph
         return getattr(self._graph, name)
 
