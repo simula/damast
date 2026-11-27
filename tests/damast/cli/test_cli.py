@@ -13,6 +13,7 @@ import damast.cli.main as cli_main
 from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
+from damast.cli.data_privacy import DataPrivacyParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.data_watch import DataWatchParser
 from damast.cli.experiment import ExperimentParser
@@ -30,6 +31,7 @@ def subparsers():
         "convert",
         "experiment",
         "inspect",
+        "privacy",
         "process",
         "plugins",
         "watch",
@@ -49,6 +51,7 @@ def test_help(subparsers, capsys, monkeypatch):
     [ "convert", DataConvertParser ],
     [ "inspect", DataInspectParser ],
     [ "experiment", ExperimentParser ],
+    [ "privacy", DataPrivacyParser ],
     [ "process", DataProcessingParser ],
     [ "plugins", PluginsParser ],
     [ "watch", DataWatchParser ],

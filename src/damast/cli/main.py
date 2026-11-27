@@ -12,6 +12,7 @@ from damast.cli.base import BaseParser
 from damast.cli.data_annotate import DataAnnotateParser
 from damast.cli.data_converter import DataConvertParser
 from damast.cli.data_inspect import DataInspectParser
+from damast.cli.data_privacy import DataPrivacyParser
 from damast.cli.data_processing import DataProcessingParser
 from damast.cli.data_visualize import DataVisualizeParser
 from damast.cli.data_watch import DataWatchParser
@@ -85,6 +86,10 @@ def run():
     main_parser.attach_subcommand_parser(subcommand="inspect",
                                          help=inspect_help_desc,
                                          parser_klass=DataInspectParser)
+
+    main_parser.attach_subcommand_parser(subcommand="privacy",
+                                         help="Report what in an AIS dataset can identify a vessel or person",
+                                         parser_klass=DataPrivacyParser)
 
     main_parser.attach_subcommand_parser(subcommand="process",
                                          help="Process data by running a predefined pipeline",

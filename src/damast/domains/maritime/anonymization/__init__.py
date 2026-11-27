@@ -11,6 +11,7 @@ from .voyage_k_anonymity import (
     VoyageKAnonymity,
 )
 from .owner_risk import DropHighOwnerRisk, OwnerRisk, valid_imo
+from .privacy_report import PrivacyReport
 from .voyage_relocation import RelocateVoyages, VoyageRelocation
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "GeneralizeSpaceTime",
     "KAnonymityFilter",
     "OwnerRisk",
+    "PrivacyReport",
     "PseudonymizeVoyages",
     "RelocateVoyages",
     "SegmentVoyages",
