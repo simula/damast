@@ -1,12 +1,14 @@
+"""
+'damast-maritime privacy': the privacy report of AIS data, see `PrivacyReport`.
+"""
 import dataclasses
 from argparse import ArgumentParser
 from pathlib import Path
 
+from damast.cli.base import BaseParser
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.domains.maritime.anonymization import AISColumns, PrivacyReport
 from damast.utils.io import Archive
-
-from .base import BaseParser
 
 
 def ais_columns(mappings: list[str] | None) -> AISColumns:
@@ -27,7 +29,8 @@ def ais_columns(mappings: list[str] | None) -> AISColumns:
     for mapping in mappings or []:
         key, sep, value = mapping.partition("=")
         if not sep or key not in fields:
-            raise ValueError(f"--column '{mapping}' must be 'field=column' with field one of: {', '.join(sorted(fields))}")
+            raise ValueError(f"--column '{mapping}' must be 'field=column'"
+                             f" with field one of: {', '.join(sorted(fields))}")
         kwargs[key] = value
     return AISColumns(**kwargs)
 
@@ -70,7 +73,7 @@ def assess(adf: AnnotatedDataFrame, columns: AISColumns, args) -> PrivacyReport:
                                 time_bucket=args.time_bucket, rest_speed=args.rest_speed)
 
 
-class DataPrivacyParser(BaseParser):
+class PrivacyParser(BaseParser):
     """
     Argparser for the privacy report of AIS data, see `PrivacyReport`
 
@@ -80,7 +83,7 @@ class DataPrivacyParser(BaseParser):
     def __init__(self, parser: ArgumentParser):
         super().__init__(parser=parser)
 
-        parser.description = "damast privacy - report what in AIS data can identify a vessel or person"
+        parser.description = "damast-maritime privacy - report what in AIS data can identify a vessel or person"
         parser.add_argument("-f", "--files",
                             help="Files or patterns of the (annotated) data file to assess",
                             nargs="+",

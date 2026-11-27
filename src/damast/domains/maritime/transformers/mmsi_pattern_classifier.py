@@ -18,99 +18,19 @@ VALID_MIDS: range = range(201, 776)
 #: Mapping file with the patterns of Recommendation ITU-R M.585-10, used when none is given
 DEFAULT_MAPPING_FILE: Path = Path(__file__).parent.parent / "ais" / "mmsi_categories.yaml"
 
+class MMSIPattern:
 
-def load_pattern_rules(mapping_file: str | Path) -> dict[str, str]:
-    """
-    Load MMSI-pattern -> category rules from a YAML mapping file.
+    default_category: str
+    invalid_category: str
 
-    Example:
-        ```yaml
-        # mmsi_categories.yaml - see damast/domains/maritime/ais/mmsi_categories.yaml for the full set of
-        # patterns defined in Recommendation ITU-R M.585-10. More specific patterns are
-        # listed before the more general ones they would otherwise shadow.
-        '00(?P<mid>\\d{3})1': coast-station      # Annex 1, S2 §3a: 00-MID-1XXX
-        '00': coast-station                      # Annex 1, S2 §1:  00-MID-XXXX (generic)
-        '111': sar-aircraft                      # Annex 1, S3 §1:  111-MID-XXX
-        '009990000': all-coast-stations          # Annex 1, S2 §8:  fixed identity
-        ```
-
-    Args:
-        mapping_file: Path to a YAML file mapping MMSI patterns to category labels. Each
-            pattern is a regular expression (standard `re` syntax, including named groups
-            like `(?P<mid>...)`) matched against the start of the (9-digit) MMSI - it does not
-            need to match the whole string, so `"111"` matches any MMSI starting with those
-            three digits. Patterns are tried in the order they appear in the file and the
-            *first* match wins - unlike a plain prefix, a longer/more specific regex does not
-            automatically take precedence, so a pattern that is a special case of an earlier,
-            more general one (e.g. `'00(?P<mid>\\d{3})1'` vs `'00'`) must be listed *before*
-            it, or it will never be reached.
-
-    Returns:
-        Mapping of pattern (as string) to category label, in file order
-
-    Raises:
-        FileNotFoundError: If `mapping_file` does not exist
-    """
-    with open(mapping_file) as f:
-        rules = yaml.safe_load(f) or {}
-
-    return {str(pattern): str(category) for pattern, category in rules.items()}
-
-
-class MMSIPatternClassifier(PipelineElement):
-    """
-    Classify a MMSI column by matching it against patterns from a mapping file.
-
-    MMSI numbers are not only assigned to ships - fixed digit patterns are reserved for other
-    kinds of AIS transmitters, e.g. ``111MIDxxx`` for SAR aircraft or ``99MIDxxxx`` for aids to
-    navigation, per Recommendation ITU-R M.585-10 (04/2026) - see
-    `DEFAULT_MAPPING_FILE` for the full set of patterns it defines. This transformer
-    looks up each MMSI's category from a user-supplied pattern -> label mapping (see
-    `load_pattern_rules`) and adds it as a new column - a MMSI matching no rule is a ship
-    station and gets `default_category`.
-
-    A MMSI that cannot be a real one gets `invalid_category` instead, and with `drop_invalid`
-    its rows are removed: a missing MMSI, one of more than 9 digits, and one whose Maritime
-    Identification Digits (MID, the country) lie outside 201-775 - for a ship station its first
-    three digits, for a rule with a named group ``(?P<mid>...)`` that group. Rules without one
-    are not checked for a MID; the default mapping file gives every rule whose pattern contains
-    a MID the group. Transmitters misusing the MMSI field, e.g. fishing-gear buoys sending
-    ``97000103``, are caught this way: zero-padded it is a group ship call with MID 970.
-
-    Example:
-        ```python
-        from damast.core.dataprocessing import DataProcessingPipeline
-        from damast.domains.maritime.transformers.mmsi_pattern_classifier import MMSIPatternClassifier
-
-        pipeline = DataProcessingPipeline(name="example", base_dir=".")
-        pipeline.add("classify mmsi",
-                     MMSIPatternClassifier(mapping_file="mmsi_categories.yaml"),
-                     name_mappings={"x": "mmsi"})
-        ```
-
-    Args:
-        mapping_file: YAML file mapping MMSI patterns (regexes) to category labels - see
-            `load_pattern_rules`; `DEFAULT_MAPPING_FILE` if None. Re-read every time the transformer is constructed, including
-            when a saved pipeline using it is loaded elsewhere, so keep it alongside the
-            pipeline (or use an absolute path)
-        default_category: Category assigned to a MMSI that matches no rule in `mapping_file`
-        invalid_category: Category assigned to a MMSI that cannot be a real one, see above
-        drop_invalid: Remove the rows whose MMSI cannot be a real one
-
-    Raises:
-        ValueError: If `mapping_file` contains a pattern that is not a valid regular
-            expression
-    """
-
-    def __init__(self, mapping_file: str | Path | None = None, default_category: str = "unknown",
-                 invalid_category: str = "invalid", drop_invalid: bool = False):
-        # None stays None, so a saved pipeline uses the default file of wherever it is loaded
+    def __init__(self, mapping_file: str | Path | None = None,
+                 default_category: str | None = None,
+                 invalid_category: str | None = None):
         self.mapping_file = None if mapping_file is None else str(mapping_file)
+        self._rules = self.load_pattern_rules(self.mapping_file or DEFAULT_MAPPING_FILE)
 
-        self.default_category = default_category
-        self.invalid_category = invalid_category
-        self.drop_invalid = drop_invalid
-        self._rules = load_pattern_rules(self.mapping_file or DEFAULT_MAPPING_FILE)
+        self.default_category =  "unknown" if default_category is None else default_category
+        self.invalid_category =  "invalid" if invalid_category is None else invalid_category
 
         # tried in file order - first match wins, see load_pattern_rules
         self._compiled_patterns: list[tuple[re.Pattern, str]] = []
@@ -126,7 +46,7 @@ class MMSIPatternClassifier(PipelineElement):
                 ) from e
             self._compiled_patterns.append((compiled, category))
 
-    def _categorize(self, mmsi: int | str | None) -> str:
+    def categorize(self, mmsi: int | str | None) -> str:
         try:
             number = int(mmsi)
         except (TypeError, ValueError):
@@ -152,6 +72,112 @@ class MMSIPatternClassifier(PipelineElement):
             return self.invalid_category
         return self.default_category
 
+
+    @classmethod
+    def load_pattern_rules(cls, mapping_file: str | Path) -> dict[str, str]:
+        """
+        Load MMSI-pattern -> category rules from a YAML mapping file.
+
+        Example:
+            ```yaml
+            # mmsi_categories.yaml - see damast/domains/maritime/ais/mmsi_categories.yaml for the full set of
+            # patterns defined in Recommendation ITU-R M.585-10. More specific patterns are
+            # listed before the more general ones they would otherwise shadow.
+            '00(?P<mid>\\d{3})1': coast-station      # Annex 1, S2 §3a: 00-MID-1XXX
+            '00': coast-station                      # Annex 1, S2 §1:  00-MID-XXXX (generic)
+            '111': sar-aircraft                      # Annex 1, S3 §1:  111-MID-XXX
+            '009990000': all-coast-stations          # Annex 1, S2 §8:  fixed identity
+            ```
+
+        Args:
+            mapping_file: Path to a YAML file mapping MMSI patterns to category labels. Each
+                pattern is a regular expression (standard `re` syntax, including named groups
+                like `(?P<mid>...)`) matched against the start of the (9-digit) MMSI - it does not
+                need to match the whole string, so `"111"` matches any MMSI starting with those
+                three digits. Patterns are tried in the order they appear in the file and the
+                *first* match wins - unlike a plain prefix, a longer/more specific regex does not
+                automatically take precedence, so a pattern that is a special case of an earlier,
+                more general one (e.g. `'00(?P<mid>\\d{3})1'` vs `'00'`) must be listed *before*
+                it, or it will never be reached.
+
+        Returns:
+            Mapping of pattern (as string) to category label, in file order
+
+        Raises:
+            FileNotFoundError: If `mapping_file` does not exist
+        """
+        with open(mapping_file) as f:
+            rules = yaml.safe_load(f) or {}
+
+        return {str(pattern): str(category) for pattern, category in rules.items()}
+
+
+
+class MMSIPatternClassifier(PipelineElement):
+    """
+    Classify a MMSI column by matching it against patterns from a mapping file.
+
+    MMSI numbers are not only assigned to ships - fixed digit patterns are reserved for other
+    kinds of AIS transmitters, e.g. ``111MIDxxx`` for SAR aircraft or ``99MIDxxxx`` for aids to
+    navigation, per Recommendation ITU-R M.585-10 (04/2026) - see
+    `DEFAULT_MAPPING_FILE` for the full set of patterns it defines. This transformer
+    looks up each MMSI's category from a user-supplied pattern -> label mapping (see
+    `MMSIPattern.load_pattern_rules`) and adds it as a new column - a MMSI matching no rule is a ship
+    station and gets `default_category`.
+
+    A MMSI that cannot be a real one gets `invalid_category` instead, and with `drop_invalid`
+    its rows are removed: a missing MMSI, one of more than 9 digits, and one whose Maritime
+    Identification Digits (MID, the country) lie outside 201-775 - for a ship station its first
+    three digits, for a rule with a named group ``(?P<mid>...)`` that group. Rules without one
+    are not checked for a MID; the default mapping file gives every rule whose pattern contains
+    a MID the group. Transmitters misusing the MMSI field, e.g. fishing-gear buoys sending
+    ``97000103``, are caught this way: zero-padded it is a group ship call with MID 970.
+
+    Example:
+        ```python
+        from damast.core.dataprocessing import DataProcessingPipeline
+        from damast.domains.maritime.transformers.mmsi_pattern_classifier import MMSIPatternClassifier
+
+        pipeline = DataProcessingPipeline(name="example", base_dir=".")
+        pipeline.add("classify mmsi",
+                     MMSIPatternClassifier(mapping_file="mmsi_categories.yaml"),
+                     name_mappings={"x": "mmsi"})
+        ```
+
+    Args:
+        mapping_file: YAML file mapping MMSI patterns (regexes) to category labels - see
+            `MMSIPattern.load_pattern_rules`; `DEFAULT_MAPPING_FILE` if None. Re-read every time
+            the transformer is constructed, including when a saved pipeline using it is loaded
+            elsewhere, so keep it alongside the pipeline (or use an absolute path)
+        default_category: Category assigned to a MMSI that matches no rule in `mapping_file`
+        invalid_category: Category assigned to a MMSI that cannot be a real one, see above
+        drop_invalid: Remove the rows whose MMSI cannot be a real one
+
+    Raises:
+        ValueError: If `mapping_file` contains a pattern that is not a valid regular
+            expression
+    """
+    def __init__(self, mapping_file: str | Path | None = None, default_category: str = "unknown",
+                 invalid_category: str = "invalid", drop_invalid: bool = False):
+        # None stays None, so a saved pipeline uses the default file of wherever it is loaded
+        self.drop_invalid = drop_invalid
+        self._classifier = MMSIPattern(mapping_file=mapping_file, default_category=default_category,
+                                       invalid_category=invalid_category)
+
+    # the constructor's arguments, read back when a pipeline is saved - see PipelineElement.parameters
+
+    @property
+    def mapping_file(self) -> str | None:
+        return self._classifier.mapping_file
+
+    @property
+    def default_category(self) -> str:
+        return self._classifier.default_category
+
+    @property
+    def invalid_category(self) -> str:
+        return self._classifier.invalid_category
+
     @describe("Classify a MMSI column by matching it against patterns from a mapping file")
     @input({"x": {}})
     @output({"{{x}}_category": {"representation_type": str, "description": "MMSI-derived vessel category - from ITU-R M.585-10." }})
@@ -163,7 +189,7 @@ class MMSIPatternClassifier(PipelineElement):
         # transmitters than rows, and the classification runs in Python
         categories = df.lazyframe.select(feature).unique().with_columns(
             polars.col(feature)
-            .map_elements(self._categorize, return_dtype=polars.String, skip_nulls=False)
+            .map_elements(self._classifier.categorize, return_dtype=polars.String, skip_nulls=False)
             .alias(result)
         )
         lazyframe = df.lazyframe.join(categories, on=feature, how="left", nulls_equal=True,

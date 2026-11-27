@@ -55,6 +55,7 @@ def ais(rows: list[tuple]) -> polars.DataFrame:
         "shipType": [71] * len(rows),
         "imoNumber": polars.Series([None] * len(rows), dtype=polars.Int64),
         "reportClass": ["A"] * len(rows),
+        "shipLength": polars.Series([None] * len(rows), dtype=polars.Int64),
         "name": ["SECRET"] * len(rows),
     })
 
@@ -363,6 +364,39 @@ def test_owner_risk(tmp_path):
     mappings = {"mmsi": "mmsi", "ship_type": "shipType", "imo": "imoNumber"}
 
     assert owner_risk(df, tmp_path, mappings) == [r[3] for r in rows]
+
+
+def test_owner_risk_by_length(tmp_path):
+    rows = [  # mmsi, ship type, length - the largest per MMSI counts, 0 is unknown
+        (257000001, 37, 12, "high"),       # pleasure craft under 45 m
+        (257000002, 37, 50, "medium"),     # pleasure craft of 45 m or more
+        (257000003, 36, 0, "high"),        # sailing boat of unknown length
+        (257000004, 30, 14, "high"),       # fishing vessel under 15 m
+        (257000005, 30, 15, "medium"),     # fishing vessel of 15 m
+        (257000006, 30, None, "high"),     # fishing vessel of unknown length
+        (257000007, 30, 10, "medium"),     # fishing vessel reporting 10 m and 20 m below
+        (257000007, 30, 20, "medium"),
+        (257000008, 70, 10, "medium"),     # small cargo ship - its length does not matter
+    ]
+    df = polars.DataFrame({"mmsi": [r[0] for r in rows],
+                           "shipType": [r[1] for r in rows],
+                           "imoNumber": [None] * len(rows),
+                           "shipLength": [r[2] for r in rows]},
+                          schema={"mmsi": polars.Int64, "shipType": polars.Int64, "imoNumber": polars.Int64,
+                                  "shipLength": polars.Int64})
+    mappings = {"mmsi": "mmsi", "ship_type": "shipType", "imo": "imoNumber"}
+
+    assert owner_risk(df, tmp_path, mappings, length="shipLength") == [r[3] for r in rows]
+    # without a length, every pleasure craft is high and no fishing vessel is
+    assert owner_risk(df, tmp_path, mappings) == \
+        ["high", "high", "high", "medium", "medium", "medium", "medium", "medium", "medium"]
+
+
+def test_columns_available():
+    columns = AISColumns().available(["mmsi", "reportClass"])
+
+    assert columns.report_class == "reportClass"
+    assert columns.length is None
 
 
 def test_owner_risk_of_aisdk_columns(tmp_path):

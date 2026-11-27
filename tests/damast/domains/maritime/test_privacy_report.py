@@ -4,7 +4,7 @@ import polars
 import pytest
 import yaml
 
-from damast.cli.data_privacy import ais_columns
+from damast.domains.maritime.cli.privacy import ais_columns
 from damast.core.dataframe import AnnotatedDataFrame
 from damast.core.metadata import DataSpecification, MetaData
 from damast.domains.maritime.anonymization import AISColumns, PrivacyReport, VoyageKAnonymity
@@ -36,6 +36,7 @@ def ais(rows: list[tuple]) -> polars.DataFrame:
         "shipType": [r[5] for r in rows],
         "imoNumber": polars.Series([None] * len(rows), dtype=polars.Int64),
         "reportClass": ["A"] * len(rows),
+        "shipLength": polars.Series([None] * len(rows), dtype=polars.Int64),
         "name": ["SECRET"] * len(rows),
     })
 
@@ -58,14 +59,19 @@ def test_report_of_raw_data(data):
     assert report["dataset"]["rows"] == 370
     assert report["dataset"]["vessels"] == 7
     assert report["direct_identifiers"]["columns"] == {"mmsi": 7, "imoNumber": 1, "name": 1}
-    assert report["owner_risk"]["high"] == {"vessels": 1, "rows": 10, "rows_percent": 2.7}
+    assert report["owner_risk"]["high"] == {"vessels": 1, "vessels_percent": 14.29, "vessels_total": 7,
+                                            "rows": 10, "rows_percent": 2.7}
     assert report["owner_risk"]["medium"]["vessels"] == 6
-    assert report["at_rest"]["rows"] == 2
+    assert report["at_rest"] == {"vessels": 1, "vessels_percent": 14.29, "vessels_total": 7,
+                                 "rows": 2, "rows_percent": 0.54}
     assert report["precision"]["min_time_step_s"] == 60.0
-    assert report["k_anonymity"]["rows_below_k"] == 10
-    assert report["k_anonymity"]["vessels_affected"] == 1
-    assert set(report["minimization"]["not_released"]) == {"mmsi", "imoNumber", "reportClass", "name"}
+    assert report["k_anonymity"]["below_k"] == {"vessels": 1, "vessels_percent": 14.29, "vessels_total": 7,
+                                                "rows": 10, "rows_percent": 2.7}
+    assert set(report["minimization"]["not_released"]) == {"mmsi", "imoNumber", "reportClass", "shipLength", "name"}
     assert len(report["findings"]) == 5
+    assert report["findings"][1] == ("14.29 % of vessels (1 of 7) likely identify a private person"
+                                     " (owner risk high) - 2.7 % of rows")
+    assert report["findings"][2].startswith("14.29 % of vessels (1 of 7) have fixes at rest (0.54 % of rows)")
 
 
 def test_sections_without_their_columns_are_skipped(data):
@@ -85,7 +91,7 @@ def test_report_of_released_data_shows_no_risk(tmp_path, monkeypatch):
 
     assert report["direct_identifiers"]["columns"] == {}
     assert report["k_anonymity"]["vessel_column"] == "voyage_id"
-    assert report["k_anonymity"]["rows_below_k"] == 0
+    assert report["k_anonymity"]["below_k"]["vessels"] == 0
     assert report["minimization"]["not_released"] == []
 
 

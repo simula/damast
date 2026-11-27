@@ -127,6 +127,7 @@ test = [
 
 [project.scripts]
 damast = "damast.cli.main:run"
+damast-maritime = "damast.domains.maritime.cli.main:run"
 
 [tool.setuptools.dynamic]
 version = {attr = "damast.version.__version__"}

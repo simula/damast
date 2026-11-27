@@ -21,17 +21,40 @@ __all__ = [
 ]
 
 #: `MMSIPatternClassifier` categories of devices carried by a person, or sent off in distress
-PERSONAL_DEVICE_CATEGORIES: list[str] = ["handheld-vhf-transceiver", "man-overboard-device", "ais-sart", "epirb-ais"]
+PERSONAL_DEVICE_CATEGORIES: list[str] = [
+        "handheld-vhf-transceiver",
+        "man-overboard-device",
+        "ais-sart",
+        "epirb-ais"
+]
+
 #: `MMSIPatternClassifier` categories of stations that are not vessels
 NOT_A_VESSEL_CATEGORIES: list[str] = [
-    "all-coast-stations", "coast-station", "port-station", "pilot-station", "ais-repeater-station",
-    "ais-base-station", "sar-aircraft", "sar-aircraft-fixed-wing", "sar-aircraft-helicopter",
-    "aid-to-navigation", "aid-to-navigation-physical", "aid-to-navigation-virtual", "aid-to-navigation-mobile",
+    "all-coast-stations",
+    "coast-station",
+    "port-station",
+    "pilot-station",
+    "ais-repeater-station",
+    "ais-base-station",
+    "sar-aircraft",
+    "sar-aircraft-fixed-wing",
+    "sar-aircraft-helicopter",
+    "aid-to-navigation",
+    "aid-to-navigation-physical",
+    "aid-to-navigation-virtual",
+    "aid-to-navigation-mobile",
 ]
+
 #: Ship types of sailing and pleasure craft
 PLEASURE_CRAFT_TYPES: list[int] = [36, 37]
+
 #: Ship type of fishing vessels - often owned by a sole proprietor, whether or not it has an IMO number
 FISHING_TYPE: int = 30
+
+#: Length, in metres, below which a vessel of `FISHING_TYPE` or `PLEASURE_CRAFT_TYPES` counts as
+#: personal data - the limits of the Norwegian Coastal Administration, which leaves these vessels out
+#: of its open AIS data "av personvernhensyn" (https://hais.kystverket.no/about)
+PERSONAL_MAX_LENGTH: dict[str, float] = {"fishing": 15.0, "pleasure": 45.0}
 
 
 def valid_imo(imo: pl.Expr) -> pl.Expr:
@@ -67,21 +90,23 @@ def _ship_type_codes(labels: pl.Series) -> pl.Series:
 
 class OwnerRisk(PipelineElement):
     """
-    Add `owner_risk`: whether a vessel's movements can identify a private person.
+    Add `owner_risk` column: whether a vessel's movements can identify a private person.
 
     Assessed per MMSI over all its rows, from AIS data only - see the module for why registers are
-    not used. What kind of station an MMSI belongs to is read from `mmsi_category`, the column
+    not used.
+    What kind of station an MMSI belongs to is read from `mmsi_category`, the column
     `MMSIPatternClassifier` adds with its default mapping file. The values:
 
     - "high": a device carried by a person or sent off in distress (handheld VHF, man overboard
       device, AIS-SART, EPIRB-AIS), or a sailing or pleasure craft (ship type 36 or 37); with
-      `report_class`, also a class B transponder without a valid IMO number - typically a leisure
-      boat or a small one-person fishing boat
+      `length`, a pleasure craft only if shorter than 45 m, and also a fishing vessel (ship type 30)
+      shorter than 15 m - see `PERSONAL_MAX_LENGTH`; with `report_class`, also a class B transponder
+      without a valid IMO number - typically a leisure boat or a small one-person fishing boat
     - "low": a station that is not a vessel (coast or base station, SAR aircraft, aid to navigation),
       or a ship with a valid IMO number that is neither a fishing vessel nor a pleasure craft - in
       practice run by a company
     - "medium": everything else, which may well be owned or crewed by a single person, e.g. small
-      boats without an IMO number and fishing vessels
+      boats without an IMO number, fishing vessels, and with `length` pleasure craft of 45 m or more
 
     "low" is not "none": the crew of a commercial ship can still be identifiable.
 
@@ -93,17 +118,22 @@ class OwnerRisk(PipelineElement):
     | AISDK          | `Ship type`, label      | `IMO`, text or "Unknown"    | `Type of mobile`, "Class B"|
     | MarineCadastre | `VesselType`, code      | `IMO`, text, "IMO9074729"   | `TransceiverClass`, "A"/"B"|
 
+    The length, in metres, is `shipLength` in BarentsWatch and `Length` in AISDK and MarineCadastre.
+    A vessel's length is the largest it reports; 0, the AIS default for "not available", or a missing
+    length counts as unknown, and a vessel of unknown length as short - small boats are the ones that
+    often leave it unset.
+
     A ship type label, as AISDK writes it, is translated with `ShipType`; an unknown label counts as
     no ship type. MarineCadastre data before 2018 may use other vessel type codes - check them first.
 
     BarentsWatch's open data leaves out fishing vessels under 15 m and leisure craft under 45 m, so
-    few of its vessels are "high"; AISDK and MarineCadastre include them.
+    with `length` few of its vessels are "high"; AISDK and MarineCadastre include them.
 
     Example:
 
     ```python
     pipeline.add("classify mmsi", MMSIPatternClassifier(), name_mappings={"x": "MMSI"})
-    pipeline.add("owner risk", OwnerRisk(report_class="Type of mobile"),
+    pipeline.add("owner risk", OwnerRisk(report_class="Type of mobile", length="Length"),
                  name_mappings={"mmsi": "MMSI", "mmsi_category": "MMSI_category",
                                 "ship_type": "Ship type", "imo": "IMO"})
     ```
@@ -111,14 +141,17 @@ class OwnerRisk(PipelineElement):
     Args:
         report_class: Name of the column holding the AIS transponder class ("A"/"B", "Class A"/
             "Class B"), or None if the data has none
+        length: Name of the column holding the vessel's length in metres, or None if the data has
+            none - every pleasure craft is then "high" and no fishing vessel is
     """
 
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
 
-    def __init__(self, report_class: str | None = None):
+    def __init__(self, report_class: str | None = None, length: str | None = None):
         self.report_class = report_class
+        self.length = length
 
     @describe("Assess per MMSI whether the vessel's movements can identify a private person")
     @input({"mmsi": {"representation_type": int},
@@ -136,6 +169,7 @@ class OwnerRisk(PipelineElement):
         ship_type = pl.col(ship_type_column)
         if schema[ship_type_column] == pl.String:
             ship_type = ship_type.map_batches(_ship_type_codes, return_dtype=pl.Int64)
+
         lazyframe = df.lazyframe.with_columns(
             ship_type.alias("_ship_type"),
             _imo_number(pl.col(imo_column), schema[imo_column]).alias("_imo"),
@@ -146,12 +180,27 @@ class OwnerRisk(PipelineElement):
 
         category = pl.col(self.get_name("mmsi_category"))
         has_imo = any_row(valid_imo(pl.col("_imo")))
-        personal = any_row(category.is_in(PERSONAL_DEVICE_CATEGORIES)
-                           | pl.col("_ship_type").is_in(PLEASURE_CRAFT_TYPES))
+        pleasure = any_row(pl.col("_ship_type").is_in(PLEASURE_CRAFT_TYPES))
+        personal = any_row(category.is_in(PERSONAL_DEVICE_CATEGORIES))
+
+        if self.length is not None:
+            length = pl.col(self.length).cast(pl.Float64, strict=False)
+            vessel_length = pl.when(length > 0).then(length).max().over(mmsi)
+
+            def shorter(limit: float) -> pl.Expr:
+                return (vessel_length < limit).fill_null(True)
+
+            fishing = any_row(pl.col("_ship_type") == FISHING_TYPE)
+            personal = (personal | (pleasure & shorter(PERSONAL_MAX_LENGTH["pleasure"]))
+                        | (fishing & shorter(PERSONAL_MAX_LENGTH["fishing"])))
+        else:
+            personal = personal | pleasure
+
         if self.report_class is not None:
             transponder = (pl.col(self.report_class).cast(pl.String).str.to_uppercase()
                            .str.replace(r"^\s*CLASS\s*", "").str.strip_chars())
             personal = personal | (any_row(transponder == "B") & ~has_imo)
+
         commercial = has_imo & ~any_row(pl.col("_ship_type").is_in([FISHING_TYPE, *PLEASURE_CRAFT_TYPES]))
         no_vessel = category.is_in(NOT_A_VESSEL_CATEGORIES)
 

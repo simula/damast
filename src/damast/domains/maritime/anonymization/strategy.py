@@ -3,7 +3,7 @@ The interface every anonymization strategy for AIS data implements.
 """
 import tempfile
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NamedTuple
 
@@ -37,6 +37,21 @@ class AISColumns:
     imo: str = "imoNumber"
     #: AIS transponder class, "A" or "B" - None if the data has no such column
     report_class: str | None = "reportClass"
+    #: Length of the vessel in metres - None if the data has no such column
+    length: str | None = "shipLength"
+
+    def available(self, names: list[str]) -> "AISColumns":
+        """
+        These columns, with the optional ones the data lacks set to None.
+
+        Args:
+            names: Names of the columns in the data
+
+        Returns:
+            The columns, `report_class` and `length` None where missing from `names`
+        """
+        missing = {f: None for f in ("report_class", "length") if getattr(self, f) not in names}
+        return replace(self, **missing)
 
 
 class Step(NamedTuple):
@@ -61,7 +76,7 @@ def owner_risk_steps(columns: AISColumns) -> list[Step]:
     category = f"{columns.mmsi}_category"
     return [
         Step("classify mmsi", MMSIPatternClassifier(), {"x": columns.mmsi}),
-        Step("assess owner risk", OwnerRisk(report_class=columns.report_class),
+        Step("assess owner risk", OwnerRisk(report_class=columns.report_class, length=columns.length),
              {"mmsi": columns.mmsi, "mmsi_category": category, "ship_type": columns.ship_type,
               "imo": columns.imo}),
         Step("drop high owner risk", DropHighOwnerRisk(), {"owner_risk": "owner_risk"}),

@@ -6,7 +6,7 @@ from damast.core.dataprocessing import DataProcessingPipeline
 from damast.core.metadata import DataSpecification, MetaData
 
 from damast.domains.maritime.transformers import MMSIPatternClassifier
-from damast.domains.maritime.transformers.mmsi_pattern_classifier import load_pattern_rules
+from damast.domains.maritime.transformers.mmsi_pattern_classifier import MMSIPattern
 
 # Declaration order matters (first match wins) - see MMSIPatternClassifier. "009990000" must
 # precede "00", which must precede "0", or the more specific rules are never reached.
@@ -51,7 +51,7 @@ def adf() -> AnnotatedDataFrame:
 
 
 def test_load_pattern_rules(mapping_file):
-    assert load_pattern_rules(mapping_file) == MAPPING
+    assert MMSIPattern.load_pattern_rules(mapping_file) == MAPPING
 
 
 def test_classifies_by_first_matching_pattern_in_file_order(adf, mapping_file, tmp_path):
@@ -172,3 +172,17 @@ def test_invalid_pattern_raises_value_error(tmp_path):
 
     with pytest.raises(ValueError, match=r"invalid regex pattern"):
         MMSIPatternClassifier(mapping_file=mapping_file)
+
+
+def test_saved_pipeline_keeps_parameters(adf, mapping_file, tmp_path):
+    pipeline = DataProcessingPipeline(name="mmsi", base_dir=tmp_path)
+    pipeline.add("classify mmsi",
+                 MMSIPatternClassifier(mapping_file=mapping_file, default_category="ship",
+                                       invalid_category="bad", drop_invalid=True),
+                 name_mappings={"x": "mmsi"})
+
+    loaded = DataProcessingPipeline.load(pipeline.save(tmp_path))
+    classifier = [node.transformer for node in loaded.processing_graph.nodes()][-1]
+
+    assert classifier.parameters == {"mapping_file": str(mapping_file), "default_category": "ship",
+                                     "invalid_category": "bad", "drop_invalid": True}

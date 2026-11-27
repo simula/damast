@@ -7,7 +7,7 @@ after one whether it worked.
 """
 import re
 import tempfile
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -47,12 +47,31 @@ def identifier_columns(names: list[str], columns: AISColumns = AISColumns()) -> 
     Returns:
         The identifying columns among `names`, MMSI and IMO number first
     """
-    candidates = [columns.mmsi, columns.imo] + [n for n in names if re.sub(r"[^a-z]", "", n.lower()) in IDENTIFIER_NAMES]
+    candidates = [columns.mmsi, columns.imo] + [
+        n for n in names if re.sub(r"[^a-z]", "", n.lower()) in IDENTIFIER_NAMES]
     return [c for c in dict.fromkeys(candidates) if c in names]
 
 
 def _percent(part: int, total: int) -> float:
     return round(100.0 * part / total, 2) if total else 0.0
+
+
+def _shares(vessels: int, all_vessels: int, rows: int, all_rows: int) -> dict[str, Any]:
+    """Vessels and rows affected, each with its share - vessels first, since a vessel is what identifies."""
+    return {"vessels": vessels, "vessels_percent": _percent(vessels, all_vessels), "vessels_total": all_vessels,
+            "rows": rows, "rows_percent": _percent(rows, all_rows)}
+
+
+def _affected(shares: dict[str, Any], vessel: str | None, what: str) -> str:
+    """
+    A finding on the vessels with `what`, e.g. '12.5 % of vessels (40 of 320) have fixes at rest (3.1 % of rows)'
+    - on rows only without a vessel column, and on voyages in an anonymized release.
+    """
+    if vessel is None:
+        return f"{shares['rows_percent']} % of rows are {what}"
+    noun = "voyages" if vessel == VOYAGE_ID else "vessels"
+    return (f"{shares['vessels_percent']} % of {noun} ({shares['vessels']} of {shares['vessels_total']}) have {what}"
+            f" ({shares['rows_percent']} % of rows)")
 
 
 @dataclass
@@ -123,7 +142,7 @@ class PrivacyReport:
         report.sections["dataset"] = report._dataset(df, columns, vessel)
         report.sections["direct_identifiers"] = report._direct_identifiers(df, columns)
         report.sections["owner_risk"] = report._owner_risk(adf, columns, present)
-        report.sections["at_rest"] = report._at_rest(df, columns, present, rest_speed)
+        report.sections["at_rest"] = report._at_rest(df, columns, present, vessel, rest_speed)
         report.sections["precision"] = report._precision(df, columns, present, vessel)
         report.sections["k_anonymity"] = report._k_anonymity(df, columns, present, vessel, k,
                                                              h3_resolution, time_bucket)
@@ -151,8 +170,7 @@ class PrivacyReport:
         missing = [c for c in (columns.mmsi, columns.ship_type, columns.imo) if c not in present]
         if missing:
             return {"skipped": f"missing columns: {', '.join(missing)}"}
-        if columns.report_class not in present:
-            columns = replace(columns, report_class=None)
+        columns = columns.available(list(present))
 
         with tempfile.TemporaryDirectory() as base_dir:
             pipeline = DataProcessingPipeline(name="owner risk", base_dir=base_dir)
@@ -160,20 +178,22 @@ class PrivacyReport:
                 pipeline.add(step.name, step.transformer, name_mappings=step.name_mappings)
             risk = pipeline.transform(df=adf.copy()).lazyframe.select(columns.mmsi, "owner_risk").collect()
 
-        counts = risk.group_by("owner_risk").agg(pl.len().alias("rows"), pl.col(columns.mmsi).n_unique().alias("vessels"))
-        section: dict[str, Any] = {"report_class": columns.report_class}
+        counts = risk.group_by("owner_risk").agg(pl.len().alias("rows"),
+                                                 pl.col(columns.mmsi).n_unique().alias("vessels"))
+        vessels = risk[columns.mmsi].n_unique()
+        section: dict[str, Any] = {"report_class": columns.report_class, "length": columns.length}
         for level in (OwnerRisk.HIGH, OwnerRisk.MEDIUM, OwnerRisk.LOW):
             row = counts.filter(pl.col("owner_risk") == level)
-            rows = row["rows"].sum()
-            section[level] = {"vessels": int(row["vessels"].sum()), "rows": int(rows),
-                              "rows_percent": _percent(rows, risk.height)}
-        if section[OwnerRisk.HIGH]["vessels"]:
-            self.findings.append(f"{section[OwnerRisk.HIGH]['vessels']} vessels"
-                                 f" ({section[OwnerRisk.HIGH]['rows_percent']} % of rows) likely identify a"
-                                 " private person (owner risk high)")
+            section[level] = _shares(int(row["vessels"].sum()), vessels, int(row["rows"].sum()), risk.height)
+
+        high = section[OwnerRisk.HIGH]
+        if high["vessels"]:
+            self.findings.append(f"{high['vessels_percent']} % of vessels ({high['vessels']} of {vessels}) likely"
+                                 f" identify a private person (owner risk high) - {high['rows_percent']} % of rows")
         return section
 
-    def _at_rest(self, df: pl.DataFrame, columns: AISColumns, present: set[str], rest_speed: float) -> dict[str, Any]:
+    def _at_rest(self, df: pl.DataFrame, columns: AISColumns, present: set[str], vessel: str | None,
+                 rest_speed: float) -> dict[str, Any]:
         conditions = []
         if columns.status in present:
             conditions.append(pl.col(columns.status).is_in(AT_REST_STATUS))
@@ -182,11 +202,15 @@ class PrivacyReport:
         if not conditions:
             return {"skipped": f"missing columns: {columns.status}, {columns.speed}"}
 
-        rows = df.select(pl.any_horizontal(conditions).fill_null(False).sum()).item()
-        section = {"rows": rows, "rows_percent": _percent(rows, df.height)}
-        if rows:
-            self.findings.append(f"{section['rows_percent']} % of rows are at rest - berths and anchorages"
-                                 " identify a vessel")
+        resting = df.filter(pl.any_horizontal(conditions).fill_null(False))
+        if vessel is None:
+            section = {"rows": resting.height, "rows_percent": _percent(resting.height, df.height)}
+        else:
+            section = _shares(resting[vessel].n_unique(), df[vessel].n_unique(), resting.height, df.height)
+
+        if resting.height:
+            self.findings.append(_affected(section, vessel, "fixes at rest")
+                                 + " - berths and anchorages identify a vessel")
         return section
 
     def _precision(self, df: pl.DataFrame, columns: AISColumns, present: set[str],
@@ -232,12 +256,11 @@ class PrivacyReport:
         section = {"vessel_column": vessel,
                    "groups": sizes.select(groups).n_unique(),
                    "groups_below_k": below.select(groups).n_unique() if below.height else 0,
-                   "rows_below_k": below.height,
-                   "rows_below_k_percent": _percent(below.height, df.height),
-                   "vessels_affected": below[vessel].n_unique()}
+                   "below_k": _shares(below[vessel].n_unique(), df[vessel].n_unique(), below.height, df.height)}
+
         if below.height:
-            self.findings.append(f"{section['rows_below_k_percent']} % of rows are not {k}-anonymous in"
-                                 f" (H3 resolution {h3_resolution}, {time_bucket}) cells")
+            self.findings.append(_affected(section["below_k"], vessel, f"fixes that are not {k}-anonymous in"
+                                           f" (H3 resolution {h3_resolution}, {time_bucket}) cells"))
         return section
 
     def _minimization(self, df: pl.DataFrame, columns: AISColumns) -> dict[str, Any]:
