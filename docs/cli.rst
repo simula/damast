@@ -22,6 +22,9 @@ in sub-commands:
 **watch**
     watch directories for completed files and run a configured command on each
 
+Subcommands that are specific to one domain live in a command of their own, so that ``damast``
+itself stays domain-free - see `Maritime domain: damast-maritime`_ for AIS data.
+
 
 Inspect
 --------
@@ -699,4 +702,171 @@ Pipelines saved with a plugin transformer record where it came from under ``requ
 installed distribution and version, or the local package name and directory), so that loading the
 pipeline elsewhere fails with an actionable message - naming the missing package to ``pip install``, or
 the ``DAMAST_PLUGIN_PATH`` entry to add - instead of a bare import error.
+
+
+Maritime domain: damast-maritime
+--------------------------------
+
+``damast-maritime`` holds the subcommands specific to AIS data. It takes the same global options as
+``damast``.
+
+**privacy**
+    report what in AIS data can identify a vessel or a person
+
+**convert**
+    ``damast convert`` with a privacy mode: assess, minimize or anonymize AIS data while converting it
+
+.. literalinclude:: ./examples/damast-maritime-help.txt
+  :language: none
+
+AIS columns
+^^^^^^^^^^^
+
+Both subcommands read the AIS columns by the names of the Norwegian Coastal Administration's feed
+(BarentsWatch): ``mmsi``, ``msgtime``, ``latitude``, ``longitude``, ``speedOverGround``,
+``courseOverGround``, ``navigationalStatus``, ``shipType``, ``imoNumber``, ``reportClass`` and
+``shipLength``. Other names are given as ``field=column`` with ``--column``, where the fields are
+those of ``damast.domains.maritime.anonymization.AISColumns``:
+
+.. highlight:: none
+
+::
+
+    damast-maritime privacy -f marinecadastre.parquet --column mmsi=MMSI timestamp=BaseDateTime \
+        lat=LAT lon=LON speed=SOG course=COG status=Status ship_type=VesselType imo=IMO \
+        report_class=TransceiverClass length=Length
+
+``reportClass`` and ``shipLength`` are optional; a section whose required columns are missing is
+skipped and says why. A timestamp given as ISO 8601 text, such as BarentsWatch's ``msgtime``, is parsed
+as UTC; other text formats have to be converted first.
+
+Privacy
+^^^^^^^
+
+.. literalinclude:: ./examples/damast-maritime-privacy-help.txt
+  :language: none
+
+The report measures the data against the anonymization steps of
+``damast.domains.maritime.anonymization``, so it tells before a release what anonymizing would cost,
+and after one whether it worked. Every risk is counted in vessels first - the share of vessels
+affected, since a vessel is what identifies a person - and then in rows. Its sections:
+
+**dataset**
+    rows, vessels, time span and bounding box
+
+**direct_identifiers**
+    the columns that identify a vessel - MMSI, IMO number, call sign, name - with their number of
+    distinct values
+
+**owner_risk**
+    vessels and rows per ``OwnerRisk`` level, see `Owner risk`_
+
+**at_rest**
+    vessels and rows with fixes at anchor, moored, or slower than ``--rest-speed`` - a berth or an
+    anchorage identifies a vessel
+
+**precision**
+    decimals of the positions, smallest time step between two fixes of a vessel
+
+**k_anonymity**
+    vessels and rows in (H3 cell, time bucket) groups with fewer than ``-k`` vessels - what
+    ``KAnonymityFilter`` would drop after ``GeneralizeSpaceTime``
+
+**minimization**
+    the columns a release by ``PseudonymizeVoyages`` would not keep
+
+**findings**
+    one sentence per risk found
+
+In an anonymized release, where the MMSI is replaced by ``voyage_id``, vessels are counted as voyages.
+
+.. highlight:: none
+
+::
+
+    $ damast-maritime privacy -f AIS_2026_07_01.parquet -o AIS_2026_07_01.privacy.yaml
+    ...
+    findings:
+    - 'Direct identifiers present: mmsi, imoNumber, callSign, name'
+    - 36.96 % of vessels (1593 of 4310) likely identify a private person (owner risk high)
+      - 27.45 % of rows
+    - 92.16 % of vessels (3972 of 4310) have fixes at rest (72.14 % of rows) - berths and anchorages
+      identify a vessel
+    - Positions keep their full precision, 8 decimals or more
+    - 81.07 % of vessels (3494 of 4310) have fixes that are not 5-anonymous in (H3 resolution
+      6, 10m) cells (61.35 % of rows)
+    - 'Columns not needed for a release: altitude, callSign, destination, ...'
+
+Owner risk
+^^^^^^^^^^
+
+``OwnerRisk`` assesses per MMSI, from AIS data alone, whether a vessel's movements can identify a
+private person - ship and owner registers are not queried, since they return the names of private
+owners with every answer:
+
+**high**
+    a device carried by a person or sent off in distress (handheld VHF, man overboard device,
+    AIS-SART, EPIRB-AIS); a pleasure craft (ship type 36, 37) under 45 m; a fishing vessel (ship
+    type 30) under 15 m; a class B transponder without a valid IMO number
+
+**low**
+    a station that is not a vessel (coast or base station, SAR aircraft, aid to navigation), or a
+    ship with a valid IMO number that is neither a fishing vessel nor a pleasure craft
+
+**medium**
+    everything else, e.g. small boats without an IMO number, fishing vessels of 15 m or more, and
+    pleasure craft of 45 m or more
+
+The length limits are those of the Norwegian Coastal Administration, which leaves these vessels out
+of its open AIS data for privacy (`hais.kystverket.no <https://hais.kystverket.no/about>`_). A vessel's
+length is the largest it reports; a vessel of unknown length (none, or 0) counts as short. Without a
+length column every pleasure craft is "high" and no fishing vessel is.
+
+Convert with a privacy mode
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ./examples/damast-maritime-convert-help.txt
+  :language: none
+
+``damast-maritime convert`` takes all options of ``damast convert`` plus ``--privacy``:
+
+**report**
+    convert the data unchanged, and write the privacy report of the input
+
+**minimize**
+    keep fewer and coarser data with ``DataMinimization``: drop the vessels of high owner risk and the
+    fixes at rest, round positions to ``--decimals`` and truncate time to ``--time-resolution``; then
+    drop the identifying columns other than the MMSI. The MMSI stays, so the result is not anonymous -
+    it is meant for internal use
+
+**k-anonymity**
+    anonymize with ``VoyageKAnonymity``: split tracks into voyages, drop their ends, coarsen
+    positions to H3 cells and time to ``--time-bucket``, drop fixes seen by fewer than ``-k`` vessels,
+    and replace the MMSI by a keyed voyage pseudonym
+
+**relocation**
+    anonymize with ``VoyageRelocation``: move each voyage to a random place and time, keeping its shape
+
+Every mode writes a report of the input and, if the data was changed, of the output - to
+``<output>.privacy.yaml``, or to ``--privacy-report``. A mode that changes the data also saves the
+pipeline it applied next to the report, as ``<stem>.damast.ppl``.
+
+``--privacy-key-env`` names the environment variable holding the hex key of the pseudonyms and
+relocations. The key itself is never saved; without it, every run draws a random key, so its output
+cannot be reproduced or linked to another release.
+
+.. highlight:: none
+
+::
+
+    export AIS_PSEUDONYM_KEY=$(openssl rand -hex 32)
+    damast-maritime convert -f AIS_2026_07_01.parquet -o release/AIS_2026_07_01.parquet \
+        --privacy k-anonymity --privacy-key-env AIS_PSEUDONYM_KEY --time-bucket 1h
+
+    damast-maritime convert -f AIS_2026_07_01.parquet -o internal/AIS_2026_07_01.parquet --privacy minimize
+
+A privacy mode needs the input combined into one output - ``--output-file`` or ``--save-as``, and with a
+partitioned ``--save-as`` also ``--privacy-report``: a vessel's track can span input files, so they are
+not converted one by one. The anonymization steps also need the units of latitude, longitude and
+course (``deg``) in the metadata, as BarentsWatch files carry them.
 

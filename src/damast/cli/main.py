@@ -34,9 +34,8 @@ else:
 
 class MainParser(ArgumentParser):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.description = "damast - data processing with annotation"
+    def __init__(self, description: str = "damast - data processing with annotation", **kwargs):
+        super().__init__(description=description, **kwargs)
 
         self.add_argument("-w", "--workdir", default=str(Path(".").resolve()))
         self.add_argument("-v", "--verbose", action="store_true")
@@ -102,7 +101,15 @@ def run():
                                          help="Watch directories for completed files and run a configured command on each",
                                          parser_klass=DataWatchParser)
 
+    execute(main_parser)
 
+
+def execute(main_parser: MainParser):
+    """
+    Parse the command line and run the selected subcommand - shared by the domain CLIs, e.g. 'damast-maritime'.
+
+    :param main_parser: The parser, with its subcommands attached
+    """
     args = main_parser.parse_args()
     if args.version:
         print(f"damast {damast_version}")

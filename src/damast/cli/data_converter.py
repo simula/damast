@@ -114,6 +114,18 @@ class DataConvertParser(BaseParser):
             # ensure that metadata like stats are regenerated
             adf.validate_metadata(ValidationMode.UPDATE_METADATA)
 
+    def prepare_export(self, adf: AnnotatedDataFrame, args, save_as: SaveAs) -> AnnotatedDataFrame:
+        """
+        Hook between validation and export of a combined output (--save-as or --output-file), e.g.
+        for the privacy mode of 'damast-maritime convert' - returns the data unchanged.
+
+        :param adf: The validated data
+        :param args: The parsed arguments
+        :param save_as: Where the data is exported to
+        :return: The data to export
+        """
+        return adf
+
     def execute(self, args):
         super().execute(args)
 
@@ -144,6 +156,7 @@ class DataConvertParser(BaseParser):
                     )
 
                 self.validate(adf, args)
+                adf = self.prepare_export(adf, args, save_as)
 
                 written = save_as.export(adf,
                                          compression=args.compression_type,
