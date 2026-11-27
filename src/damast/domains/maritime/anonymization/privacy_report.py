@@ -24,6 +24,7 @@ from damast.domains.maritime.anonymization.voyage_k_anonymity import AT_REST_STA
 __all__ = [
     "IDENTIFIER_NAMES",
     "PrivacyReport",
+    "identifier_columns",
 ]
 
 #: Names of columns, other than MMSI and IMO number, that identify a vessel - compared in lower
@@ -33,6 +34,21 @@ IDENTIFIER_NAMES: list[str] = ["callsign", "name", "shipname", "vesselname"]
 VOYAGE_ID: str = "voyage_id"
 #: Largest number of decimals the precision of a position is checked for
 _MAX_DECIMALS: int = 8
+
+
+def identifier_columns(names: list[str], columns: AISColumns = AISColumns()) -> list[str]:
+    """
+    The columns that directly identify a vessel: MMSI, IMO number, and those in `IDENTIFIER_NAMES`.
+
+    Args:
+        names: Names of the columns in the data
+        columns: Names of the AIS columns in the data
+
+    Returns:
+        The identifying columns among `names`, MMSI and IMO number first
+    """
+    candidates = [columns.mmsi, columns.imo] + [n for n in names if re.sub(r"[^a-z]", "", n.lower()) in IDENTIFIER_NAMES]
+    return [c for c in dict.fromkeys(candidates) if c in names]
 
 
 def _percent(part: int, total: int) -> float:
@@ -126,9 +142,7 @@ class PrivacyReport:
         return section
 
     def _direct_identifiers(self, df: pl.DataFrame, columns: AISColumns) -> dict[str, Any]:
-        candidates = [columns.mmsi, columns.imo] + [
-            c for c in df.columns if re.sub(r"[^a-z]", "", c.lower()) in IDENTIFIER_NAMES]
-        found = {c: df[c].n_unique() for c in dict.fromkeys(candidates) if c in df.columns}
+        found = {c: df[c].n_unique() for c in identifier_columns(df.columns, columns)}
         if found:
             self.findings.append(f"Direct identifiers present: {', '.join(found)}")
         return {"columns": found}

@@ -10,13 +10,17 @@ from .voyage_k_anonymity import (
     SuppressVoyageEndpoints,
     VoyageKAnonymity,
 )
+from .minimization import CoarsenPositionTime, DataMinimization, DropFixesAtRest
 from .owner_risk import DropHighOwnerRisk, OwnerRisk, valid_imo
-from .privacy_report import PrivacyReport
+from .privacy_report import PrivacyReport, identifier_columns
 from .voyage_relocation import RelocateVoyages, VoyageRelocation
 
 __all__ = [
     "AISColumns",
     "AnonymizationStrategy",
+    "CoarsenPositionTime",
+    "DataMinimization",
+    "DropFixesAtRest",
     "DropHighOwnerRisk",
     "GeneralizeSpaceTime",
     "KAnonymityFilter",
@@ -29,5 +33,6 @@ __all__ = [
     "SuppressVoyageEndpoints",
     "VoyageKAnonymity",
     "VoyageRelocation",
+    "identifier_columns",
     "valid_imo",
 ]

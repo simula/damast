@@ -11,6 +11,7 @@ from damast.data_handling.transformers.filters import DropMissingOrNan
 from damast.domains.maritime.transformers import MMSIPatternClassifier
 from damast.domains.maritime.anonymization import (
     AISColumns,
+    DataMinimization,
     GeneralizeSpaceTime,
     KAnonymityFilter,
     OwnerRisk,
@@ -407,3 +408,17 @@ def test_strategies_drop_vessels_of_high_owner_risk(tmp_path, key_env, strategy)
 
     assert kept["voyage_id"].n_unique() == 4
     assert everything["voyage_id"].n_unique() == 6
+
+
+def test_minimization_drops_rest_and_high_risk_and_coarsens(tmp_path):
+    # a ship that moors for its last fix, and a pleasure craft
+    df = ais([(257000000, 0, 60.123456, 10.0, 0), (257000000, 1, 60.2, 0.0, 5)]).vstack(
+        ais([(257000001, 0, 61.0, 10.0, 0)]).with_columns(shipType=polars.lit(37, dtype=polars.Int64)))
+    df = df.with_columns(msgtime=polars.col("msgtime") + polars.duration(seconds=30))
+
+    result = DataMinimization(base_dir=tmp_path).transform(df=annotate(df)).lazyframe.collect()
+
+    assert result["mmsi"].to_list() == [257000000]
+    assert result["latitude"].to_list() == [60.1235]
+    assert result["msgtime"].to_list() == [T0]
+    assert "name" in result.columns

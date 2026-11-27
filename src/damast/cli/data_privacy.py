@@ -32,6 +32,44 @@ def ais_columns(mappings: list[str] | None) -> AISColumns:
     return AISColumns(**kwargs)
 
 
+def add_assessment_arguments(parser: ArgumentParser):
+    """
+    Add the arguments of a `PrivacyReport`: the AIS columns and the settings of the assessment.
+
+    Args:
+        parser: The parser to add the arguments to
+    """
+    parser.add_argument("--column",
+                        help="Name of an AIS column in the data as 'field=column', e.g. 'mmsi=MMSI'"
+                             " - fields as damast.domains.maritime.anonymization.AISColumns",
+                        nargs="+",
+                        default=None)
+    parser.add_argument("-k", type=int, default=5,
+                        help="Minimum number of vessels per (cell, time bucket) (default: %(default)s)")
+    parser.add_argument("--h3-resolution", type=int, default=6,
+                        help="H3 resolution of the cells (default: %(default)s)")
+    parser.add_argument("--time-bucket", default="10m",
+                        help="Interval time is truncated to, as polars duration (default: %(default)s)")
+    parser.add_argument("--rest-speed", type=float, default=0.5,
+                        help="Speed in knots below which a fix is at rest (default: %(default)s)")
+
+
+def assess(adf: AnnotatedDataFrame, columns: AISColumns, args) -> PrivacyReport:
+    """
+    `PrivacyReport` of the data, with the settings of `add_assessment_arguments`.
+
+    Args:
+        adf: The data to assess
+        columns: Names of the AIS columns in the data
+        args: The parsed arguments
+
+    Returns:
+        The report
+    """
+    return PrivacyReport.assess(adf, columns=columns, k=args.k, h3_resolution=args.h3_resolution,
+                                time_bucket=args.time_bucket, rest_speed=args.rest_speed)
+
+
 class DataPrivacyParser(BaseParser):
     """
     Argparser for the privacy report of AIS data, see `PrivacyReport`
@@ -51,19 +89,7 @@ class DataPrivacyParser(BaseParser):
         parser.add_argument("-o", "--output-file",
                             help="Save the report as YAML to this file",
                             default=None)
-        parser.add_argument("--column",
-                            help="Name of an AIS column in the data as 'field=column', e.g. 'mmsi=MMSI'"
-                                 " - fields as damast.domains.maritime.anonymization.AISColumns",
-                            nargs="+",
-                            default=None)
-        parser.add_argument("-k", type=int, default=5,
-                            help="Minimum number of vessels per (cell, time bucket) (default: %(default)s)")
-        parser.add_argument("--h3-resolution", type=int, default=6,
-                            help="H3 resolution of the cells (default: %(default)s)")
-        parser.add_argument("--time-bucket", default="10m",
-                            help="Interval time is truncated to, as polars duration (default: %(default)s)")
-        parser.add_argument("--rest-speed", type=float, default=0.5,
-                            help="Speed in knots below which a fix is at rest (default: %(default)s)")
+        add_assessment_arguments(parser)
 
     def execute(self, args):
         super().execute(args)
@@ -75,8 +101,7 @@ class DataPrivacyParser(BaseParser):
                 raise RuntimeError(f"Privacy report is not supported for input files: {input_files=}")
 
             adf = AnnotatedDataFrame.from_files(files=files, metadata_required=False)
-            report = PrivacyReport.assess(adf, columns=columns, k=args.k, h3_resolution=args.h3_resolution,
-                                          time_bucket=args.time_bucket, rest_speed=args.rest_speed)
+            report = assess(adf, columns, args)
 
         print(report)
         if args.output_file:

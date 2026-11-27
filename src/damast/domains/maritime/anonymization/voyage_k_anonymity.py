@@ -54,6 +54,21 @@ _log = logging.getLogger(__name__)
 AT_REST_STATUS: list[int] = [1, 5]
 
 
+def at_rest(status: pl.Expr, speed: pl.Expr, rest_speed: float) -> pl.Expr:
+    """
+    Whether a fix is at rest: anchored or moored, or slower than `rest_speed`.
+
+    Args:
+        status: Expression of the navigational status
+        speed: Expression of the speed over ground, in knots
+        rest_speed: Speed below which a fix counts as at rest
+
+    Returns:
+        Boolean expression, False where both are null
+    """
+    return (status.is_in(AT_REST_STATUS) | (speed < rest_speed)).fill_null(False)
+
+
 def voyage_pseudonym(key: bytes, voyage: str, length: int = 16) -> str:
     """
     Pseudonym of a voyage - a keyed hash, so it cannot be reversed by enumerating MMSIs.
@@ -126,10 +141,10 @@ class SegmentVoyages(PipelineElement):
         speed = self.get_name("speed")
         status = self.get_name("status")
 
-        at_rest = (pl.col(status).is_in(AT_REST_STATUS) | (pl.col(speed) < self.rest_speed)).fill_null(False)
+        resting = at_rest(pl.col(status), pl.col(speed), self.rest_speed)
         moving = df.lazyframe.sort(mmsi, timestamp).with_columns(
-            at_rest.shift(1).over(mmsi).fill_null(False).alias("_after_rest"),
-            at_rest.alias("_at_rest"),
+            resting.shift(1).over(mmsi).fill_null(False).alias("_after_rest"),
+            resting.alias("_at_rest"),
         ).filter(~pl.col("_at_rest"))
 
         # gaps are measured between moving fixes only - a stretch at rest is a break of its own
